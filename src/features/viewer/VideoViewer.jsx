@@ -19,7 +19,7 @@ export const VideoViewer = ({ src }) => {
         const video = document.createElement('video');
         video.style.width = '100%';
         video.style.height = '100%';
-        video.style.objectFit = 'contain';
+        video.style.objectFit = 'cover';
         wrapper.appendChild(video);
 
         const player = new Plyr(video, {
@@ -45,15 +45,12 @@ export const VideoViewer = ({ src }) => {
     }, [src]);
 
     return (
-        <div style={{
-            width: '100%', height: '100%',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: '#000'
-        }}>
-            <div
-                ref={wrapperRef}
-                style={{ width: '100%', height: '100%' }}
-            />
-        </div>
+        <div
+            ref={wrapperRef}
+            style={{
+                width: '100%', height: '100%',
+                overflow: 'hidden', background: '#000'
+            }}
+        />
     );
 };
