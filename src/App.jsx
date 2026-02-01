@@ -2,12 +2,15 @@ import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react
 import { VideoViewer } from './features/viewer/VideoViewer';
 import { VideoThumbnailGrid } from './components/VideoThumbnailGrid';
 import { VideoSidebar } from './components/VideoSidebar';
+import { VideoFilmstrip } from './components/VideoFilmstrip';
 import { useVideoFileSystem } from './hooks/useVideoFileSystem';
 import { useKeyboardNav } from './hooks/useKeyboardNav';
 
 const VideoEditor = lazy(() => import('./features/editor/VideoEditor'));
 
 const getElectronAPI = () => window.electronAPI || null;
+
+const SIDEBAR_POSITIONS = ['left', 'bottom', 'hidden'];
 
 export default function App() {
     const {
@@ -24,9 +27,10 @@ export default function App() {
     const [viewMode, setViewMode] = useState(() =>
         localStorage.getItem('revid-view-mode') || 'grid'
     );
-    const [showSidebar, setShowSidebar] = useState(() =>
-        localStorage.getItem('revid-show-sidebar') !== 'false'
-    );
+    const [sidebarPosition, setSidebarPosition] = useState(() => {
+        const saved = localStorage.getItem('revid-sidebar-position');
+        return SIDEBAR_POSITIONS.includes(saved) ? saved : 'left';
+    });
     const [gridSize, setGridSize] = useState(() =>
         localStorage.getItem('revid-grid-size') || 'medium'
     );
@@ -35,7 +39,7 @@ export default function App() {
     const [toast, setToast] = useState(null);
 
     useEffect(() => { localStorage.setItem('revid-view-mode', viewMode); }, [viewMode]);
-    useEffect(() => { localStorage.setItem('revid-show-sidebar', showSidebar.toString()); }, [showSidebar]);
+    useEffect(() => { localStorage.setItem('revid-sidebar-position', sidebarPosition); }, [sidebarPosition]);
     useEffect(() => { localStorage.setItem('revid-grid-size', gridSize); }, [gridSize]);
 
     useKeyboardNav({
@@ -80,6 +84,13 @@ export default function App() {
         });
     }, []);
 
+    const toggleSidebarPosition = useCallback(() => {
+        setSidebarPosition(current => {
+            const idx = SIDEBAR_POSITIONS.indexOf(current);
+            return SIDEBAR_POSITIONS[(idx + 1) % SIDEBAR_POSITIONS.length];
+        });
+    }, []);
+
     const handleCropComplete = useCallback((result) => {
         setIsEditing(false);
         if (result?.success) {
@@ -99,6 +110,41 @@ export default function App() {
         if (api?.path?.basename) return api.path.basename(currentPath);
         return currentPath.split(/[\\/]/).pop() || currentPath;
     }, [currentPath]);
+
+    // Sidebar icon changes based on position
+    const sidebarIcon = useMemo(() => {
+        if (sidebarPosition === 'left') {
+            // Panel left icon
+            return (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect width="18" height="18" x="3" y="3" rx="2" />
+                    <path d="M9 3v18" />
+                </svg>
+            );
+        }
+        if (sidebarPosition === 'bottom') {
+            // Panel bottom icon
+            return (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect width="18" height="18" x="3" y="3" rx="2" />
+                    <path d="M3 15h18" />
+                </svg>
+            );
+        }
+        // Hidden - show panel left with no highlight
+        return (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect width="18" height="18" x="3" y="3" rx="2" />
+                <path d="M9 3v18" />
+            </svg>
+        );
+    }, [sidebarPosition]);
+
+    const sidebarTitle = useMemo(() => {
+        if (sidebarPosition === 'left') return 'Sidebar: Left → Bottom';
+        if (sidebarPosition === 'bottom') return 'Sidebar: Bottom → Hidden';
+        return 'Sidebar: Hidden → Left';
+    }, [sidebarPosition]);
 
     return (
         <div style={{
@@ -174,22 +220,19 @@ export default function App() {
                     </button>
                 )}
 
-                {/* Sidebar toggle (viewer mode only) */}
+                {/* Sidebar position toggle (viewer mode only) */}
                 {viewMode === 'viewer' && files.length > 0 && (
                     <button
                         className="btn btn-ghost"
-                        onClick={() => setShowSidebar(prev => !prev)}
-                        title="Toggle Sidebar"
+                        onClick={toggleSidebarPosition}
+                        title={sidebarTitle}
                         style={{
                             padding: 6,
-                            color: showSidebar ? '#3b82f6' : undefined,
-                            background: showSidebar ? 'rgba(59,130,246,0.1)' : undefined
+                            color: sidebarPosition !== 'hidden' ? '#3b82f6' : undefined,
+                            background: sidebarPosition !== 'hidden' ? 'rgba(59,130,246,0.1)' : undefined
                         }}
                     >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <rect width="18" height="18" x="3" y="3" rx="2" />
-                            <path d="M9 3v18" />
-                        </svg>
+                        {sidebarIcon}
                     </button>
                 )}
 
@@ -211,61 +254,72 @@ export default function App() {
             </div>
 
             {/* Main Content */}
-            <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'row' }}>
-                {/* Sidebar (viewer mode only) */}
-                {viewMode === 'viewer' && showSidebar && files.length > 0 && (
-                    <VideoSidebar
+            <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'row' }}>
+                    {/* Left Sidebar */}
+                    {viewMode === 'viewer' && sidebarPosition === 'left' && files.length > 0 && (
+                        <VideoSidebar
+                            files={files}
+                            currentIndex={currentIndex}
+                            onSelect={selectVideo}
+                        />
+                    )}
+
+                    {/* Main Viewport */}
+                    <main style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
+                        {files.length === 0 ? (
+                            <div style={{
+                                width: '100%', height: '100%',
+                                display: 'flex', flexDirection: 'column',
+                                alignItems: 'center', justifyContent: 'center'
+                            }}>
+                                <div style={{
+                                    width: 80, height: 80, borderRadius: 16,
+                                    background: 'rgba(255,255,255,0.05)',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    marginBottom: 24
+                                }}>
+                                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                                        <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
+                                        <polygon points="10 8 16 12 10 16 10 8" />
+                                    </svg>
+                                </div>
+                                <p style={{ fontSize: 20, fontWeight: 500, color: 'rgba(255,255,255,0.6)' }}>
+                                    Open a folder to browse videos
+                                </p>
+                                <p style={{ fontSize: 14, marginTop: 8, color: 'rgba(255,255,255,0.4)' }}>
+                                    Supports MP4, WebM, MOV, AVI, MKV
+                                </p>
+                                <button
+                                    className="btn btn-ghost"
+                                    onClick={handleOpenFolder}
+                                    style={{ marginTop: 24, padding: '10px 24px', fontSize: 15, color: 'rgba(255,255,255,0.6)' }}
+                                >
+                                    Open Folder
+                                </button>
+                            </div>
+                        ) : viewMode === 'grid' ? (
+                            <VideoThumbnailGrid
+                                files={files}
+                                currentIndex={currentIndex}
+                                onSelectVideo={handleSelectVideo}
+                                size={gridSize}
+                            />
+                        ) : viewMode === 'viewer' && videoSrc ? (
+                            <VideoViewer src={videoSrc} />
+                        ) : null}
+                    </main>
+                </div>
+
+                {/* Bottom Filmstrip */}
+                {viewMode === 'viewer' && sidebarPosition === 'bottom' && files.length > 0 && (
+                    <VideoFilmstrip
                         files={files}
                         currentIndex={currentIndex}
                         onSelect={selectVideo}
                     />
                 )}
-
-                {/* Main Viewport */}
-                <main style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
-                    {files.length === 0 ? (
-                        <div style={{
-                            width: '100%', height: '100%',
-                            display: 'flex', flexDirection: 'column',
-                            alignItems: 'center', justifyContent: 'center'
-                        }}>
-                            <div style={{
-                                width: 80, height: 80, borderRadius: 16,
-                                background: 'rgba(255,255,255,0.05)',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                marginBottom: 24
-                            }}>
-                                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'rgba(255,255,255,0.3)' }}>
-                                    <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
-                                    <polygon points="10 8 16 12 10 16 10 8" />
-                                </svg>
-                            </div>
-                            <p style={{ fontSize: 20, fontWeight: 500, color: 'rgba(255,255,255,0.6)' }}>
-                                Open a folder to browse videos
-                            </p>
-                            <p style={{ fontSize: 14, marginTop: 8, color: 'rgba(255,255,255,0.4)' }}>
-                                Supports MP4, WebM, MOV, AVI, MKV
-                            </p>
-                            <button
-                                className="btn btn-ghost"
-                                onClick={handleOpenFolder}
-                                style={{ marginTop: 24, padding: '10px 24px', fontSize: 15, color: 'rgba(255,255,255,0.6)' }}
-                            >
-                                Open Folder
-                            </button>
-                        </div>
-                    ) : viewMode === 'grid' ? (
-                        <VideoThumbnailGrid
-                            files={files}
-                            currentIndex={currentIndex}
-                            onSelectVideo={handleSelectVideo}
-                            size={gridSize}
-                        />
-                    ) : viewMode === 'viewer' && videoSrc ? (
-                        <VideoViewer src={videoSrc} />
-                    ) : null}
-                </main>
             </div>
 
             {/* Editor overlay */}
