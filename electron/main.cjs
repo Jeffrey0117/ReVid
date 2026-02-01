@@ -17,6 +17,7 @@ function createWindow() {
         height: 700,
         title: 'ReVid',
         backgroundColor: '#000000',
+        icon: path.join(__dirname, '../revid.png'),
         webPreferences: {
             preload: path.join(__dirname, 'preload.cjs'),
             nodeIntegration: false,
@@ -43,9 +44,19 @@ function setupIpcHandlers() {
         if (!mainWindow) return null;
         const result = await dialog.showOpenDialog(mainWindow, {
             properties: ['openFile'],
-            filters: [{ name: 'Video', extensions: ['mp4', 'webm', 'mov'] }]
+            filters: [{ name: 'Video', extensions: ['mp4', 'webm', 'mov', 'avi', 'mkv'] }]
         });
         if (result.canceled || !result.filePaths.length) return null;
+        return result.filePaths[0];
+    });
+
+    // Open directory dialog
+    ipcMain.handle('select-directory', async () => {
+        if (!mainWindow) return null;
+        const result = await dialog.showOpenDialog(mainWindow, {
+            properties: ['openDirectory']
+        });
+        if (result.canceled) return null;
         return result.filePaths[0];
     });
 

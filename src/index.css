@@ -29,3 +29,11 @@ button {
 .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
 .btn-ghost { color: rgba(255,255,255,0.7); }
 .btn-ghost:hover { color: #fff; background: rgba(255,255,255,0.1); }
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Hide scrollbar for sidebar */
+::-webkit-scrollbar { width: 0; height: 0; }
