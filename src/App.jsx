@@ -21,34 +21,13 @@ export default function App() {
         setIsEditing(false);
     }, []);
 
-    const handleCropComplete = useCallback(async (result) => {
-        if (!result?.buffer) return;
-        const api = getElectronAPI();
-        if (!api) return;
-
-        let defaultName = `cropped-${Date.now()}.mp4`;
-        if (videoPath) {
-            const ext = api.path.extname(videoPath);
-            const base = api.path.basename(videoPath, ext);
-            defaultName = `${base}-cropped.mp4`;
-        }
-
-        const { canceled, filePath } = await api.showSaveDialog(defaultName);
-        if (canceled || !filePath) {
-            setIsEditing(false);
-            return;
-        }
-
-        const saveResult = await api.saveVideoBuffer(filePath, result.buffer);
+    const handleCropComplete = useCallback((result) => {
         setIsEditing(false);
-
-        if (saveResult.success) {
+        if (result?.success) {
             setToast('Saved!');
-        } else {
-            setToast(`Failed: ${saveResult.error}`);
+            setTimeout(() => setToast(null), 2000);
         }
-        setTimeout(() => setToast(null), 2000);
-    }, [videoPath]);
+    }, []);
 
     return (
         <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -95,6 +74,7 @@ export default function App() {
                     }>
                         <VideoEditor
                             videoSrc={videoSrc}
+                            videoPath={videoPath}
                             onCancel={() => setIsEditing(false)}
                             onComplete={handleCropComplete}
                         />

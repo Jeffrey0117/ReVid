@@ -1,9 +1,8 @@
 const { app, BrowserWindow, Menu, ipcMain, dialog, protocol } = require('electron');
 const path = require('path');
 const fs = require('fs');
-
-// Enable WebCodecs
-app.commandLine.appendSwitch('enable-features', 'WebCodecs,WebCodecsEncoder,WebCodecsDecoder');
+const { spawn } = require('child_process');
+const ffmpegPath = require('ffmpeg-static');
 
 // Register local-video:// protocol for range-request support
 protocol.registerSchemesAsPrivileged([
@@ -50,26 +49,56 @@ function setupIpcHandlers() {
         return result.filePaths[0];
     });
 
-    // Save video buffer to file
-    ipcMain.handle('save-video-buffer', async (_event, { filePath, arrayBuffer }) => {
-        try {
-            const MAX_SIZE = 500 * 1024 * 1024;
-            if (arrayBuffer.byteLength > MAX_SIZE) {
-                return { success: false, error: 'Video too large (max 500MB)' };
-            }
-            fs.writeFileSync(filePath, Buffer.from(arrayBuffer));
-            return { success: true };
-        } catch (e) {
-            return { success: false, error: e.message };
-        }
-    });
-
     // Show save dialog for video
     ipcMain.handle('show-save-dialog', async (_event, defaultPath) => {
         if (!mainWindow) return { canceled: true };
         return await dialog.showSaveDialog(mainWindow, {
             defaultPath,
             filters: [{ name: 'MP4 Video', extensions: ['mp4'] }]
+        });
+    });
+
+    // Crop + trim video using ffmpeg (runs in main process)
+    ipcMain.handle('crop-video', async (_event, params) => {
+        const { inputPath, outputPath, crop, trim, totalDuration } = params;
+
+        const args = ['-y'];
+
+        if (trim) {
+            args.push('-ss', String(trim.startTime), '-to', String(trim.endTime));
+        }
+
+        args.push('-i', inputPath);
+        args.push('-vf', `crop=${crop.width}:${crop.height}:${crop.x}:${crop.y}`);
+        args.push('-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-pix_fmt', 'yuv420p');
+        args.push('-c:a', 'copy');
+        args.push('-progress', 'pipe:1');
+        args.push(outputPath);
+
+        const totalUs = (totalDuration || 1) * 1_000_000;
+
+        return new Promise((resolve) => {
+            const proc = spawn(ffmpegPath, args);
+
+            proc.stdout.on('data', (data) => {
+                const str = data.toString();
+                const match = str.match(/out_time_us=(\d+)/);
+                if (match && mainWindow) {
+                    const pct = Math.min(100, Math.round((parseInt(match[1]) / totalUs) * 100));
+                    mainWindow.webContents.send('crop-progress', pct);
+                }
+            });
+
+            proc.stderr.on('data', () => {});
+
+            proc.on('close', (code) => {
+                if (code === 0) resolve({ success: true });
+                else resolve({ success: false, error: `ffmpeg exited with code ${code}` });
+            });
+
+            proc.on('error', (err) => {
+                resolve({ success: false, error: err.message });
+            });
         });
     });
 }

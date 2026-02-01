@@ -1,7 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { CropOverlay, getDefaultCrop } from './components/CropOverlay';
 import { TrimTimeline } from './components/TrimTimeline';
-import { cropVideo } from './utils/videoCropPipeline';
 
 const STEP = { EDIT: 'edit', PROCESSING: 'processing' };
 
@@ -13,6 +12,8 @@ const PRESETS = [
     { label: '4:3', ar: 4 / 3 },
     { label: '4:5', ar: 4 / 5 },
 ];
+
+const getElectronAPI = () => window.electronAPI || null;
 
 function getVideoDisplayRect(container, videoW, videoH) {
     const cw = container.clientWidth;
@@ -60,7 +61,7 @@ async function generateThumbnails(videoSrc, count = 15) {
     });
 }
 
-export const VideoEditor = ({ videoSrc, onCancel, onComplete }) => {
+export const VideoEditor = ({ videoSrc, videoPath, onCancel, onComplete }) => {
     const containerRef = useRef(null);
     const videoRef = useRef(null);
 
@@ -76,7 +77,8 @@ export const VideoEditor = ({ videoSrc, onCancel, onComplete }) => {
     const [trimStart, setTrimStart] = useState(0);
     const [trimEnd, setTrimEnd] = useState(0);
     const [thumbnails, setThumbnails] = useState([]);
-    const [progress, setProgress] = useState({ current: 0, total: 0 });
+    const [progressPct, setProgressPct] = useState(0);
+    const [stage, setStage] = useState('');
     const [error, setError] = useState(null);
 
     const aspectRatio = PRESETS[aspectIdx].ar;
@@ -86,7 +88,6 @@ export const VideoEditor = ({ videoSrc, onCancel, onComplete }) => {
         setDisplayRect(getVideoDisplayRect(containerRef.current, dims.width, dims.height));
     }, []);
 
-    // Load video metadata
     useEffect(() => {
         const v = videoRef.current;
         if (!v || !videoSrc) return;
@@ -105,7 +106,6 @@ export const VideoEditor = ({ videoSrc, onCancel, onComplete }) => {
         return () => v.removeEventListener('loadedmetadata', onMeta);
     }, [videoSrc, updateDisplayRect]);
 
-    // Generate thumbnails in background
     useEffect(() => {
         if (!videoSrc) return;
         let cancelled = false;
@@ -113,7 +113,6 @@ export const VideoEditor = ({ videoSrc, onCancel, onComplete }) => {
         return () => { cancelled = true; };
     }, [videoSrc]);
 
-    // Sync time + play state
     useEffect(() => {
         const v = videoRef.current;
         if (!v) return;
@@ -137,7 +136,6 @@ export const VideoEditor = ({ videoSrc, onCancel, onComplete }) => {
         };
     }, [trimStart, trimEnd]);
 
-    // Resize observer for display rect
     useEffect(() => {
         if (!videoDims) return;
         const obs = new ResizeObserver(() => updateDisplayRect(videoDims));
@@ -145,7 +143,6 @@ export const VideoEditor = ({ videoSrc, onCancel, onComplete }) => {
         return () => obs.disconnect();
     }, [videoDims, updateDisplayRect]);
 
-    // Reset crop when aspect ratio changes
     useEffect(() => {
         if (!videoDims) return;
         setCrop(getDefaultCrop(videoDims.width, videoDims.height, aspectRatio));
@@ -175,31 +172,64 @@ export const VideoEditor = ({ videoSrc, onCancel, onComplete }) => {
     }, []);
 
     const handleStartCrop = useCallback(async () => {
-        if (!crop || !videoDims) return;
+        if (!crop || !videoDims || !videoPath) return;
+
+        const api = getElectronAPI();
+        if (!api) return;
+
+        // Show save dialog first
+        const ext = api.path.extname(videoPath);
+        const base = api.path.basename(videoPath, ext);
+        const { canceled, filePath: outputPath } = await api.showSaveDialog(`${base}-cropped.mp4`);
+        if (canceled || !outputPath) return;
+
         setStep(STEP.PROCESSING);
         setError(null);
-        setProgress({ current: 0, total: 0 });
+        setProgressPct(0);
+        setStage('Processing with ffmpeg...');
 
         if (videoRef.current && !videoRef.current.paused) {
             videoRef.current.pause();
         }
 
         try {
+            const pixelCrop = {
+                x: Math.round(crop.x),
+                y: Math.round(crop.y),
+                width: Math.round(crop.width),
+                height: Math.round(crop.height)
+            };
+            pixelCrop.width = pixelCrop.width % 2 === 0 ? pixelCrop.width : pixelCrop.width - 1;
+            pixelCrop.height = pixelCrop.height % 2 === 0 ? pixelCrop.height : pixelCrop.height - 1;
+
             const trimRange = (trimStart > 0.05 || trimEnd < duration - 0.05)
                 ? { startTime: trimStart, endTime: trimEnd }
                 : null;
 
-            const buffer = await cropVideo(videoSrc, crop, trimRange, (current, total) => {
-                setProgress({ current, total });
+            const totalDuration = trimRange
+                ? trimRange.endTime - trimRange.startTime
+                : duration;
+
+            const result = await api.cropVideo({
+                inputPath: videoPath,
+                outputPath,
+                crop: pixelCrop,
+                trim: trimRange,
+                totalDuration
+            }, (pct) => {
+                setProgressPct(pct);
+                if (pct > 0) setStage(`Encoding... ${pct}%`);
             });
 
-            onComplete({ type: 'video-crop', buffer });
+            if (result.success) {
+                onComplete({ success: true });
+            } else {
+                setError(result.error || 'ffmpeg failed');
+            }
         } catch (err) {
-            setError(err.message);
+            setError(err.message || String(err));
         }
-    }, [crop, videoDims, trimStart, trimEnd, duration, videoSrc, onComplete]);
-
-    const progressPct = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
+    }, [crop, videoDims, videoPath, trimStart, trimEnd, duration, onComplete]);
 
     return (
         <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: '#000' }}>
@@ -241,7 +271,7 @@ export const VideoEditor = ({ videoSrc, onCancel, onComplete }) => {
                     </>
                 )}
                 {step === STEP.PROCESSING && (
-                    <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>Processing...</span>
+                    <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>{stage}</span>
                 )}
                 <div style={{ flex: step === STEP.PROCESSING ? 1 : 0 }} />
                 <button
@@ -292,16 +322,16 @@ export const VideoEditor = ({ videoSrc, onCancel, onComplete }) => {
                         ) : (
                             <>
                                 <div style={{ fontSize: 16, fontWeight: 500 }}>
-                                    Encoding {Math.round(crop?.width)}{'\u00d7'}{Math.round(crop?.height)}
+                                    {stage || 'Processing...'}
                                 </div>
                                 <div style={{ width: 300, background: '#1a1a1a', borderRadius: 999, height: 10, overflow: 'hidden' }}>
                                     <div style={{
                                         height: '100%', background: '#3b82f6', borderRadius: 999,
-                                        transition: 'width 0.2s', width: `${progressPct}%`
+                                        transition: 'width 0.3s', width: `${progressPct}%`
                                     }} />
                                 </div>
-                                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>
-                                    {progress.current} / {progress.total} frames ({progressPct}%)
+                                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>
+                                    {Math.round(crop?.width)}{'\u00d7'}{Math.round(crop?.height)} via ffmpeg
                                 </div>
                             </>
                         )}
