@@ -10,7 +10,7 @@ const VideoEditor = lazy(() => import('./features/editor/VideoEditor'));
 
 const getElectronAPI = () => window.electronAPI || null;
 
-const SIDEBAR_POSITIONS = ['left', 'bottom', 'hidden'];
+const SIDEBAR_POSITIONS = ['left', 'bottom'];
 
 export default function App() {
     const {
@@ -111,10 +111,8 @@ export default function App() {
         return currentPath.split(/[\\/]/).pop() || currentPath;
     }, [currentPath]);
 
-    // Sidebar icon changes based on position
     const sidebarIcon = useMemo(() => {
         if (sidebarPosition === 'left') {
-            // Panel left icon
             return (
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <rect width="18" height="18" x="3" y="3" rx="2" />
@@ -122,28 +120,16 @@ export default function App() {
                 </svg>
             );
         }
-        if (sidebarPosition === 'bottom') {
-            // Panel bottom icon
-            return (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect width="18" height="18" x="3" y="3" rx="2" />
-                    <path d="M3 15h18" />
-                </svg>
-            );
-        }
-        // Hidden - show panel left with no highlight
         return (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect width="18" height="18" x="3" y="3" rx="2" />
-                <path d="M9 3v18" />
+                <path d="M3 15h18" />
             </svg>
         );
     }, [sidebarPosition]);
 
     const sidebarTitle = useMemo(() => {
-        if (sidebarPosition === 'left') return 'Sidebar: Left → Bottom';
-        if (sidebarPosition === 'bottom') return 'Sidebar: Bottom → Hidden';
-        return 'Sidebar: Hidden → Left';
+        return sidebarPosition === 'left' ? 'Switch to Bottom' : 'Switch to Left';
     }, [sidebarPosition]);
 
     return (
@@ -228,8 +214,8 @@ export default function App() {
                         title={sidebarTitle}
                         style={{
                             padding: 6,
-                            color: sidebarPosition !== 'hidden' ? '#3b82f6' : undefined,
-                            background: sidebarPosition !== 'hidden' ? 'rgba(59,130,246,0.1)' : undefined
+                            color: '#3b82f6',
+                            background: 'rgba(59,130,246,0.1)'
                         }}
                     >
                         {sidebarIcon}
