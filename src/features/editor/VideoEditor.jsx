@@ -1,66 +1,195 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import ReactCrop from 'react-image-crop';
-import 'react-image-crop/dist/ReactCrop.css';
+import { CropOverlay, getDefaultCrop } from './components/CropOverlay';
+import { TrimTimeline } from './components/TrimTimeline';
 import { cropVideo } from './utils/videoCropPipeline';
 
-const STEP = { CROP: 'crop', PROCESSING: 'processing' };
+const STEP = { EDIT: 'edit', PROCESSING: 'processing' };
 
-export const VideoEditor = ({ videoSrc, onCancel, onComplete }) => {
-    const cropImgRef = useRef(null);
-    const [step, setStep] = useState(STEP.CROP);
-    const [capturedFrame, setCapturedFrame] = useState(null);
-    const [videoDimensions, setVideoDimensions] = useState({ width: 0, height: 0 });
-    const [crop, setCrop] = useState();
-    const [completedCrop, setCompletedCrop] = useState(null);
-    const [progress, setProgress] = useState({ current: 0, total: 0 });
-    const [error, setError] = useState(null);
+const PRESETS = [
+    { label: 'Free', ar: null },
+    { label: '16:9', ar: 16 / 9 },
+    { label: '9:16', ar: 9 / 16 },
+    { label: '1:1', ar: 1 },
+    { label: '4:3', ar: 4 / 3 },
+    { label: '4:5', ar: 4 / 5 },
+];
 
-    // Auto-capture first frame on mount
-    useEffect(() => {
-        if (!videoSrc) return;
+function getVideoDisplayRect(container, videoW, videoH) {
+    const cw = container.clientWidth;
+    const ch = container.clientHeight;
+    const vAr = videoW / videoH;
+    const cAr = cw / ch;
+    let dw, dh;
+    if (vAr > cAr) { dw = cw; dh = cw / vAr; }
+    else { dh = ch; dw = ch * vAr; }
+    return { x: (cw - dw) / 2, y: (ch - dh) / 2, width: dw, height: dh };
+}
+
+async function generateThumbnails(videoSrc, count = 15) {
+    return new Promise((resolve) => {
         const video = document.createElement('video');
         video.preload = 'auto';
         video.muted = true;
-        video.playsInline = true;
-
-        const cleanup = () => { video.onloadeddata = null; video.onseeked = null; video.onerror = null; };
-
-        video.onloadeddata = () => { video.currentTime = 0.1; };
-        video.onseeked = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            canvas.getContext('2d').drawImage(video, 0, 0);
-            setCapturedFrame(canvas.toDataURL('image/png'));
-            setVideoDimensions({ width: video.videoWidth, height: video.videoHeight });
-            cleanup();
-            video.src = '';
-        };
-        video.onerror = cleanup;
         video.src = videoSrc;
+
+        video.onloadedmetadata = async () => {
+            const dur = video.duration;
+            if (!dur || !isFinite(dur)) { resolve([]); return; }
+
+            const tw = 120;
+            const th = Math.round(tw / (video.videoWidth / video.videoHeight));
+            const canvas = document.createElement('canvas');
+            canvas.width = tw;
+            canvas.height = th;
+            const ctx = canvas.getContext('2d');
+            const thumbs = [];
+
+            for (let i = 0; i < count; i++) {
+                try {
+                    video.currentTime = (i / count) * dur;
+                    await new Promise((r) => { video.onseeked = r; });
+                    ctx.drawImage(video, 0, 0, tw, th);
+                    thumbs.push(canvas.toDataURL('image/jpeg', 0.4));
+                } catch { break; }
+            }
+
+            video.src = '';
+            resolve(thumbs);
+        };
+        video.onerror = () => resolve([]);
+    });
+}
+
+export const VideoEditor = ({ videoSrc, onCancel, onComplete }) => {
+    const containerRef = useRef(null);
+    const videoRef = useRef(null);
+
+    const [step, setStep] = useState(STEP.EDIT);
+    const [videoDims, setVideoDims] = useState(null);
+    const [duration, setDuration] = useState(0);
+    const [currentTime, setCurrentTime] = useState(0);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [muted, setMuted] = useState(true);
+    const [displayRect, setDisplayRect] = useState(null);
+    const [aspectIdx, setAspectIdx] = useState(0);
+    const [crop, setCrop] = useState(null);
+    const [trimStart, setTrimStart] = useState(0);
+    const [trimEnd, setTrimEnd] = useState(0);
+    const [thumbnails, setThumbnails] = useState([]);
+    const [progress, setProgress] = useState({ current: 0, total: 0 });
+    const [error, setError] = useState(null);
+
+    const aspectRatio = PRESETS[aspectIdx].ar;
+
+    const updateDisplayRect = useCallback((dims) => {
+        if (!containerRef.current || !dims) return;
+        setDisplayRect(getVideoDisplayRect(containerRef.current, dims.width, dims.height));
+    }, []);
+
+    // Load video metadata
+    useEffect(() => {
+        const v = videoRef.current;
+        if (!v || !videoSrc) return;
+        v.src = videoSrc;
+
+        const onMeta = () => {
+            const dims = { width: v.videoWidth, height: v.videoHeight };
+            setVideoDims(dims);
+            setDuration(v.duration);
+            setTrimEnd(v.duration);
+            setCrop(getDefaultCrop(dims.width, dims.height, null));
+            updateDisplayRect(dims);
+        };
+
+        v.addEventListener('loadedmetadata', onMeta);
+        return () => v.removeEventListener('loadedmetadata', onMeta);
+    }, [videoSrc, updateDisplayRect]);
+
+    // Generate thumbnails in background
+    useEffect(() => {
+        if (!videoSrc) return;
+        let cancelled = false;
+        generateThumbnails(videoSrc).then(t => { if (!cancelled) setThumbnails(t); });
+        return () => { cancelled = true; };
     }, [videoSrc]);
 
+    // Sync time + play state
+    useEffect(() => {
+        const v = videoRef.current;
+        if (!v) return;
+
+        const onTime = () => {
+            setCurrentTime(v.currentTime);
+            if (v.currentTime >= trimEnd) {
+                v.currentTime = trimStart;
+            }
+        };
+        const onPlay = () => setIsPlaying(true);
+        const onPause = () => setIsPlaying(false);
+
+        v.addEventListener('timeupdate', onTime);
+        v.addEventListener('play', onPlay);
+        v.addEventListener('pause', onPause);
+        return () => {
+            v.removeEventListener('timeupdate', onTime);
+            v.removeEventListener('play', onPlay);
+            v.removeEventListener('pause', onPause);
+        };
+    }, [trimStart, trimEnd]);
+
+    // Resize observer for display rect
+    useEffect(() => {
+        if (!videoDims) return;
+        const obs = new ResizeObserver(() => updateDisplayRect(videoDims));
+        if (containerRef.current) obs.observe(containerRef.current);
+        return () => obs.disconnect();
+    }, [videoDims, updateDisplayRect]);
+
+    // Reset crop when aspect ratio changes
+    useEffect(() => {
+        if (!videoDims) return;
+        setCrop(getDefaultCrop(videoDims.width, videoDims.height, aspectRatio));
+    }, [aspectRatio, videoDims]);
+
+    const togglePlay = useCallback(() => {
+        const v = videoRef.current;
+        if (!v) return;
+        if (v.paused) v.play(); else v.pause();
+    }, []);
+
+    const toggleMute = useCallback(() => {
+        const v = videoRef.current;
+        if (!v) return;
+        v.muted = !v.muted;
+        setMuted(v.muted);
+    }, []);
+
+    const handleSeek = useCallback((time) => {
+        const v = videoRef.current;
+        if (v) v.currentTime = time;
+    }, []);
+
+    const handleTrimChange = useCallback(({ start, end }) => {
+        setTrimStart(start);
+        setTrimEnd(end);
+    }, []);
+
     const handleStartCrop = useCallback(async () => {
-        if (!completedCrop?.width || !completedCrop?.height) return;
+        if (!crop || !videoDims) return;
         setStep(STEP.PROCESSING);
         setError(null);
         setProgress({ current: 0, total: 0 });
 
+        if (videoRef.current && !videoRef.current.paused) {
+            videoRef.current.pause();
+        }
+
         try {
-            const img = cropImgRef.current;
-            const displayedWidth = img ? img.clientWidth : videoDimensions.width;
-            const displayedHeight = img ? img.clientHeight : videoDimensions.height;
-            const scaleX = videoDimensions.width / displayedWidth;
-            const scaleY = videoDimensions.height / displayedHeight;
+            const trimRange = (trimStart > 0.05 || trimEnd < duration - 0.05)
+                ? { startTime: trimStart, endTime: trimEnd }
+                : null;
 
-            const cropRect = {
-                x: completedCrop.x * scaleX,
-                y: completedCrop.y * scaleY,
-                width: completedCrop.width * scaleX,
-                height: completedCrop.height * scaleY
-            };
-
-            const buffer = await cropVideo(videoSrc, cropRect, (current, total) => {
+            const buffer = await cropVideo(videoSrc, crop, trimRange, (current, total) => {
                 setProgress({ current, total });
             });
 
@@ -68,56 +197,111 @@ export const VideoEditor = ({ videoSrc, onCancel, onComplete }) => {
         } catch (err) {
             setError(err.message);
         }
-    }, [completedCrop, videoSrc, onComplete, videoDimensions]);
+    }, [crop, videoDims, trimStart, trimEnd, duration, videoSrc, onComplete]);
 
-    const progressPercent = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
+    const progressPct = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
 
     return (
         <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: '#000' }}>
-            {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'rgba(255,255,255,0.05)', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14 }}>
-                    {step === STEP.CROP ? 'Select crop region' : 'Processing video...'}
-                </span>
-                <button onClick={onCancel} disabled={step === STEP.PROCESSING && !error} style={{ color: 'rgba(255,255,255,0.6)', fontSize: 20, padding: 4 }}>
-                    ✕
+            {/* Toolbar */}
+            <div style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                padding: '6px 12px', background: 'rgba(255,255,255,0.04)',
+                borderBottom: '1px solid rgba(255,255,255,0.08)'
+            }}>
+                {step === STEP.EDIT && (
+                    <>
+                        {PRESETS.map((p, i) => (
+                            <button
+                                key={p.label}
+                                onClick={() => setAspectIdx(i)}
+                                style={{
+                                    padding: '4px 10px', borderRadius: 4, fontSize: 12, fontWeight: 500,
+                                    background: i === aspectIdx ? '#3b82f6' : 'rgba(255,255,255,0.06)',
+                                    color: i === aspectIdx ? '#fff' : 'rgba(255,255,255,0.55)',
+                                    transition: 'all 0.15s'
+                                }}
+                            >
+                                {p.label}
+                            </button>
+                        ))}
+                        <div style={{ flex: 1 }} />
+                        <button onClick={toggleMute} style={{
+                            padding: '4px 10px', borderRadius: 4, fontSize: 14,
+                            color: 'rgba(255,255,255,0.6)', background: 'rgba(255,255,255,0.06)'
+                        }}>
+                            {muted ? '\uD83D\uDD07' : '\uD83D\uDD0A'}
+                        </button>
+                        <button onClick={togglePlay} style={{
+                            padding: '4px 12px', borderRadius: 4, fontSize: 13,
+                            color: 'rgba(255,255,255,0.6)', background: 'rgba(255,255,255,0.06)'
+                        }}>
+                            {isPlaying ? '\u23F8' : '\u25B6'}
+                        </button>
+                    </>
+                )}
+                {step === STEP.PROCESSING && (
+                    <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>Processing...</span>
+                )}
+                <div style={{ flex: step === STEP.PROCESSING ? 1 : 0 }} />
+                <button
+                    onClick={onCancel}
+                    disabled={step === STEP.PROCESSING && !error}
+                    style={{ color: 'rgba(255,255,255,0.4)', fontSize: 18, padding: '2px 8px' }}
+                >
+                    {'\u2715'}
                 </button>
             </div>
 
-            {/* Content */}
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', padding: 16 }}>
-                {step === STEP.CROP && (
-                    capturedFrame ? (
-                        <div style={{ maxWidth: '100%', maxHeight: '100%', overflow: 'auto' }}>
-                            <ReactCrop crop={crop} onChange={setCrop} onComplete={setCompletedCrop}>
-                                <img
-                                    ref={cropImgRef}
-                                    src={capturedFrame}
-                                    alt="Video frame"
-                                    style={{ maxWidth: '100%', maxHeight: 'calc(100vh - 160px)', objectFit: 'contain' }}
-                                />
-                            </ReactCrop>
-                        </div>
-                    ) : (
-                        <div style={{ color: 'rgba(255,255,255,0.5)' }}>Loading video frame...</div>
-                    )
+            {/* Main content */}
+            <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+                {step === STEP.EDIT && (
+                    <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative' }}>
+                        <video
+                            ref={videoRef}
+                            style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }}
+                            muted
+                            playsInline
+                        />
+                        {displayRect && videoDims && crop && (
+                            <CropOverlay
+                                displayRect={displayRect}
+                                videoDimensions={videoDims}
+                                aspectRatio={aspectRatio}
+                                crop={crop}
+                                onCropChange={setCrop}
+                            />
+                        )}
+                    </div>
                 )}
 
                 {step === STEP.PROCESSING && (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24, color: 'rgba(255,255,255,0.8)' }}>
+                    <div style={{
+                        display: 'flex', flexDirection: 'column', alignItems: 'center',
+                        justifyContent: 'center', height: '100%', gap: 20, color: 'rgba(255,255,255,0.8)'
+                    }}>
                         {error ? (
                             <div style={{ textAlign: 'center' }}>
-                                <p style={{ fontSize: 18, fontWeight: 500, color: '#f87171', marginBottom: 8 }}>Processing failed</p>
-                                <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.5)' }}>{error}</p>
+                                <p style={{ fontSize: 18, fontWeight: 500, color: '#f87171', marginBottom: 8 }}>
+                                    Processing failed
+                                </p>
+                                <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', maxWidth: 420 }}>
+                                    {error}
+                                </p>
                             </div>
                         ) : (
                             <>
-                                <div style={{ fontSize: 18, fontWeight: 500 }}>Processing video...</div>
-                                <div style={{ width: 320, background: '#27272a', borderRadius: 999, height: 12, overflow: 'hidden' }}>
-                                    <div style={{ height: '100%', background: '#3b82f6', borderRadius: 999, transition: 'width 0.2s', width: `${progressPercent}%` }} />
+                                <div style={{ fontSize: 16, fontWeight: 500 }}>
+                                    Encoding {Math.round(crop?.width)}{'\u00d7'}{Math.round(crop?.height)}
                                 </div>
-                                <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.5)' }}>
-                                    {progress.current} / {progress.total} frames ({progressPercent}%)
+                                <div style={{ width: 300, background: '#1a1a1a', borderRadius: 999, height: 10, overflow: 'hidden' }}>
+                                    <div style={{
+                                        height: '100%', background: '#3b82f6', borderRadius: 999,
+                                        transition: 'width 0.2s', width: `${progressPct}%`
+                                    }} />
+                                </div>
+                                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>
+                                    {progress.current} / {progress.total} frames ({progressPct}%)
                                 </div>
                             </>
                         )}
@@ -125,18 +309,37 @@ export const VideoEditor = ({ videoSrc, onCancel, onComplete }) => {
                 )}
             </div>
 
+            {/* Timeline */}
+            {step === STEP.EDIT && duration > 0 && (
+                <TrimTimeline
+                    duration={duration}
+                    trimStart={trimStart}
+                    trimEnd={trimEnd}
+                    currentTime={currentTime}
+                    thumbnails={thumbnails}
+                    onTrimChange={handleTrimChange}
+                    onSeek={handleSeek}
+                />
+            )}
+
             {/* Footer */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '12px 16px', background: 'rgba(255,255,255,0.05)', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-                {step === STEP.CROP && (
+            <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
+                padding: '8px 16px', background: 'rgba(255,255,255,0.04)',
+                borderTop: '1px solid rgba(255,255,255,0.08)'
+            }}>
+                {step === STEP.EDIT && (
                     <>
                         <button className="btn btn-ghost" onClick={onCancel}>Cancel</button>
-                        <button className="btn btn-primary" onClick={handleStartCrop} disabled={!completedCrop?.width || !completedCrop?.height}>
+                        <button className="btn btn-primary" onClick={handleStartCrop} disabled={!crop}>
                             Crop Video
                         </button>
                     </>
                 )}
                 {step === STEP.PROCESSING && error && (
-                    <button className="btn btn-ghost" onClick={() => { setError(null); setStep(STEP.CROP); }}>Back</button>
+                    <button className="btn btn-ghost" onClick={() => { setError(null); setStep(STEP.EDIT); }}>
+                        Back
+                    </button>
                 )}
             </div>
         </div>
