@@ -15,6 +15,7 @@ import { SpeedDialog } from './components/SpeedDialog';
 import { getCachedMetadata } from './utils/videoMetadata';
 import { usePins } from './hooks/usePins';
 import { BatchRenameDialog } from './components/BatchRenameDialog';
+import { ConcatDialog } from './components/ConcatDialog';
 
 const VideoEditor = lazy(() => import('./features/editor/VideoEditor'));
 
@@ -54,6 +55,7 @@ export default function App() {
     const [showSpeed, setShowSpeed] = useState(false);
     const [showToolsMenu, setShowToolsMenu] = useState(false);
     const [showBatchRename, setShowBatchRename] = useState(false);
+    const [showConcat, setShowConcat] = useState(false);
     const [showPinnedOnly, setShowPinnedOnly] = useState(false);
     const [toast, setToast] = useState(null);
 
@@ -411,6 +413,7 @@ export default function App() {
                                         { label: 'Speed Output', action: () => setShowSpeed(true) },
                                         { label: 'Batch Crop', action: () => setShowBatchCrop(true) },
                                         { label: 'Batch Rename', action: () => setShowBatchRename(true) },
+                                        { label: 'Concat Videos', action: () => setShowConcat(true) },
                                     ].map(item => (
                                         <button
                                             key={item.label}
@@ -583,6 +586,14 @@ export default function App() {
                     files={files}
                     onClose={() => setShowBatchRename(false)}
                     onComplete={() => loadFolder(currentPath)}
+                />
+            )}
+
+            {/* Concat dialog */}
+            {showConcat && files.length > 1 && (
+                <ConcatDialog
+                    files={files}
+                    onClose={() => setShowConcat(false)}
                 />
             )}
 

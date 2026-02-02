@@ -69,6 +69,16 @@ function setupIpcHandlers() {
         });
     });
 
+    // Start native file drag
+    ipcMain.on('start-drag', (event, filePath) => {
+        try {
+            event.sender.startDrag({
+                file: filePath,
+                icon: path.join(__dirname, '../revid.png')
+            });
+        } catch {}
+    });
+
     // Select output directory
     ipcMain.handle('select-output-directory', async () => {
         if (!mainWindow) return null;

@@ -116,6 +116,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
     },
 
+    startDrag: (filePath) => {
+        ipcRenderer.send('start-drag', filePath);
+    },
+
     renameFile: (oldPath, newPath) => {
         try {
             fs.renameSync(oldPath, newPath);

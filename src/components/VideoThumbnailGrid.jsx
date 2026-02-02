@@ -166,6 +166,12 @@ export const VideoThumbnailGrid = ({
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelectVideo(index); }}
               onMouseEnter={() => handleHoverStart(file, index)}
               onMouseLeave={handleHoverEnd}
+              draggable
+              onDragStart={(e) => {
+                e.preventDefault();
+                const api = getElectronAPI();
+                if (api?.startDrag) api.startDrag(file);
+              }}
               aria-label={`Play video ${fileName}`}
               style={{
                 position: 'relative',
