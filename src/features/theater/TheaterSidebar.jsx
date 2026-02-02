@@ -1,11 +1,11 @@
 import { useState, useCallback } from 'react';
 import { useTheme } from '../../theme.jsx';
 import { useI18n } from '../../i18n.jsx';
-import { getPlatformColor } from '../../utils/platformDetect';
+import { getPlatformColor, getPlatformIcon } from '../../utils/platformDetect';
 
 /**
  * TheaterSidebar — folder/course list for the theater mode.
- * Follows the style of AlbumSidebar.
+ * Uses inline styles + theme tokens to match app-wide style.
  *
  * Props:
  *   folders          - array of folder objects
@@ -34,10 +34,12 @@ export const TheaterSidebar = ({
   isVisible = true
 }) => {
   const { t } = useI18n();
-  const { isDark } = useTheme();
+  const { theme } = useTheme();
 
   const [renamingId, setRenamingId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
+  const [hoveredFolderId, setHoveredFolderId] = useState(null);
+  const [hoveredCourseId, setHoveredCourseId] = useState(null);
 
   const startRename = useCallback((folderId, currentName) => {
     setRenamingId(folderId);
@@ -58,33 +60,48 @@ export const TheaterSidebar = ({
   if (!isVisible) return null;
 
   return (
-    <div className={`w-56 flex-shrink-0 flex flex-col h-full border-r overflow-hidden ${
-      isDark ? 'bg-surface/30 border-white/5' : 'bg-white/50 border-black/10'
-    }`}>
+    <div style={{
+      width: 224, flexShrink: 0,
+      display: 'flex', flexDirection: 'column',
+      height: '100%', overflow: 'hidden',
+      background: theme.bgTertiary,
+      borderRight: `1px solid ${theme.border}`
+    }}>
       {/* Folder header */}
-      <div className={`px-3 py-2 flex items-center justify-between border-b ${
-        isDark ? 'border-white/5' : 'border-black/10'
-      }`}>
-        <span className={`text-xs font-semibold uppercase tracking-wider ${
-          isDark ? 'text-white/40' : 'text-gray-400'
-        }`}>
+      <div style={{
+        padding: '8px 12px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        borderBottom: `1px solid ${theme.border}`
+      }}>
+        <span style={{
+          fontSize: 11, fontWeight: 600,
+          textTransform: 'uppercase', letterSpacing: '0.05em',
+          color: theme.textTertiary
+        }}>
           {t('courseFolder')}
         </span>
         <button
           onClick={() => onCreateFolder?.(`Folder ${folders.length + 1}`)}
-          className="text-primary text-xs font-medium hover:text-primary/80 transition-colors"
+          className="btn btn-ghost"
+          style={{
+            color: theme.accent, fontSize: 16, fontWeight: 600,
+            padding: '2px 8px', borderRadius: 6, lineHeight: 1
+          }}
         >
           +
         </button>
       </div>
 
       {/* Folder list */}
-      <div className={`flex-shrink-0 max-h-32 overflow-y-auto border-b ${
-        isDark ? 'border-white/5' : 'border-black/10'
-      }`}>
+      <div style={{
+        flexShrink: 0, maxHeight: 128,
+        overflowY: 'auto',
+        borderBottom: `1px solid ${theme.border}`
+      }}>
         {folders.map(folder => {
           const isSelected = folder.id === selectedFolderId;
           const isRenaming = folder.id === renamingId;
+          const isHovered = folder.id === hoveredFolderId;
           const courseCount = folder.courses?.filter(c => !c.deletedAt).length || 0;
 
           return (
@@ -92,15 +109,16 @@ export const TheaterSidebar = ({
               key={folder.id}
               onClick={() => !isRenaming && onSelectFolder?.(folder.id)}
               onDoubleClick={() => startRename(folder.id, folder.name)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                // Could show context menu
+              onMouseEnter={() => setHoveredFolderId(folder.id)}
+              onMouseLeave={() => setHoveredFolderId(null)}
+              style={{
+                padding: '6px 12px',
+                cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 8,
+                transition: 'background 0.15s',
+                background: isSelected ? theme.accentBg : isHovered ? theme.hoverBg : 'transparent',
+                color: isSelected ? theme.accent : theme.textSecondary
               }}
-              className={`px-3 py-1.5 cursor-pointer text-sm flex items-center gap-2 transition-colors ${
-                isSelected
-                  ? isDark ? 'bg-primary/10 text-primary' : 'bg-primary/10 text-primary'
-                  : isDark ? 'hover:bg-white/5 text-white/70' : 'hover:bg-black/5 text-gray-600'
-              }`}
             >
               {isRenaming ? (
                 <input
@@ -113,12 +131,23 @@ export const TheaterSidebar = ({
                   }}
                   onBlur={commitRename}
                   autoFocus
-                  className="flex-1 text-xs bg-transparent border border-primary/50 rounded px-1 outline-none"
+                  style={{
+                    flex: 1, fontSize: 12,
+                    background: 'transparent',
+                    border: `1px solid ${theme.accent}`,
+                    borderRadius: 4, padding: '2px 4px',
+                    color: theme.text, outline: 'none'
+                  }}
                 />
               ) : (
                 <>
-                  <span className="truncate flex-1 text-xs">{folder.name}</span>
-                  <span className={`text-[10px] ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
+                  <span style={{
+                    flex: 1, fontSize: 12,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                  }}>
+                    {folder.name}
+                  </span>
+                  <span style={{ fontSize: 10, color: theme.textTertiary }}>
                     {courseCount}
                   </span>
                 </>
@@ -128,7 +157,10 @@ export const TheaterSidebar = ({
         })}
 
         {folders.length === 0 && (
-          <div className={`px-3 py-4 text-center text-xs ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
+          <div style={{
+            padding: '16px 12px', textAlign: 'center',
+            fontSize: 12, color: theme.textTertiary
+          }}>
             {t('selectOrCreateAlbum')}
           </div>
         )}
@@ -136,15 +168,21 @@ export const TheaterSidebar = ({
 
       {/* Course list header */}
       {selectedFolder && (
-        <div className={`px-3 py-2 flex items-center justify-between border-b ${
-          isDark ? 'border-white/5' : 'border-black/10'
-        }`}>
-          <span className={`text-xs font-semibold ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
+        <div style={{
+          padding: '8px 12px',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          borderBottom: `1px solid ${theme.border}`
+        }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: theme.textSecondary }}>
             {selectedFolder.name}
           </span>
           <button
             onClick={onAddCourse}
-            className="text-primary text-xs font-medium hover:text-primary/80 transition-colors"
+            className="btn btn-ghost"
+            style={{
+              color: theme.accent, fontSize: 12, fontWeight: 500,
+              padding: '3px 8px', borderRadius: 6
+            }}
           >
             {t('addCourse')}
           </button>
@@ -152,9 +190,10 @@ export const TheaterSidebar = ({
       )}
 
       {/* Course list */}
-      <div className="flex-1 overflow-y-auto">
+      <div style={{ flex: 1, overflowY: 'auto' }}>
         {courses.map(course => {
           const isActive = course.id === activeCourseId;
+          const isHovered = course.id === hoveredCourseId;
           const platformColor = getPlatformColor(course.platform);
           const progress = course.progress?.duration > 0
             ? Math.round((course.progress.lastPosition / course.progress.duration) * 100)
@@ -164,24 +203,33 @@ export const TheaterSidebar = ({
             <div
               key={course.id}
               onClick={() => onOpenCourse?.(course.id)}
-              className={`px-3 py-2 cursor-pointer transition-colors group ${
-                isActive
-                  ? isDark ? 'bg-primary/10' : 'bg-primary/10'
-                  : isDark ? 'hover:bg-white/5' : 'hover:bg-black/5'
-              }`}
+              onMouseEnter={() => setHoveredCourseId(course.id)}
+              onMouseLeave={() => setHoveredCourseId(null)}
+              style={{
+                padding: '8px 12px',
+                cursor: 'pointer',
+                transition: 'background 0.15s',
+                background: isActive ? theme.accentBg : isHovered ? theme.hoverBg : 'transparent'
+              }}
             >
-              {/* Course title */}
-              <div className="flex items-center gap-2">
+              {/* Course title row */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {/* Platform badge */}
-                <span
-                  className="w-4 h-4 rounded text-[9px] font-bold flex items-center justify-center text-white flex-shrink-0"
-                  style={{ backgroundColor: platformColor }}
-                >
-                  {course.platform?.[0]?.toUpperCase() || '?'}
+                <span style={{
+                  width: 16, height: 16, borderRadius: 3,
+                  fontSize: 9, fontWeight: 700,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#fff', flexShrink: 0,
+                  backgroundColor: platformColor
+                }}>
+                  {getPlatformIcon(course.platform) || '?'}
                 </span>
-                <span className={`text-xs truncate flex-1 ${
-                  isActive ? 'text-primary font-medium' : isDark ? 'text-white/70' : 'text-gray-600'
-                }`}>
+                <span style={{
+                  fontSize: 12, flex: 1,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  color: isActive ? theme.accent : theme.textSecondary,
+                  fontWeight: isActive ? 500 : 400
+                }}>
                   {course.title}
                 </span>
 
@@ -191,7 +239,12 @@ export const TheaterSidebar = ({
                     e.stopPropagation();
                     onRemoveCourse?.(selectedFolderId, course.id);
                   }}
-                  className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-opacity p-0.5"
+                  style={{
+                    opacity: isHovered ? 1 : 0,
+                    color: theme.error,
+                    transition: 'opacity 0.15s',
+                    padding: 2
+                  }}
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M18 6 6 18" /><path d="m6 6 12 12" />
@@ -201,11 +254,18 @@ export const TheaterSidebar = ({
 
               {/* Progress bar */}
               {progress > 0 && (
-                <div className="mt-1.5 h-0.5 bg-white/10 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-primary rounded-full transition-all"
-                    style={{ width: `${Math.min(100, progress)}%` }}
-                  />
+                <div style={{
+                  marginTop: 6, height: 2,
+                  background: theme.border,
+                  borderRadius: 999, overflow: 'hidden'
+                }}>
+                  <div style={{
+                    height: '100%',
+                    background: theme.accent,
+                    borderRadius: 999,
+                    transition: 'width 0.3s',
+                    width: `${Math.min(100, progress)}%`
+                  }} />
                 </div>
               )}
             </div>
@@ -213,7 +273,10 @@ export const TheaterSidebar = ({
         })}
 
         {selectedFolder && courses.length === 0 && (
-          <div className={`px-3 py-8 text-center text-xs ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
+          <div style={{
+            padding: '32px 12px', textAlign: 'center',
+            fontSize: 12, color: theme.textTertiary
+          }}>
             {t('emptyAlbum')}
           </div>
         )}

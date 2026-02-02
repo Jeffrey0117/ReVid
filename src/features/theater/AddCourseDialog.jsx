@@ -14,7 +14,7 @@ import { detectPlatform, getPlatformColor } from '../../utils/platformDetect';
  */
 export const AddCourseDialog = ({ isOpen, onClose, onAdd }) => {
   const { t } = useI18n();
-  const { isDark } = useTheme();
+  const { theme } = useTheme();
 
   const [url, setUrl] = useState('');
   const [title, setTitle] = useState('');
@@ -23,8 +23,7 @@ export const AddCourseDialog = ({ isOpen, onClose, onAdd }) => {
   // Auto-detect platform from URL
   useEffect(() => {
     if (url.trim().startsWith('http')) {
-      const detected = detectPlatform(url.trim());
-      setPlatform(detected);
+      setPlatform(detectPlatform(url.trim()));
     } else {
       setPlatform(null);
     }
@@ -52,94 +51,129 @@ export const AddCourseDialog = ({ isOpen, onClose, onAdd }) => {
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      style={{
+        position: 'fixed', inset: 0, zIndex: 200,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)'
+      }}
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`w-full max-w-md mx-4 p-5 rounded-2xl shadow-2xl border ${
-          isDark ? 'bg-[#1a1a1a] border-white/10' : 'bg-white border-black/10'
-        }`}
+        style={{
+          width: 400, maxWidth: '90vw',
+          padding: 24, borderRadius: 12,
+          background: theme.dialogBg,
+          border: `1px solid ${theme.borderSecondary}`,
+          boxShadow: '0 16px 48px rgba(0,0,0,0.4)'
+        }}
       >
-            <h3 className={`text-lg font-semibold mb-4 ${isDark ? 'text-white' : 'text-gray-800'}`}>
-              {t('addCourseUrl')}
-            </h3>
+        {/* Header */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          marginBottom: 16
+        }}>
+          <h3 style={{ fontSize: 16, fontWeight: 600, color: theme.text }}>
+            {t('addCourseUrl')}
+          </h3>
+          <button
+            className="btn btn-ghost"
+            onClick={onClose}
+            style={{ padding: '2px 6px', fontSize: 18, color: theme.textTertiary }}
+          >
+            ×
+          </button>
+        </div>
 
-            <form onSubmit={handleSubmit}>
-              {/* URL input */}
-              <div className="mb-3">
-                <label className={`block text-xs font-medium mb-1 ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
-                  {t('courseUrl')}
-                </label>
-                <input
-                  type="url"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  placeholder="https://www.udemy.com/course/..."
-                  autoFocus
-                  className={`w-full px-3 py-2.5 text-sm rounded-xl transition-colors ${
-                    isDark
-                      ? 'bg-white/5 text-white border border-white/10 placeholder:text-white/30 focus:border-primary/50'
-                      : 'bg-black/5 text-gray-800 border border-black/10 placeholder:text-gray-400 focus:border-primary/50'
-                  } focus:outline-none`}
-                />
-              </div>
+        <form onSubmit={handleSubmit}>
+          {/* URL input */}
+          <div style={{ marginBottom: 12 }}>
+            <label style={{
+              display: 'block', fontSize: 12,
+              color: theme.textTertiary, marginBottom: 6
+            }}>
+              {t('courseUrl')}
+            </label>
+            <input
+              type="url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://www.udemy.com/course/..."
+              autoFocus
+              style={{
+                width: '100%', padding: '8px 12px',
+                fontSize: 14, borderRadius: 6,
+                background: theme.inputBg,
+                border: `1px solid ${theme.border}`,
+                color: theme.text,
+                outline: 'none'
+              }}
+            />
+          </div>
 
-              {/* Platform indicator */}
-              {platform && platform.id !== 'custom' && (
-                <div className="mb-3 flex items-center gap-2">
-                  <span
-                    className="w-5 h-5 rounded text-[10px] font-bold flex items-center justify-center text-white"
-                    style={{ backgroundColor: getPlatformColor(platform.id) }}
-                  >
-                    {platform.icon}
-                  </span>
-                  <span className={`text-xs ${isDark ? 'text-white/60' : 'text-gray-500'}`}>
-                    {t('platformDetected', { platform: platform.name })}
-                  </span>
-                </div>
-              )}
+          {/* Platform indicator */}
+          {platform && platform.id !== 'custom' && (
+            <div style={{
+              marginBottom: 12, display: 'flex',
+              alignItems: 'center', gap: 8
+            }}>
+              <span style={{
+                width: 20, height: 20, borderRadius: 4,
+                fontSize: 10, fontWeight: 700,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#fff',
+                backgroundColor: getPlatformColor(platform.id)
+              }}>
+                {platform.icon}
+              </span>
+              <span style={{ fontSize: 12, color: theme.textSecondary }}>
+                {t('platformDetected', { platform: platform.name })}
+              </span>
+            </div>
+          )}
 
-              {/* Title input */}
-              <div className="mb-4">
-                <label className={`block text-xs font-medium mb-1 ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
-                  {t('courseTitle')}
-                </label>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder={platform?.name ? `${platform.name} course...` : 'Course title...'}
-                  className={`w-full px-3 py-2.5 text-sm rounded-xl transition-colors ${
-                    isDark
-                      ? 'bg-white/5 text-white border border-white/10 placeholder:text-white/30 focus:border-primary/50'
-                      : 'bg-black/5 text-gray-800 border border-black/10 placeholder:text-gray-400 focus:border-primary/50'
-                  } focus:outline-none`}
-                />
-              </div>
+          {/* Title input */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{
+              display: 'block', fontSize: 12,
+              color: theme.textTertiary, marginBottom: 6
+            }}>
+              {t('courseTitle')}
+            </label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={platform?.name ? `${platform.name} course...` : 'Course title...'}
+              style={{
+                width: '100%', padding: '8px 12px',
+                fontSize: 14, borderRadius: 6,
+                background: theme.inputBg,
+                border: `1px solid ${theme.border}`,
+                color: theme.text,
+                outline: 'none'
+              }}
+            />
+          </div>
 
-              {/* Actions */}
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className={`px-4 py-2 text-sm rounded-lg transition-colors ${
-                    isDark
-                      ? 'bg-white/5 text-white/70 hover:bg-white/10'
-                      : 'bg-black/5 text-gray-600 hover:bg-black/10'
-                  }`}
-                >
-                  {t('cancel')}
-                </button>
-                <button
-                  type="submit"
-                  disabled={!url.trim()}
-                  className="px-4 py-2 bg-primary text-white text-sm rounded-lg font-medium hover:bg-primary/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {t('openAndDetect')}
-                </button>
-              </div>
-            </form>
+          {/* Actions */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={onClose}
+            >
+              {t('cancel')}
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={!url.trim()}
+            >
+              {t('openAndDetect')}
+            </button>
+          </div>
+        </form>
       </div>
     </div>,
     document.body

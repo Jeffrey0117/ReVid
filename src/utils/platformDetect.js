@@ -83,6 +83,11 @@ export const detectPlatform = (url) => {
   return { id: 'custom', name: 'Custom', icon: null };
 };
 
+export const getPlatformIcon = (platformId) => {
+  const platform = PLATFORMS.find(p => p.id === platformId);
+  return platform?.icon || null;
+};
+
 export const getPlatformColor = (platformId) => {
   const colors = {
     udemy: '#A435F0',
