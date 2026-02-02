@@ -30,6 +30,15 @@ button {
 .btn-ghost { color: rgba(255,255,255,0.7); }
 .btn-ghost:hover { color: #fff; background: rgba(255,255,255,0.1); }
 
+/* Dark select dropdowns */
+select {
+    color-scheme: dark;
+}
+select option {
+    background: #1a1a1a;
+    color: #fff;
+}
+
 @keyframes spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }

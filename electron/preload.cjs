@@ -31,6 +31,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
     },
 
+    getFileStat: (filePath) => {
+        try {
+            const stat = fs.statSync(filePath);
+            return { size: stat.size, mtimeMs: stat.mtimeMs };
+        } catch (e) {
+            return { size: 0, mtimeMs: 0 };
+        }
+    },
+
     showSaveDialog: async (defaultPath) => {
         return await ipcRenderer.invoke('show-save-dialog', defaultPath);
     },

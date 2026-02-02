@@ -5,6 +5,7 @@ import { VideoSidebar } from './components/VideoSidebar';
 import { VideoFilmstrip } from './components/VideoFilmstrip';
 import { useVideoFileSystem } from './hooks/useVideoFileSystem';
 import { useKeyboardNav } from './hooks/useKeyboardNav';
+import { useSortFilter, SORT_OPTIONS } from './hooks/useSortFilter';
 
 const VideoEditor = lazy(() => import('./features/editor/VideoEditor'));
 
@@ -42,6 +43,21 @@ export default function App() {
     useEffect(() => { localStorage.setItem('revid-sidebar-position', sidebarPosition); }, [sidebarPosition]);
     useEffect(() => { localStorage.setItem('revid-grid-size', gridSize); }, [gridSize]);
 
+    const {
+        displayFiles,
+        sortBy, setSortBy,
+        sortDir, toggleSortDir,
+        filterExt, setFilterExt,
+        availableExtensions,
+        originalIndexOf,
+        displayIndexOf
+    } = useSortFilter(files);
+
+    const displayCurrentIndex = useMemo(
+        () => displayIndexOf(currentIndex),
+        [displayIndexOf, currentIndex]
+    );
+
     useKeyboardNav({
         onNext: nextVideo,
         onPrev: prevVideo,
@@ -72,10 +88,13 @@ export default function App() {
         }
     }, [loadFolder]);
 
-    const handleSelectVideo = useCallback((index) => {
-        selectVideo(index);
-        setViewMode('viewer');
-    }, [selectVideo]);
+    const handleSelectVideoFromGrid = useCallback((displayIdx) => {
+        const originalIdx = originalIndexOf(displayIdx);
+        if (originalIdx >= 0) {
+            selectVideo(originalIdx);
+            setViewMode('viewer');
+        }
+    }, [selectVideo, originalIndexOf]);
 
     const toggleGridSize = useCallback(() => {
         setGridSize(current => {
@@ -162,7 +181,9 @@ export default function App() {
                     <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontVariantNumeric: 'tabular-nums' }}>
                         {viewMode === 'viewer' && currentIndex >= 0
                             ? `${currentIndex + 1} / ${files.length}`
-                            : `${files.length} videos`
+                            : filterExt !== 'all'
+                                ? `${displayFiles.length} / ${files.length} videos`
+                                : `${files.length} videos`
                         }
                     </span>
                 )}
@@ -192,6 +213,71 @@ export default function App() {
                             </svg>
                         )}
                     </button>
+                )}
+
+                {/* Sort (grid mode only) */}
+                {viewMode === 'grid' && files.length > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <select
+                            value={sortBy}
+                            onChange={(e) => setSortBy(e.target.value)}
+                            style={{
+                                background: 'rgba(255,255,255,0.08)',
+                                color: 'rgba(255,255,255,0.7)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: 4,
+                                padding: '3px 6px',
+                                fontSize: 11,
+                                cursor: 'pointer',
+                                outline: 'none'
+                            }}
+                        >
+                            {SORT_OPTIONS.map(opt => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                        </select>
+                        <button
+                            className="btn btn-ghost"
+                            onClick={toggleSortDir}
+                            title={sortDir === 'asc' ? 'Ascending' : 'Descending'}
+                            style={{ padding: 4, fontSize: 12, lineHeight: 1 }}
+                        >
+                            {sortDir === 'asc' ? (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="m3 8 4-4 4 4" /><path d="M7 4v16" />
+                                    <path d="M11 12h4" /><path d="M11 16h7" /><path d="M11 20h10" />
+                                </svg>
+                            ) : (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="m3 16 4 4 4-4" /><path d="M7 20V4" />
+                                    <path d="M11 4h10" /><path d="M11 8h7" /><path d="M11 12h4" />
+                                </svg>
+                            )}
+                        </button>
+                    </div>
+                )}
+
+                {/* Filter by extension (grid mode only) */}
+                {viewMode === 'grid' && availableExtensions.length > 1 && (
+                    <select
+                        value={filterExt}
+                        onChange={(e) => setFilterExt(e.target.value)}
+                        style={{
+                            background: 'rgba(255,255,255,0.08)',
+                            color: 'rgba(255,255,255,0.7)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: 4,
+                            padding: '3px 6px',
+                            fontSize: 11,
+                            cursor: 'pointer',
+                            outline: 'none'
+                        }}
+                    >
+                        <option value="all">All types</option>
+                        {availableExtensions.map(ext => (
+                            <option key={ext} value={ext}>{ext.toUpperCase()}</option>
+                        ))}
+                    </select>
                 )}
 
                 {/* Grid size (grid mode only) */}
@@ -287,9 +373,9 @@ export default function App() {
                             </div>
                         ) : viewMode === 'grid' ? (
                             <VideoThumbnailGrid
-                                files={files}
-                                currentIndex={currentIndex}
-                                onSelectVideo={handleSelectVideo}
+                                files={displayFiles}
+                                currentIndex={displayCurrentIndex}
+                                onSelectVideo={handleSelectVideoFromGrid}
                                 size={gridSize}
                             />
                         ) : viewMode === 'viewer' && videoSrc ? (
