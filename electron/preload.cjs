@@ -52,6 +52,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
     },
 
+    createGif: async (params, onProgress) => {
+        const handler = (_event, pct) => onProgress(pct);
+        ipcRenderer.on('gif-progress', handler);
+        try {
+            return await ipcRenderer.invoke('create-gif', params);
+        } finally {
+            ipcRenderer.removeListener('gif-progress', handler);
+        }
+    },
+
     showSaveDialog: async (defaultPath) => {
         return await ipcRenderer.invoke('show-save-dialog', defaultPath);
     },

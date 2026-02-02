@@ -138,6 +138,58 @@ function setupIpcHandlers() {
         });
     });
 
+    // Create GIF from video segment
+    ipcMain.handle('create-gif', async (_event, params) => {
+        const { inputPath, outputPath, startTime, duration, fps, width } = params;
+
+        const vf = `fps=${fps},scale=${width}:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse`;
+
+        const args = [
+            '-y',
+            '-ss', String(startTime),
+            '-t', String(duration),
+            '-i', inputPath,
+            '-vf', vf,
+            '-loop', '0',
+            '-progress', 'pipe:1',
+            outputPath
+        ];
+
+        const totalUs = duration * 1_000_000;
+
+        return new Promise((resolve) => {
+            const proc = spawn(ffmpegPath, args);
+
+            proc.stdout.on('data', (data) => {
+                const str = data.toString();
+                const match = str.match(/out_time_us=(\d+)/);
+                if (match && mainWindow) {
+                    const pct = Math.min(100, Math.round((parseInt(match[1]) / totalUs) * 100));
+                    mainWindow.webContents.send('gif-progress', pct);
+                }
+            });
+
+            proc.stderr.on('data', () => {});
+
+            proc.on('close', (code) => {
+                if (code === 0) {
+                    try {
+                        const stat = fs.statSync(outputPath);
+                        resolve({ success: true, fileSize: stat.size });
+                    } catch {
+                        resolve({ success: true, fileSize: 0 });
+                    }
+                } else {
+                    resolve({ success: false, error: `ffmpeg exited with code ${code}` });
+                }
+            });
+
+            proc.on('error', (err) => {
+                resolve({ success: false, error: err.message });
+            });
+        });
+    });
+
     // Crop + trim video using ffmpeg (runs in main process)
     ipcMain.handle('crop-video', async (_event, params) => {
         const { inputPath, outputPath, crop, trim, totalDuration } = params;

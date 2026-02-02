@@ -7,6 +7,7 @@ import { useVideoFileSystem } from './hooks/useVideoFileSystem';
 import { useKeyboardNav } from './hooks/useKeyboardNav';
 import { useSortFilter, SORT_OPTIONS } from './hooks/useSortFilter';
 import { ScreenshotDialog } from './components/ScreenshotDialog';
+import { GifDialog } from './components/GifDialog';
 import { getCachedMetadata } from './utils/videoMetadata';
 
 const VideoEditor = lazy(() => import('./features/editor/VideoEditor'));
@@ -40,6 +41,7 @@ export default function App() {
 
     const [isEditing, setIsEditing] = useState(false);
     const [showScreenshots, setShowScreenshots] = useState(false);
+    const [showGif, setShowGif] = useState(false);
     const [toast, setToast] = useState(null);
 
     useEffect(() => { localStorage.setItem('revid-view-mode', viewMode); }, [viewMode]);
@@ -332,6 +334,18 @@ export default function App() {
                     </button>
                 )}
 
+                {/* GIF button (viewer mode with video) */}
+                {viewMode === 'viewer' && currentVideo && (
+                    <button
+                        className="btn btn-ghost"
+                        onClick={() => setShowGif(true)}
+                        title="Create GIF"
+                        style={{ padding: 6, fontSize: 11, fontWeight: 700, lineHeight: 1 }}
+                    >
+                        GIF
+                    </button>
+                )}
+
                 {/* Crop button (viewer mode with video) */}
                 {viewMode === 'viewer' && currentVideo && (
                     <button
@@ -442,6 +456,15 @@ export default function App() {
                     videoPath={currentVideo}
                     videoDuration={videoDuration}
                     onClose={() => setShowScreenshots(false)}
+                />
+            )}
+
+            {/* GIF dialog */}
+            {showGif && currentVideo && (
+                <GifDialog
+                    videoPath={currentVideo}
+                    videoDuration={videoDuration}
+                    onClose={() => setShowGif(false)}
                 />
             )}
 
