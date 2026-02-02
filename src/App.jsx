@@ -216,14 +216,14 @@ export default function App() {
     const sidebarIcon = useMemo(() => {
         if (sidebarPosition === 'left') {
             return (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <rect width="18" height="18" x="3" y="3" rx="2" />
                     <path d="M9 3v18" />
                 </svg>
             );
         }
         return (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect width="18" height="18" x="3" y="3" rx="2" />
                 <path d="M3 15h18" />
             </svg>
@@ -246,18 +246,18 @@ export default function App() {
         >
             {/* Toolbar */}
             <div style={{
-                flexShrink: 0, height: 48,
+                flexShrink: 0, height: 52,
                 display: 'flex', alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '0 12px',
+                padding: '0 16px',
                 background: theme.bgTertiary,
                 borderBottom: `1px solid ${theme.border}`
             }}>
                 {/* Left: Folder + Count + View Toggle */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                     <button className="btn btn-ghost" onClick={handleOpenFolder}
                         style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M5 19a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4l2 2h4a2 2 0 0 1 2 2v1" />
                             <path d="M20 19a2 2 0 0 1-2-2V9a2 2 0 0 0-2-2h-4l-2-2H6a2 2 0 0 0-2 2" />
                         </svg>
@@ -283,18 +283,18 @@ export default function App() {
                             onClick={() => setViewMode(prev => prev === 'grid' ? 'viewer' : 'grid')}
                             title={viewMode === 'grid' ? t('switchToViewer') : t('switchToGrid')}
                             style={{
-                                padding: 6,
+                                padding: 7, borderRadius: 8, display: 'flex',
                                 color: viewMode === 'grid' ? theme.accent : undefined,
                                 background: viewMode === 'grid' ? theme.accentBg : undefined
                             }}
                         >
                             {viewMode === 'grid' ? (
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                     <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
                                     <rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
                                 </svg>
                             ) : (
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                     <rect width="18" height="18" x="3" y="3" rx="2" />
                                 </svg>
                             )}
@@ -307,12 +307,12 @@ export default function App() {
                         onClick={() => setViewMode(prev => prev === 'theater' ? 'grid' : 'theater')}
                         title={t('theaterMode')}
                         style={{
-                            padding: 6, borderRadius: 8, display: 'flex',
+                            padding: 7, borderRadius: 8, display: 'flex',
                             color: viewMode === 'theater' ? theme.accent : undefined,
                             background: viewMode === 'theater' ? theme.accentBg : undefined
                         }}
                     >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <circle cx="12" cy="12" r="10" />
                             <polygon points="10 8 16 12 10 16 10 8" />
                         </svg>
@@ -492,19 +492,19 @@ export default function App() {
                 </div>
 
                 {/* Right: Sidebar + Settings */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     {viewMode === 'viewer' && files.length > 0 && (
                         <button
                             className="btn btn-ghost"
                             onClick={toggleSidebarPosition}
                             title={sidebarTitle}
-                            style={{ padding: 6, borderRadius: 8, display: 'flex' }}
+                            style={{ padding: 7, borderRadius: 8, display: 'flex' }}
                         >
                             {sidebarIcon}
                         </button>
                     )}
 
-                    <div style={{ width: 1, height: 24, background: theme.borderSecondary }} />
+                    <div style={{ width: 1, height: 26, background: theme.borderSecondary }} />
 
                     {/* Settings dropdown */}
                     <div style={{ position: 'relative' }}>
@@ -513,11 +513,11 @@ export default function App() {
                             onClick={() => setShowSettingsMenu(prev => !prev)}
                             title={t('settings')}
                             style={{
-                                padding: 6, borderRadius: 8, display: 'flex',
+                                padding: 7, borderRadius: 8, display: 'flex',
                                 ...(showSettingsMenu ? { color: theme.accent, background: theme.accentBg } : {})
                             }}
                         >
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
                                 <circle cx="12" cy="12" r="3" />
                             </svg>
