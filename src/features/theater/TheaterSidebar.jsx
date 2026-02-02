@@ -305,14 +305,21 @@ export const TheaterSidebar = ({
           <button
             onClick={onAddCourse}
             style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '5px 10px', borderRadius: 8,
               fontSize: 12, fontWeight: 500,
-              padding: '4px 10px', borderRadius: 6,
-              background: 'transparent', border: 'none', cursor: 'pointer',
-              color: theme.accent, transition: 'background 0.15s', flexShrink: 0
+              background: isDark ? 'rgba(59,130,246,0.2)' : 'rgba(91,142,201,0.12)',
+              color: theme.accent,
+              border: 'none', cursor: 'pointer',
+              transition: 'background 0.15s', flexShrink: 0
             }}
-            onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(59,130,246,0.3)' : 'rgba(91,142,201,0.22)'}
+            onMouseLeave={e => e.currentTarget.style.background = isDark ? 'rgba(59,130,246,0.2)' : 'rgba(91,142,201,0.12)'}
           >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+            </svg>
             {t('addCourse')}
           </button>
         </div>

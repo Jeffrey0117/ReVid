@@ -78,6 +78,7 @@ export default function App() {
     const theater = useWebTheater();
     const { speed: theaterSpeed, selectSpeed: selectTheaterSpeed, SPEED_PRESETS } = usePlaybackSpeed();
     const [showAddCourseDialog, setShowAddCourseDialog] = useState(false);
+    const [theaterSidebarVisible, setTheaterSidebarVisible] = useState(true);
     const theaterVideoStateRef = useRef(null);
 
     const handleAddCourse = useCallback(({ url, title, platform }) => {
@@ -342,6 +343,30 @@ export default function App() {
                             <polygon points="10 8 16 12 10 16 10 8" />
                         </svg>
                     </button>
+
+                    {/* Add URL — theater mode with folder selected (REPIC pattern) */}
+                    {viewMode === 'theater' && theater.selectedFolderId && (
+                        <button
+                            onClick={() => setShowAddCourseDialog(true)}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: 6,
+                                padding: '6px 12px', borderRadius: 8,
+                                fontSize: 12, fontWeight: 500,
+                                background: isDark ? 'rgba(59,130,246,0.2)' : 'rgba(91,142,201,0.15)',
+                                color: theme.accent,
+                                border: 'none', cursor: 'pointer',
+                                transition: 'background 0.15s'
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(59,130,246,0.3)' : 'rgba(91,142,201,0.25)'}
+                            onMouseLeave={e => e.currentTarget.style.background = isDark ? 'rgba(59,130,246,0.2)' : 'rgba(91,142,201,0.15)'}
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                            </svg>
+                            {t('addCourseUrl')}
+                        </button>
+                    )}
                 </div>
 
                 {/* Center: Tools (viewer) or Sort/Filter (grid) */}
@@ -516,33 +541,101 @@ export default function App() {
                     )}
                 </div>
 
-                {/* Right: Sidebar + Settings */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {viewMode === 'viewer' && files.length > 0 && (
+                {/* Right: Actions (REPIC h-9 w-9 pattern) */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {/* About / Info */}
+                    <button
+                        onClick={() => { setShowAbout(prev => !prev); setShowSettingsMenu(false); }}
+                        title={t('about')}
+                        style={{
+                            width: 36, height: 36, padding: 0, borderRadius: 8,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            border: 'none', cursor: 'pointer',
+                            transition: 'background 0.15s',
+                            background: showAbout
+                                ? (isDark ? 'rgba(59,130,246,0.2)' : 'rgba(91,142,201,0.15)')
+                                : 'transparent',
+                            color: showAbout
+                                ? theme.accent
+                                : (isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)')
+                        }}
+                        onMouseEnter={e => { if (!showAbout) e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)'; }}
+                        onMouseLeave={e => { if (!showAbout) e.currentTarget.style.background = 'transparent'; }}
+                    >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="10" />
+                            <path d="M12 16v-4" /><path d="M12 8h.01" />
+                        </svg>
+                    </button>
+
+                    {/* Sidebar toggle — viewer: position, theater: visibility */}
+                    {((viewMode === 'viewer' && files.length > 0) || viewMode === 'theater') && (
                         <button
-                            className="btn btn-ghost"
-                            onClick={toggleSidebarPosition}
-                            title={sidebarTitle}
-                            style={{ padding: 7, borderRadius: 8, display: 'flex' }}
+                            onClick={viewMode === 'theater'
+                                ? () => setTheaterSidebarVisible(prev => !prev)
+                                : toggleSidebarPosition}
+                            title={viewMode === 'theater' ? t('courseFolder') : sidebarTitle}
+                            style={{
+                                width: 36, height: 36, padding: 0, borderRadius: 8,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                border: 'none', cursor: 'pointer',
+                                transition: 'background 0.15s',
+                                background: (viewMode === 'theater' && theaterSidebarVisible)
+                                    ? (isDark ? 'rgba(59,130,246,0.2)' : 'rgba(91,142,201,0.15)')
+                                    : 'transparent',
+                                color: (viewMode === 'theater' && theaterSidebarVisible)
+                                    ? theme.accent
+                                    : (isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)')
+                            }}
+                            onMouseEnter={e => {
+                                if (!(viewMode === 'theater' && theaterSidebarVisible))
+                                    e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)';
+                            }}
+                            onMouseLeave={e => {
+                                if (!(viewMode === 'theater' && theaterSidebarVisible))
+                                    e.currentTarget.style.background = 'transparent';
+                            }}
                         >
-                            {sidebarIcon}
+                            {viewMode === 'theater' ? (
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect width="18" height="18" x="3" y="3" rx="2" />
+                                    <path d="M9 3v18" />
+                                </svg>
+                            ) : (
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    {sidebarPosition === 'left' ? (
+                                        <><rect width="18" height="18" x="3" y="3" rx="2" /><path d="M3 15h18" /></>
+                                    ) : (
+                                        <><rect width="18" height="18" x="3" y="3" rx="2" /><path d="M9 3v18" /></>
+                                    )}
+                                </svg>
+                            )}
                         </button>
                     )}
 
-                    <div style={{ width: 1, height: 26, background: theme.borderSecondary }} />
+                    <div style={{ width: 1, height: 24, margin: '0 2px', background: theme.borderSecondary }} />
 
                     {/* Settings dropdown */}
                     <div style={{ position: 'relative' }}>
                         <button
-                            className="btn btn-ghost"
                             onClick={() => setShowSettingsMenu(prev => !prev)}
                             title={t('settings')}
                             style={{
-                                padding: 7, borderRadius: 8, display: 'flex',
-                                ...(showSettingsMenu ? { color: theme.accent, background: theme.accentBg } : {})
+                                width: 36, height: 36, padding: 0, borderRadius: 8,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                border: 'none', cursor: 'pointer',
+                                transition: 'background 0.15s',
+                                background: showSettingsMenu
+                                    ? (isDark ? 'rgba(59,130,246,0.2)' : 'rgba(91,142,201,0.15)')
+                                    : 'transparent',
+                                color: showSettingsMenu
+                                    ? theme.accent
+                                    : (isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)')
                             }}
+                            onMouseEnter={e => { if (!showSettingsMenu) e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)'; }}
+                            onMouseLeave={e => { if (!showSettingsMenu) e.currentTarget.style.background = 'transparent'; }}
                         >
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
                                 <circle cx="12" cy="12" r="3" />
                             </svg>
@@ -652,6 +745,7 @@ export default function App() {
                             onRemoveCourse={theater.removeCourse}
                             onAddCourse={() => setShowAddCourseDialog(true)}
                             onAddCourseUrl={handleAddCourse}
+                            isVisible={theaterSidebarVisible}
                         />
                     )}
 
