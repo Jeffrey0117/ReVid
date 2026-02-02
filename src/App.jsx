@@ -16,6 +16,8 @@ import { getCachedMetadata } from './utils/videoMetadata';
 import { usePins } from './hooks/usePins';
 import { BatchRenameDialog } from './components/BatchRenameDialog';
 import { ConcatDialog } from './components/ConcatDialog';
+import { useI18n } from './i18n.jsx';
+import { useTheme } from './theme.jsx';
 
 const VideoEditor = lazy(() => import('./features/editor/VideoEditor'));
 
@@ -24,6 +26,9 @@ const getElectronAPI = () => window.electronAPI || null;
 const SIDEBAR_POSITIONS = ['left', 'bottom'];
 
 export default function App() {
+    const { t, lang, setLang } = useI18n();
+    const { theme, isDark, toggleTheme } = useTheme();
+
     const {
         files,
         currentIndex,
@@ -142,7 +147,7 @@ export default function App() {
     const handleCropComplete = useCallback((result) => {
         setIsEditing(false);
         if (result?.success) {
-            setToast('Saved!');
+            setToast(t('saved'));
             setTimeout(() => setToast(null), 2000);
         }
     }, []);
@@ -190,7 +195,7 @@ export default function App() {
         <div style={{
             width: '100%', height: '100%',
             display: 'flex', flexDirection: 'column',
-            background: '#0a0a0a', color: '#fff',
+            background: theme.bg, color: theme.text,
             overflow: 'hidden', userSelect: 'none'
         }}>
             {/* Toolbar */}
@@ -198,8 +203,8 @@ export default function App() {
                 flexShrink: 0, height: 48,
                 display: 'flex', alignItems: 'center',
                 padding: '0 12px', gap: 8,
-                background: 'rgba(255,255,255,0.03)',
-                borderBottom: '1px solid rgba(255,255,255,0.06)'
+                background: theme.bgTertiary,
+                borderBottom: `1px solid ${theme.border}`
             }}>
                 <button className="btn btn-ghost" onClick={handleOpenFolder}
                     style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -208,7 +213,7 @@ export default function App() {
                         <path d="M20 19a2 2 0 0 1-2-2V9a2 2 0 0 0-2-2h-4l-2-2H6a2 2 0 0 0-2 2" />
                     </svg>
                     <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {folderName || 'Open Folder'}
+                        {folderName || t('openFolder')}
                     </span>
                 </button>
 
@@ -217,8 +222,8 @@ export default function App() {
                         {viewMode === 'viewer' && currentIndex >= 0
                             ? `${currentIndex + 1} / ${files.length}`
                             : filterExt !== 'all'
-                                ? `${displayFiles.length} / ${files.length} videos`
-                                : `${files.length} videos`
+                                ? `${displayFiles.length} / ${files.length} ${t('videos')}`
+                                : `${files.length} ${t('videos')}`
                         }
                     </span>
                 )}
@@ -400,20 +405,20 @@ export default function App() {
                                 />
                                 <div style={{
                                     position: 'absolute', top: '100%', right: 0, zIndex: 100,
-                                    marginTop: 4, background: '#1a1a1a',
-                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    marginTop: 4, background: theme.dialogBg,
+                                    border: `1px solid ${theme.borderSecondary}`,
                                     borderRadius: 8, padding: 4,
                                     minWidth: 180, boxShadow: '0 8px 24px rgba(0,0,0,0.5)'
                                 }}>
                                     {[
-                                        { label: 'Screenshots', action: () => setShowScreenshots(true) },
-                                        { label: 'Create GIF', action: () => setShowGif(true) },
-                                        { label: 'Compress', action: () => setShowCompress(true) },
-                                        { label: 'Extract Audio', action: () => setShowAudio(true) },
-                                        { label: 'Speed Output', action: () => setShowSpeed(true) },
-                                        { label: 'Batch Crop', action: () => setShowBatchCrop(true) },
-                                        { label: 'Batch Rename', action: () => setShowBatchRename(true) },
-                                        { label: 'Concat Videos', action: () => setShowConcat(true) },
+                                        { label: t('screenshots'), action: () => setShowScreenshots(true) },
+                                        { label: t('createGif'), action: () => setShowGif(true) },
+                                        { label: t('compress'), action: () => setShowCompress(true) },
+                                        { label: t('extractAudio'), action: () => setShowAudio(true) },
+                                        { label: t('speedOutput'), action: () => setShowSpeed(true) },
+                                        { label: t('batchCrop'), action: () => setShowBatchCrop(true) },
+                                        { label: t('batchRename'), action: () => setShowBatchRename(true) },
+                                        { label: t('concatVideos'), action: () => setShowConcat(true) },
                                     ].map(item => (
                                         <button
                                             key={item.label}
@@ -435,6 +440,37 @@ export default function App() {
                         )}
                     </div>
                 )}
+
+                {/* Language toggle */}
+                <button
+                    className="btn btn-ghost"
+                    onClick={() => setLang(lang === 'en' ? 'zh-TW' : 'en')}
+                    title={lang === 'en' ? 'Switch to Chinese' : 'Switch to English'}
+                    style={{ padding: '4px 8px', fontSize: 11, fontWeight: 600 }}
+                >
+                    {lang === 'en' ? 'EN' : 'ZH'}
+                </button>
+
+                {/* Theme toggle */}
+                <button
+                    className="btn btn-ghost"
+                    onClick={toggleTheme}
+                    title={isDark ? t('lightMode') : t('darkMode')}
+                    style={{ padding: 6 }}
+                >
+                    {isDark ? (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" />
+                            <path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" />
+                            <path d="M2 12h2" /><path d="M20 12h2" />
+                            <path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" />
+                        </svg>
+                    ) : (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+                        </svg>
+                    )}
+                </button>
             </div>
 
             {/* Main Content */}
@@ -469,18 +505,18 @@ export default function App() {
                                         <polygon points="10 8 16 12 10 16 10 8" />
                                     </svg>
                                 </div>
-                                <p style={{ fontSize: 20, fontWeight: 500, color: 'rgba(255,255,255,0.6)' }}>
-                                    Open a folder to browse videos
+                                <p style={{ fontSize: 20, fontWeight: 500, color: theme.textTertiary }}>
+                                    {t('openFolderToBrowse')}
                                 </p>
-                                <p style={{ fontSize: 14, marginTop: 8, color: 'rgba(255,255,255,0.4)' }}>
-                                    Supports MP4, WebM, MOV, AVI, MKV
+                                <p style={{ fontSize: 14, marginTop: 8, color: theme.textTertiary }}>
+                                    {t('supportsFormats')}
                                 </p>
                                 <button
                                     className="btn btn-ghost"
                                     onClick={handleOpenFolder}
-                                    style={{ marginTop: 24, padding: '10px 24px', fontSize: 15, color: 'rgba(255,255,255,0.6)' }}
+                                    style={{ marginTop: 24, padding: '10px 24px', fontSize: 15, color: theme.textSecondary }}
                                 >
-                                    Open Folder
+                                    {t('openFolder')}
                                 </button>
                             </div>
                         ) : viewMode === 'grid' ? (
