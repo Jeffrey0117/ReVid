@@ -129,7 +129,14 @@ export const getVideoDetectorScript = () => `
     const video = findLargestVideo();
 
     if (video && video !== activeVideo) {
+      // Remove listener from previous video
+      if (activeVideo) {
+        activeVideo.removeEventListener('pause', reportState);
+      }
       activeVideo = video;
+
+      // Report state immediately on pause
+      activeVideo.addEventListener('pause', reportState);
 
       // Start reporting
       if (reportInterval) clearInterval(reportInterval);

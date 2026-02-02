@@ -1,8 +1,14 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { extractYouTubeVideoId } from '../utils/youtubeUrl';
 
 const STORAGE_KEY = 'revid-web-theater';
 
 const generateId = () => `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+const getYouTubeThumbnail = (url) => {
+  const videoId = extractYouTubeVideoId(url);
+  return videoId ? `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` : null;
+};
 
 const loadFromStorage = () => {
   try {
@@ -107,12 +113,28 @@ export const useWebTheater = () => {
 
   // --- Course CRUD ---
 
+  const updateCourseThumbnail = useCallback((folderId, courseId, thumbnail) => {
+    setFolders(prev => prev.map(f => {
+      if (f.id !== folderId) return f;
+      return {
+        ...f,
+        courses: f.courses.map(c =>
+          c.id === courseId ? { ...c, thumbnail } : c
+        )
+      };
+    }));
+  }, []);
+
   const addCourse = useCallback((folderId, { url, title, platform, thumbnail }) => {
+    const autoThumbnail = platform === 'youtube'
+      ? getYouTubeThumbnail(url)
+      : null;
+
     const newCourse = {
       id: generateId(),
       url,
       title: title || url,
-      thumbnail: thumbnail || null,
+      thumbnail: thumbnail || autoThumbnail,
       platform: platform || 'custom',
       progress: {
         lastPosition: 0,
@@ -199,6 +221,7 @@ export const useWebTheater = () => {
     removeCourse,
     renameCourse,
     updateProgress,
+    updateCourseThumbnail,
     openCourse,
     closeCourse
   }), [
@@ -206,6 +229,6 @@ export const useWebTheater = () => {
     activeCourses, activeCourse, activeCourseId,
     selectFolder, createFolder, renameFolder, deleteFolder,
     addCourse, removeCourse, renameCourse, updateProgress,
-    openCourse, closeCourse
+    updateCourseThumbnail, openCourse, closeCourse
   ]);
 };

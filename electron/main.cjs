@@ -545,6 +545,110 @@ function setupIpcHandlers() {
         return { success: true, partition: partitionName };
     });
 
+    // --- Thumbnail Fetch + Cache ---
+
+    const thumbnailDir = path.join(app.getPath('userData'), 'thumbnails');
+
+    const ensureThumbnailDir = () => {
+        if (!fs.existsSync(thumbnailDir)) {
+            fs.mkdirSync(thumbnailDir, { recursive: true });
+        }
+    };
+
+    // Clean thumbnails older than 30 days
+    const cleanOldThumbnails = () => {
+        try {
+            if (!fs.existsSync(thumbnailDir)) return;
+            const now = Date.now();
+            const maxAge = 30 * 24 * 60 * 60 * 1000;
+            const files = fs.readdirSync(thumbnailDir);
+            for (const file of files) {
+                const filePath = path.join(thumbnailDir, file);
+                try {
+                    const stat = fs.statSync(filePath);
+                    if (now - stat.atimeMs > maxAge) {
+                        fs.unlinkSync(filePath);
+                    }
+                } catch {}
+            }
+        } catch {}
+    };
+
+    // Run cleanup on startup
+    cleanOldThumbnails();
+
+    ipcMain.handle('fetch-thumbnail', async (_event, { url, courseId }) => {
+        if (!url || !courseId) return { success: false, error: 'Missing url or courseId' };
+
+        ensureThumbnailDir();
+
+        // Check cache first
+        const cachedPath = path.join(thumbnailDir, `${courseId}.jpg`);
+        if (fs.existsSync(cachedPath)) {
+            // Touch atime
+            try {
+                const now = new Date();
+                fs.utimesSync(cachedPath, now, fs.statSync(cachedPath).mtime);
+            } catch {}
+            return { success: true, thumbnailPath: cachedPath };
+        }
+
+        try {
+            // Fetch the page HTML and extract og:image
+            const https = require('https');
+            const http = require('http');
+
+            const fetchUrl = (targetUrl) => new Promise((resolve, reject) => {
+                const protocol = targetUrl.startsWith('https') ? https : http;
+                const req = protocol.get(targetUrl, {
+                    timeout: 10000,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    }
+                }, (res) => {
+                    // Follow redirects
+                    if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                        fetchUrl(res.headers.location).then(resolve).catch(reject);
+                        return;
+                    }
+                    const chunks = [];
+                    res.on('data', (chunk) => chunks.push(chunk));
+                    res.on('end', () => resolve({
+                        body: Buffer.concat(chunks),
+                        contentType: res.headers['content-type'] || ''
+                    }));
+                });
+                req.on('error', reject);
+                req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+            });
+
+            const { body, contentType } = await fetchUrl(url);
+
+            let imageUrl = null;
+
+            if (contentType.includes('text/html')) {
+                const html = body.toString('utf-8').slice(0, 50000);
+                const ogMatch = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)
+                    || html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["']/i);
+                if (ogMatch) {
+                    imageUrl = ogMatch[1];
+                }
+            }
+
+            if (!imageUrl) {
+                return { success: false, error: 'No og:image found' };
+            }
+
+            // Download the image
+            const { body: imgData } = await fetchUrl(imageUrl);
+            fs.writeFileSync(cachedPath, imgData);
+
+            return { success: true, thumbnailPath: cachedPath };
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    });
+
     ipcMain.handle('clear-session', async (event, platform) => {
         if (!platform || typeof platform !== 'string') {
             return { success: false, error: 'Invalid platform' };

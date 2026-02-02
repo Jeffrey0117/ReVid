@@ -9,6 +9,7 @@ import { useI18n } from '../../i18n.jsx';
  *   url            - course URL to load
  *   platform       - platform id for session partitioning
  *   playbackRate   - current playback speed
+ *   startAt        - seconds to resume from (auto-seek on video detect)
  *   onVideoDetected - callback({ duration, src })
  *   onVideoState   - callback({ currentTime, duration, paused, playbackRate })
  *   className      - additional CSS classes
@@ -17,6 +18,7 @@ export const CourseWebview = ({
   url,
   platform = 'custom',
   playbackRate = 1,
+  startAt = 0,
   onVideoDetected,
   onVideoState,
   className = ''
@@ -26,6 +28,8 @@ export const CourseWebview = ({
   const [isLoading, setIsLoading] = useState(true);
   const [videoFound, setVideoFound] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
+  const [resumeToast, setResumeToast] = useState(null);
+  const seekedRef = useRef(false);
 
   // Inject video detector script when webview is ready
   useEffect(() => {
@@ -44,6 +48,7 @@ export const CourseWebview = ({
     const handleLoadStart = () => {
       setIsLoading(true);
       setVideoFound(false);
+      seekedRef.current = false;
     };
 
     webview.addEventListener('dom-ready', handleDomReady);
@@ -78,6 +83,30 @@ export const CourseWebview = ({
           duration: data.duration,
           src: data.src
         });
+
+        // Auto-seek to last position
+        if (startAt > 0 && !seekedRef.current) {
+          seekedRef.current = true;
+          const webview = webviewRef.current;
+          if (webview) {
+            setTimeout(() => {
+              webview.executeJavaScript(`
+                (function() {
+                  var v = document.querySelector('video');
+                  if (v && v.duration > 0) v.currentTime = ${startAt};
+                })();
+              `).catch(function() {});
+            }, 1500);
+
+            const mins = Math.floor(startAt / 60);
+            const secs = Math.floor(startAt % 60);
+            const timeStr = mins > 0
+              ? mins + ':' + String(secs).padStart(2, '0')
+              : secs + 's';
+            setResumeToast(timeStr);
+            setTimeout(() => setResumeToast(null), 3000);
+          }
+        }
       }
 
       if (data.type === 'revid-video-state') {
@@ -102,7 +131,7 @@ export const CourseWebview = ({
       webview.removeEventListener('ipc-message', handleIpcMessage);
       window.removeEventListener('message', handleWindowMessage);
     };
-  }, [onVideoDetected, onVideoState]);
+  }, [onVideoDetected, onVideoState, startAt]);
 
   // Update playback rate when prop changes
   useEffect(() => {
@@ -147,6 +176,18 @@ export const CourseWebview = ({
             <div className="w-8 h-8 border-2 border-white/30 border-t-primary rounded-full animate-spin" />
             <span className="text-white/60 text-sm">{t('detectingVideo')}</span>
           </div>
+        </div>
+      )}
+
+      {/* Resume toast */}
+      {resumeToast && (
+        <div style={{
+          position: 'absolute', bottom: 48, left: '50%', transform: 'translateX(-50%)',
+          padding: '6px 16px', borderRadius: 8,
+          background: 'rgba(0,0,0,0.85)', color: '#fff',
+          fontSize: 13, zIndex: 20, whiteSpace: 'nowrap'
+        }}>
+          {t('resumedAt')} {resumeToast}
         </div>
       )}
 

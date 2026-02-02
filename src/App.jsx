@@ -82,27 +82,52 @@ export default function App() {
 
     const handleAddCourse = useCallback(({ url, title, platform }) => {
         if (!theater.selectedFolderId) return;
-        const course = theater.addCourse(theater.selectedFolderId, { url, title, platform });
+        const folderId = theater.selectedFolderId;
+        const course = theater.addCourse(folderId, { url, title, platform });
         theater.openCourse(course.id);
-    }, [theater.selectedFolderId, theater.addCourse, theater.openCourse]);
+
+        // Async thumbnail fetch for non-YouTube platforms
+        if (platform !== 'youtube') {
+            const api = getElectronAPI();
+            if (api?.fetchThumbnail) {
+                api.fetchThumbnail(url, course.id).then((result) => {
+                    if (result?.success && result.thumbnailPath) {
+                        theater.updateCourseThumbnail(folderId, course.id, result.thumbnailPath);
+                    }
+                }).catch(() => {});
+            }
+        }
+    }, [theater.selectedFolderId, theater.addCourse, theater.openCourse, theater.updateCourseThumbnail]);
+
+    // Save progress and close course
+    const handleCloseCourse = useCallback(() => {
+        const state = theaterVideoStateRef.current;
+        if (state && theater.selectedFolderId && theater.activeCourseId) {
+            theater.updateProgress(theater.selectedFolderId, theater.activeCourseId, {
+                lastPosition: state.currentTime,
+                duration: state.duration
+            });
+        }
+        theater.closeCourse();
+    }, [theater.selectedFolderId, theater.activeCourseId, theater.updateProgress, theater.closeCourse]);
 
     useEffect(() => { localStorage.setItem('revid-view-mode', viewMode); }, [viewMode]);
     useEffect(() => { localStorage.setItem('revid-sidebar-position', sidebarPosition); }, [sidebarPosition]);
     useEffect(() => { localStorage.setItem('revid-grid-size', gridSize); }, [gridSize]);
 
-    // Theater: 5-second progress save
+    // Theater: 3-second progress save (including paused state)
     useEffect(() => {
         if (viewMode !== 'theater' || !theater.activeCourseId || !theater.selectedFolderId) return;
 
         const intervalId = setInterval(() => {
             const state = theaterVideoStateRef.current;
-            if (!state || state.paused) return;
+            if (!state) return;
 
             theater.updateProgress(theater.selectedFolderId, theater.activeCourseId, {
                 lastPosition: state.currentTime,
                 duration: state.duration
             });
-        }, 5000);
+        }, 3000);
 
         return () => clearInterval(intervalId);
     }, [viewMode, theater.activeCourseId, theater.selectedFolderId, theater.updateProgress]);
@@ -140,7 +165,7 @@ export default function App() {
                     setIsEditing(false);
                 } else if (viewMode === 'theater') {
                     if (theater.activeCourseId) {
-                        theater.closeCourse();
+                        handleCloseCourse();
                     } else {
                         setViewMode('grid');
                     }
@@ -626,6 +651,7 @@ export default function App() {
                             onOpenCourse={theater.openCourse}
                             onRemoveCourse={theater.removeCourse}
                             onAddCourse={() => setShowAddCourseDialog(true)}
+                            onAddCourseUrl={handleAddCourse}
                         />
                     )}
 
@@ -654,6 +680,7 @@ export default function App() {
                                             url={theater.activeCourse.url}
                                             platform={theater.activeCourse.platform}
                                             playbackRate={theaterSpeed}
+                                            startAt={theater.activeCourse.progress?.lastPosition || 0}
                                             onVideoDetected={(info) => {
                                                 theater.updateProgress(theater.selectedFolderId, theater.activeCourseId, {
                                                     duration: info.duration
@@ -704,7 +731,7 @@ export default function App() {
                                         </span>
                                         <button
                                             className="btn btn-ghost"
-                                            onClick={theater.closeCourse}
+                                            onClick={handleCloseCourse}
                                             style={{ padding: 4, fontSize: 12 }}
                                             title={t('close')}
                                         >

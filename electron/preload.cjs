@@ -171,6 +171,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.send('mini-player-send', data);
     },
 
+    // --- Thumbnail API ---
+
+    fetchThumbnail: async (url, courseId) => {
+        if (!url || !courseId) return { success: false, error: 'Missing params' };
+        return await ipcRenderer.invoke('fetch-thumbnail', { url, courseId });
+    },
+
     // --- Theater Session API ---
 
     createPersistentSession: async (platform) => {
