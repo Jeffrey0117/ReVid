@@ -13,6 +13,7 @@ import { CompressDialog } from './components/CompressDialog';
 import { AudioDialog } from './components/AudioDialog';
 import { SpeedDialog } from './components/SpeedDialog';
 import { getCachedMetadata } from './utils/videoMetadata';
+import { usePins } from './hooks/usePins';
 
 const VideoEditor = lazy(() => import('./features/editor/VideoEditor'));
 
@@ -51,7 +52,10 @@ export default function App() {
     const [showAudio, setShowAudio] = useState(false);
     const [showSpeed, setShowSpeed] = useState(false);
     const [showToolsMenu, setShowToolsMenu] = useState(false);
+    const [showPinnedOnly, setShowPinnedOnly] = useState(false);
     const [toast, setToast] = useState(null);
+
+    const { isPinned, togglePin, pinnedCount } = usePins();
 
     useEffect(() => { localStorage.setItem('revid-view-mode', viewMode); }, [viewMode]);
     useEffect(() => { localStorage.setItem('revid-sidebar-position', sidebarPosition); }, [sidebarPosition]);
@@ -70,6 +74,11 @@ export default function App() {
     const displayCurrentIndex = useMemo(
         () => displayIndexOf(currentIndex),
         [displayIndexOf, currentIndex]
+    );
+
+    const gridFiles = useMemo(
+        () => showPinnedOnly ? displayFiles.filter(f => isPinned(f)) : displayFiles,
+        [displayFiles, showPinnedOnly, isPinned]
     );
 
     useKeyboardNav({
@@ -102,13 +111,15 @@ export default function App() {
         }
     }, [loadFolder]);
 
-    const handleSelectVideoFromGrid = useCallback((displayIdx) => {
-        const originalIdx = originalIndexOf(displayIdx);
+    const handleSelectVideoFromGrid = useCallback((gridIdx) => {
+        const file = gridFiles[gridIdx];
+        if (!file) return;
+        const originalIdx = files.indexOf(file);
         if (originalIdx >= 0) {
             selectVideo(originalIdx);
             setViewMode('viewer');
         }
-    }, [selectVideo, originalIndexOf]);
+    }, [selectVideo, gridFiles, files]);
 
     const toggleGridSize = useCallback(() => {
         setGridSize(current => {
@@ -300,6 +311,26 @@ export default function App() {
                     </select>
                 )}
 
+                {/* Pin filter (grid mode only) */}
+                {viewMode === 'grid' && pinnedCount > 0 && (
+                    <button
+                        className="btn btn-ghost"
+                        onClick={() => setShowPinnedOnly(prev => !prev)}
+                        title={showPinnedOnly ? 'Show all' : 'Show pinned only'}
+                        style={{
+                            padding: '4px 8px', fontSize: 11,
+                            color: showPinnedOnly ? '#fbbf24' : undefined,
+                            background: showPinnedOnly ? 'rgba(251,191,36,0.1)' : undefined,
+                            display: 'flex', alignItems: 'center', gap: 4
+                        }}
+                    >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill={showPinnedOnly ? '#fbbf24' : 'none'} stroke="currentColor" strokeWidth="2">
+                            <path d="M12 17v5" /><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+                        </svg>
+                        {pinnedCount}
+                    </button>
+                )}
+
                 {/* Grid size (grid mode only) */}
                 {viewMode === 'grid' && files.length > 0 && (
                     <button
@@ -448,10 +479,12 @@ export default function App() {
                             </div>
                         ) : viewMode === 'grid' ? (
                             <VideoThumbnailGrid
-                                files={displayFiles}
-                                currentIndex={displayCurrentIndex}
+                                files={gridFiles}
+                                currentIndex={gridFiles.indexOf(currentVideo)}
                                 onSelectVideo={handleSelectVideoFromGrid}
                                 size={gridSize}
+                                isPinned={isPinned}
+                                onTogglePin={togglePin}
                             />
                         ) : viewMode === 'viewer' && videoSrc ? (
                             <VideoViewer src={videoSrc} />

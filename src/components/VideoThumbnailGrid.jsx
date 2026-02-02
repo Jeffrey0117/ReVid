@@ -8,7 +8,9 @@ export const VideoThumbnailGrid = ({
   files,
   currentIndex,
   onSelectVideo,
-  size = 'medium'
+  size = 'medium',
+  isPinned,
+  onTogglePin
 }) => {
   const sizes = { small: 128, medium: 192, large: 256 };
   const thumbSize = sizes[size] || sizes.medium;
@@ -210,6 +212,27 @@ export const VideoThumbnailGrid = ({
               }}>
                 {index + 1}
               </div>
+
+              {/* Pin button */}
+              {onTogglePin && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onTogglePin(file); }}
+                  style={{
+                    position: 'absolute', bottom: 6, right: 6, zIndex: 4,
+                    width: 24, height: 24, borderRadius: '50%',
+                    background: isPinned?.(file) ? 'rgba(251,191,36,0.9)' : 'rgba(0,0,0,0.5)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    opacity: isPinned?.(file) ? 1 : (hoverIndex === index ? 0.8 : 0),
+                    transition: 'opacity 0.2s',
+                    pointerEvents: 'auto'
+                  }}
+                  title={isPinned?.(file) ? 'Unpin' : 'Pin'}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill={isPinned?.(file) ? '#fff' : 'none'} stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 17v5" /><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+                  </svg>
+                </button>
+              )}
 
               {/* Duration badge */}
               {meta && meta.duration > 0 && (
