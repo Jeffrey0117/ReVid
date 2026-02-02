@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import { VideoViewer } from './features/viewer/VideoViewer';
 import { VideoThumbnailGrid } from './components/VideoThumbnailGrid';
 import { VideoSidebar } from './components/VideoSidebar';
@@ -18,6 +18,13 @@ import { BatchRenameDialog } from './components/BatchRenameDialog';
 import { ConcatDialog } from './components/ConcatDialog';
 import { useI18n } from './i18n.jsx';
 import { useTheme } from './theme.jsx';
+import { useWebTheater } from './hooks/useWebTheater';
+import { usePlaybackSpeed } from './hooks/usePlaybackSpeed';
+import { TheaterSidebar } from './features/theater/TheaterSidebar';
+import { CourseWebview } from './features/theater/CourseWebview';
+import { YouTubePlayer } from './features/theater/YouTubePlayer';
+import { AddCourseDialog } from './features/theater/AddCourseDialog';
+import { SpeedControl } from './components/SpeedControl';
 
 const VideoEditor = lazy(() => import('./features/editor/VideoEditor'));
 
@@ -67,9 +74,38 @@ export default function App() {
 
     const { isPinned, togglePin, pinnedCount } = usePins();
 
+    // Theater hooks
+    const theater = useWebTheater();
+    const { speed: theaterSpeed, selectSpeed: selectTheaterSpeed, SPEED_PRESETS } = usePlaybackSpeed();
+    const [showAddCourseDialog, setShowAddCourseDialog] = useState(false);
+    const theaterVideoStateRef = useRef(null);
+
+    const handleAddCourse = useCallback(({ url, title, platform }) => {
+        if (!theater.selectedFolderId) return;
+        const course = theater.addCourse(theater.selectedFolderId, { url, title, platform });
+        theater.openCourse(course.id);
+    }, [theater.selectedFolderId, theater.addCourse, theater.openCourse]);
+
     useEffect(() => { localStorage.setItem('revid-view-mode', viewMode); }, [viewMode]);
     useEffect(() => { localStorage.setItem('revid-sidebar-position', sidebarPosition); }, [sidebarPosition]);
     useEffect(() => { localStorage.setItem('revid-grid-size', gridSize); }, [gridSize]);
+
+    // Theater: 5-second progress save
+    useEffect(() => {
+        if (viewMode !== 'theater' || !theater.activeCourseId || !theater.selectedFolderId) return;
+
+        const intervalId = setInterval(() => {
+            const state = theaterVideoStateRef.current;
+            if (!state || state.paused) return;
+
+            theater.updateProgress(theater.selectedFolderId, theater.activeCourseId, {
+                lastPosition: state.currentTime,
+                duration: state.duration
+            });
+        }, 5000);
+
+        return () => clearInterval(intervalId);
+    }, [viewMode, theater.activeCourseId, theater.selectedFolderId, theater.updateProgress]);
 
     const {
         displayFiles,
@@ -102,6 +138,12 @@ export default function App() {
             if (e.key === 'Escape') {
                 if (isEditing) {
                     setIsEditing(false);
+                } else if (viewMode === 'theater') {
+                    if (theater.activeCourseId) {
+                        theater.closeCourse();
+                    } else {
+                        setViewMode('grid');
+                    }
                 } else if (viewMode === 'viewer') {
                     setViewMode('grid');
                 }
@@ -258,6 +300,23 @@ export default function App() {
                             )}
                         </button>
                     )}
+
+                    {/* Theater mode toggle */}
+                    <button
+                        className="btn btn-ghost"
+                        onClick={() => setViewMode(prev => prev === 'theater' ? 'grid' : 'theater')}
+                        title={t('theaterMode')}
+                        style={{
+                            padding: 6,
+                            color: viewMode === 'theater' ? theme.accent : undefined,
+                            background: viewMode === 'theater' ? theme.accentBg : undefined
+                        }}
+                    >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
+                            <path d="M6 12v5c3 3 9 3 12 0v-5" />
+                        </svg>
+                    </button>
                 </div>
 
                 {/* Center: Tools (viewer) or Sort/Filter (grid) */}
@@ -554,9 +613,109 @@ export default function App() {
                         />
                     )}
 
+                    {/* Theater Sidebar */}
+                    {viewMode === 'theater' && (
+                        <TheaterSidebar
+                            folders={theater.folders}
+                            selectedFolderId={theater.selectedFolderId}
+                            activeCourseId={theater.activeCourseId}
+                            onSelectFolder={theater.selectFolder}
+                            onCreateFolder={theater.createFolder}
+                            onRenameFolder={theater.renameFolder}
+                            onDeleteFolder={theater.deleteFolder}
+                            onOpenCourse={theater.openCourse}
+                            onRemoveCourse={theater.removeCourse}
+                            onAddCourse={() => setShowAddCourseDialog(true)}
+                        />
+                    )}
+
                     {/* Main Viewport */}
                     <main style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
-                        {files.length === 0 ? (
+                        {viewMode === 'theater' ? (
+                            <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                                {theater.activeCourse ? (
+                                    theater.activeCourse.platform === 'youtube' ? (
+                                        <YouTubePlayer
+                                            url={theater.activeCourse.url}
+                                            playbackRate={theaterSpeed}
+                                            startAt={theater.activeCourse.progress?.lastPosition || 0}
+                                            onVideoDetected={(info) => {
+                                                theater.updateProgress(theater.selectedFolderId, theater.activeCourseId, {
+                                                    duration: info.duration
+                                                });
+                                            }}
+                                            onVideoState={(state) => {
+                                                theaterVideoStateRef.current = state;
+                                            }}
+                                            className="flex-1 min-h-0"
+                                        />
+                                    ) : (
+                                        <CourseWebview
+                                            url={theater.activeCourse.url}
+                                            platform={theater.activeCourse.platform}
+                                            playbackRate={theaterSpeed}
+                                            onVideoDetected={(info) => {
+                                                theater.updateProgress(theater.selectedFolderId, theater.activeCourseId, {
+                                                    duration: info.duration
+                                                });
+                                            }}
+                                            onVideoState={(state) => {
+                                                theaterVideoStateRef.current = state;
+                                            }}
+                                            className="flex-1 min-h-0"
+                                        />
+                                    )
+                                ) : (
+                                    <div style={{
+                                        width: '100%', height: '100%',
+                                        display: 'flex', flexDirection: 'column',
+                                        alignItems: 'center', justifyContent: 'center'
+                                    }}>
+                                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: theme.textTertiary, marginBottom: 16 }}>
+                                            <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
+                                            <path d="M6 12v5c3 3 9 3 12 0v-5" />
+                                        </svg>
+                                        <p style={{ fontSize: 16, color: theme.textTertiary, marginBottom: 8 }}>
+                                            {t('courseTheater')}
+                                        </p>
+                                        <p style={{ fontSize: 13, color: theme.textTertiary }}>
+                                            {t('courseTheaterHint')}
+                                        </p>
+                                    </div>
+                                )}
+
+                                {/* Theater bottom bar: speed control */}
+                                {theater.activeCourse && (
+                                    <div style={{
+                                        flexShrink: 0, height: 40,
+                                        display: 'flex', alignItems: 'center',
+                                        padding: '0 12px', gap: 12,
+                                        background: theme.bgTertiary,
+                                        borderTop: `1px solid ${theme.border}`
+                                    }}>
+                                        <SpeedControl
+                                            speed={theaterSpeed}
+                                            presets={SPEED_PRESETS}
+                                            onSelect={selectTheaterSpeed}
+                                            compact
+                                        />
+                                        <span style={{ fontSize: 12, color: theme.textTertiary, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {theater.activeCourse.title}
+                                        </span>
+                                        <button
+                                            className="btn btn-ghost"
+                                            onClick={theater.closeCourse}
+                                            style={{ padding: 4, fontSize: 12 }}
+                                            title={t('close')}
+                                        >
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        ) : files.length === 0 ? (
                             <div style={{
                                 width: '100%', height: '100%',
                                 display: 'flex', flexDirection: 'column',
@@ -701,6 +860,13 @@ export default function App() {
                     onClose={() => setShowConcat(false)}
                 />
             )}
+
+            {/* Add Course dialog (theater) */}
+            <AddCourseDialog
+                isOpen={showAddCourseDialog}
+                onClose={() => setShowAddCourseDialog(false)}
+                onAdd={handleAddCourse}
+            />
 
             {/* About dialog */}
             {showAbout && (

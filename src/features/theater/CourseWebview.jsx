@@ -72,7 +72,7 @@ export const CourseWebview = ({
       const data = event.data;
       if (!data || typeof data !== 'object') return;
 
-      if (data.type === 'repic-video-detected') {
+      if (data.type === 'revid-video-detected') {
         setVideoFound(true);
         onVideoDetected?.({
           duration: data.duration,
@@ -80,7 +80,7 @@ export const CourseWebview = ({
         });
       }
 
-      if (data.type === 'repic-video-state') {
+      if (data.type === 'revid-video-state') {
         onVideoState?.({
           currentTime: data.currentTime,
           duration: data.duration,
