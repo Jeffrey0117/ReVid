@@ -22,6 +22,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     getDesktopPath: () => path.join(os.homedir(), 'Desktop'),
 
+    getFileSize: (filePath) => {
+        try {
+            const stat = fs.statSync(filePath);
+            return stat.size;
+        } catch (e) {
+            return 0;
+        }
+    },
+
     showSaveDialog: async (defaultPath) => {
         return await ipcRenderer.invoke('show-save-dialog', defaultPath);
     },
