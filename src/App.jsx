@@ -287,6 +287,8 @@ export default function App() {
                 justifyContent: 'space-between',
                 padding: '0 16px',
                 background: theme.bgTertiary,
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
                 borderBottom: `1px solid ${theme.border}`
             }}>
                 {/* Left: Folder + Count + View Toggle */}
@@ -324,12 +326,12 @@ export default function App() {
                             }}
                         >
                             {viewMode === 'grid' ? (
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                     <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
                                     <rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
                                 </svg>
                             ) : (
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                     <rect width="18" height="18" x="3" y="3" rx="2" />
                                 </svg>
                             )}
@@ -347,7 +349,7 @@ export default function App() {
                             background: viewMode === 'theater' ? theme.accentBg : undefined
                         }}
                     >
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <circle cx="12" cy="12" r="10" />
                             <polygon points="10 8 16 12 10 16 10 8" />
                         </svg>
@@ -384,27 +386,28 @@ export default function App() {
                         <div style={{
                             display: 'flex', alignItems: 'center', gap: 1,
                             padding: '2px 4px', borderRadius: 12,
-                            border: `1px solid ${theme.borderSecondary}`,
-                            background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'
+                            border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
+                            background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                            color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.5)'
                         }}>
                             {/* Crop */}
-                            <button className="btn btn-ghost" onClick={() => setIsEditing(true)} title={t('cropVideo')} style={{ padding: 5, borderRadius: 8, display: 'flex' }}>
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                            <button className="btn btn-ghost" onClick={() => setIsEditing(true)} title={t('cropVideo')} style={{ padding: 6, borderRadius: 8, display: 'flex' }}>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                                     <circle cx="6" cy="6" r="3" /><path d="M8.12 8.12 12 12" />
                                     <path d="M20 4 8.12 15.88" /><circle cx="6" cy="18" r="3" />
                                     <path d="M14.8 14.8 20 20" />
                                 </svg>
                             </button>
                             {/* Screenshots */}
-                            <button className="btn btn-ghost" onClick={() => setShowScreenshots(true)} title={t('screenshots')} style={{ padding: 5, borderRadius: 8, display: 'flex' }}>
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                            <button className="btn btn-ghost" onClick={() => setShowScreenshots(true)} title={t('screenshots')} style={{ padding: 6, borderRadius: 8, display: 'flex' }}>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                                     <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
                                     <circle cx="12" cy="13" r="3" />
                                 </svg>
                             </button>
                             {/* GIF */}
-                            <button className="btn btn-ghost" onClick={() => setShowGif(true)} title={t('createGif')} style={{ padding: 5, borderRadius: 8, display: 'flex' }}>
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                            <button className="btn btn-ghost" onClick={() => setShowGif(true)} title={t('createGif')} style={{ padding: 6, borderRadius: 8, display: 'flex' }}>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                                     <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
                                     <path d="M7 2v20" /><path d="M17 2v20" />
                                     <path d="M2 12h20" /><path d="M2 7h5" /><path d="M2 17h5" />
@@ -412,45 +415,45 @@ export default function App() {
                                 </svg>
                             </button>
                             {/* Compress */}
-                            <button className="btn btn-ghost" onClick={() => setShowCompress(true)} title={t('compress')} style={{ padding: 5, borderRadius: 8, display: 'flex' }}>
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                            <button className="btn btn-ghost" onClick={() => setShowCompress(true)} title={t('compress')} style={{ padding: 6, borderRadius: 8, display: 'flex' }}>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                                     <polyline points="4 14 10 14 10 20" /><polyline points="20 10 14 10 14 4" />
                                     <line x1="14" y1="10" x2="21" y2="3" /><line x1="3" y1="21" x2="10" y2="14" />
                                 </svg>
                             </button>
                             {/* Audio */}
-                            <button className="btn btn-ghost" onClick={() => setShowAudio(true)} title={t('extractAudio')} style={{ padding: 5, borderRadius: 8, display: 'flex' }}>
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                            <button className="btn btn-ghost" onClick={() => setShowAudio(true)} title={t('extractAudio')} style={{ padding: 6, borderRadius: 8, display: 'flex' }}>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                                     <path d="M9 18V5l12-2v13" />
                                     <circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
                                 </svg>
                             </button>
                             {/* Speed */}
-                            <button className="btn btn-ghost" onClick={() => setShowSpeed(true)} title={t('speedOutput')} style={{ padding: 5, borderRadius: 8, display: 'flex' }}>
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                            <button className="btn btn-ghost" onClick={() => setShowSpeed(true)} title={t('speedOutput')} style={{ padding: 6, borderRadius: 8, display: 'flex' }}>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                                     <path d="m12 14 4-4" />
                                     <path d="M3.34 19a10 10 0 1 1 17.32 0" />
                                 </svg>
                             </button>
 
-                            <div style={{ width: 1, height: 26, margin: '0 3px', background: theme.borderSecondary }} />
+                            <div style={{ width: 1, height: 20, margin: '0 3px', background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
 
                             {/* Batch Crop */}
-                            <button className="btn btn-ghost" onClick={() => setShowBatchCrop(true)} title={t('batchCrop')} style={{ padding: 5, borderRadius: 8, display: 'flex' }}>
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                            <button className="btn btn-ghost" onClick={() => setShowBatchCrop(true)} title={t('batchCrop')} style={{ padding: 6, borderRadius: 8, display: 'flex' }}>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                                     <path d="M6 2v14a2 2 0 0 0 2 2h14" /><path d="M18 22V8a2 2 0 0 0-2-2H2" />
                                 </svg>
                             </button>
                             {/* Rename */}
-                            <button className="btn btn-ghost" onClick={() => setShowBatchRename(true)} title={t('batchRename')} style={{ padding: 5, borderRadius: 8, display: 'flex' }}>
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                            <button className="btn btn-ghost" onClick={() => setShowBatchRename(true)} title={t('batchRename')} style={{ padding: 6, borderRadius: 8, display: 'flex' }}>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                                     <polyline points="4 7 4 4 20 4 20 7" /><line x1="9" y1="20" x2="15" y2="20" />
                                     <line x1="12" y1="4" x2="12" y2="20" />
                                 </svg>
                             </button>
                             {/* Concat */}
-                            <button className="btn btn-ghost" onClick={() => setShowConcat(true)} title={t('concatVideos')} style={{ padding: 5, borderRadius: 8, display: 'flex' }}>
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                            <button className="btn btn-ghost" onClick={() => setShowConcat(true)} title={t('concatVideos')} style={{ padding: 6, borderRadius: 8, display: 'flex' }}>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                                     <path d="m8 6 4-4 4 4" /><path d="M12 2v10.3a4 4 0 0 1-1.172 2.872L4 22" />
                                     <path d="m20 22-5-5" />
                                 </svg>

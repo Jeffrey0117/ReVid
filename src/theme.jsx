@@ -26,7 +26,7 @@ const themes = {
   light: {
     bg: '#f5f5f5',
     bgSecondary: '#ffffff',
-    bgTertiary: 'rgba(0,0,0,0.03)',
+    bgTertiary: 'rgba(255,255,255,0.8)',
     text: '#1a1a1a',
     textSecondary: 'rgba(0,0,0,0.65)',
     textTertiary: 'rgba(0,0,0,0.4)',
