@@ -27,17 +27,21 @@ button {
 .btn-primary { background: #3b82f6; color: #fff; }
 .btn-primary:hover { background: #2563eb; }
 .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+/* Dark theme buttons */
+[data-theme="dark"] .btn-ghost { color: rgba(255,255,255,0.7); }
+[data-theme="dark"] .btn-ghost:hover { color: #fff; background: rgba(255,255,255,0.1); }
+/* Light theme buttons */
+[data-theme="light"] .btn-ghost { color: rgba(0,0,0,0.55); }
+[data-theme="light"] .btn-ghost:hover { color: rgba(0,0,0,0.85); background: rgba(0,0,0,0.06); }
+/* Fallback (outside data-theme) */
 .btn-ghost { color: rgba(255,255,255,0.7); }
 .btn-ghost:hover { color: #fff; background: rgba(255,255,255,0.1); }
 
 /* Dark select dropdowns */
-select {
-    color-scheme: dark;
-}
-select option {
-    background: #1a1a1a;
-    color: #fff;
-}
+[data-theme="dark"] select { color-scheme: dark; }
+[data-theme="dark"] select option { background: #1a1a1a; color: #fff; }
+[data-theme="light"] select { color-scheme: light; }
+[data-theme="light"] select option { background: #fff; color: #1a1a1a; }
 
 @keyframes spin {
     from { transform: rotate(0deg); }
@@ -61,4 +65,8 @@ select option {
     bottom: 0;
     left: 0;
     right: 0;
+}
+/* Muted Plyr accent in light mode */
+[data-theme="light"] .plyr {
+    --plyr-color-main: #6a9fd4;
 }

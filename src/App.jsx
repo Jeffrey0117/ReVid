@@ -58,7 +58,6 @@ export default function App() {
     const [showCompress, setShowCompress] = useState(false);
     const [showAudio, setShowAudio] = useState(false);
     const [showSpeed, setShowSpeed] = useState(false);
-    const [showToolsMenu, setShowToolsMenu] = useState(false);
     const [showBatchRename, setShowBatchRename] = useState(false);
     const [showConcat, setShowConcat] = useState(false);
     const [showPinnedOnly, setShowPinnedOnly] = useState(false);
@@ -188,289 +187,295 @@ export default function App() {
     }, [sidebarPosition]);
 
     const sidebarTitle = useMemo(() => {
-        return sidebarPosition === 'left' ? 'Switch to Bottom' : 'Switch to Left';
-    }, [sidebarPosition]);
+        return sidebarPosition === 'left' ? t('switchToBottom') : t('switchToLeft');
+    }, [sidebarPosition, t]);
 
     return (
-        <div style={{
-            width: '100%', height: '100%',
-            display: 'flex', flexDirection: 'column',
-            background: theme.bg, color: theme.text,
-            overflow: 'hidden', userSelect: 'none'
-        }}>
+        <div
+            data-theme={isDark ? 'dark' : 'light'}
+            style={{
+                width: '100%', height: '100%',
+                display: 'flex', flexDirection: 'column',
+                background: theme.bg, color: theme.text,
+                overflow: 'hidden', userSelect: 'none'
+            }}
+        >
             {/* Toolbar */}
             <div style={{
                 flexShrink: 0, height: 48,
                 display: 'flex', alignItems: 'center',
-                padding: '0 12px', gap: 8,
+                justifyContent: 'space-between',
+                padding: '0 12px',
                 background: theme.bgTertiary,
                 borderBottom: `1px solid ${theme.border}`
             }}>
-                <button className="btn btn-ghost" onClick={handleOpenFolder}
-                    style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M5 19a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4l2 2h4a2 2 0 0 1 2 2v1" />
-                        <path d="M20 19a2 2 0 0 1-2-2V9a2 2 0 0 0-2-2h-4l-2-2H6a2 2 0 0 0-2 2" />
-                    </svg>
-                    <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {folderName || t('openFolder')}
-                    </span>
-                </button>
-
-                {files.length > 0 && (
-                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontVariantNumeric: 'tabular-nums' }}>
-                        {viewMode === 'viewer' && currentIndex >= 0
-                            ? `${currentIndex + 1} / ${files.length}`
-                            : filterExt !== 'all'
-                                ? `${displayFiles.length} / ${files.length} ${t('videos')}`
-                                : `${files.length} ${t('videos')}`
-                        }
-                    </span>
-                )}
-
-                <div style={{ flex: 1 }} />
-
-                {/* Grid/Viewer toggle */}
-                {files.length > 0 && (
-                    <button
-                        className="btn btn-ghost"
-                        onClick={() => setViewMode(prev => prev === 'grid' ? 'viewer' : 'grid')}
-                        title={viewMode === 'grid' ? 'Switch to Viewer' : 'Switch to Grid'}
-                        style={{
-                            padding: 6,
-                            color: viewMode === 'grid' ? '#3b82f6' : undefined,
-                            background: viewMode === 'grid' ? 'rgba(59,130,246,0.1)' : undefined
-                        }}
-                    >
-                        {viewMode === 'grid' ? (
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
-                                <rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
-                            </svg>
-                        ) : (
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <rect width="18" height="18" x="3" y="3" rx="2" />
-                            </svg>
-                        )}
+                {/* Left: Folder + Count + View Toggle */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                    <button className="btn btn-ghost" onClick={handleOpenFolder}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M5 19a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4l2 2h4a2 2 0 0 1 2 2v1" />
+                            <path d="M20 19a2 2 0 0 1-2-2V9a2 2 0 0 0-2-2h-4l-2-2H6a2 2 0 0 0-2 2" />
+                        </svg>
+                        <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {folderName || t('openFolder')}
+                        </span>
                     </button>
-                )}
 
-                {/* Sort (grid mode only) */}
-                {viewMode === 'grid' && files.length > 0 && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <select
-                            value={sortBy}
-                            onChange={(e) => setSortBy(e.target.value)}
-                            style={{
-                                background: 'rgba(255,255,255,0.08)',
-                                color: 'rgba(255,255,255,0.7)',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: 4,
-                                padding: '3px 6px',
-                                fontSize: 11,
-                                cursor: 'pointer',
-                                outline: 'none'
-                            }}
-                        >
-                            {SORT_OPTIONS.map(opt => (
-                                <option key={opt.value} value={opt.value}>{opt.label}</option>
-                            ))}
-                        </select>
+                    {files.length > 0 && (
+                        <span style={{ fontSize: 12, color: theme.textTertiary, fontVariantNumeric: 'tabular-nums' }}>
+                            {viewMode === 'viewer' && currentIndex >= 0
+                                ? `${currentIndex + 1} / ${files.length}`
+                                : filterExt !== 'all'
+                                    ? `${displayFiles.length} / ${files.length} ${t('videos')}`
+                                    : `${files.length} ${t('videos')}`
+                            }
+                        </span>
+                    )}
+
+                    {files.length > 0 && (
                         <button
                             className="btn btn-ghost"
-                            onClick={toggleSortDir}
-                            title={sortDir === 'asc' ? 'Ascending' : 'Descending'}
-                            style={{ padding: 4, fontSize: 12, lineHeight: 1 }}
+                            onClick={() => setViewMode(prev => prev === 'grid' ? 'viewer' : 'grid')}
+                            title={viewMode === 'grid' ? t('switchToViewer') : t('switchToGrid')}
+                            style={{
+                                padding: 6,
+                                color: viewMode === 'grid' ? theme.accent : undefined,
+                                background: viewMode === 'grid' ? theme.accentBg : undefined
+                            }}
                         >
-                            {sortDir === 'asc' ? (
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="m3 8 4-4 4 4" /><path d="M7 4v16" />
-                                    <path d="M11 12h4" /><path d="M11 16h7" /><path d="M11 20h10" />
+                            {viewMode === 'grid' ? (
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
+                                    <rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
                                 </svg>
                             ) : (
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="m3 16 4 4 4-4" /><path d="M7 20V4" />
-                                    <path d="M11 4h10" /><path d="M11 8h7" /><path d="M11 12h4" />
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect width="18" height="18" x="3" y="3" rx="2" />
                                 </svg>
                             )}
                         </button>
-                    </div>
-                )}
+                    )}
+                </div>
 
-                {/* Filter by extension (grid mode only) */}
-                {viewMode === 'grid' && availableExtensions.length > 1 && (
-                    <select
-                        value={filterExt}
-                        onChange={(e) => setFilterExt(e.target.value)}
-                        style={{
-                            background: 'rgba(255,255,255,0.08)',
-                            color: 'rgba(255,255,255,0.7)',
-                            border: '1px solid rgba(255,255,255,0.1)',
-                            borderRadius: 4,
-                            padding: '3px 6px',
-                            fontSize: 11,
-                            cursor: 'pointer',
-                            outline: 'none'
-                        }}
-                    >
-                        <option value="all">All types</option>
-                        {availableExtensions.map(ext => (
-                            <option key={ext} value={ext}>{ext.toUpperCase()}</option>
-                        ))}
-                    </select>
-                )}
+                {/* Center: Tools (viewer) or Sort/Filter (grid) */}
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                    {viewMode === 'viewer' && currentVideo && (
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: 1,
+                            padding: '2px 4px', borderRadius: 12,
+                            border: `1px solid ${theme.borderSecondary}`,
+                            background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'
+                        }}>
+                            {/* Crop */}
+                            <button className="btn btn-ghost" onClick={() => setIsEditing(true)} title={t('cropVideo')} style={{ padding: 5, borderRadius: 8, display: 'flex' }}>
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <circle cx="6" cy="6" r="3" /><path d="M8.12 8.12 12 12" />
+                                    <path d="M20 4 8.12 15.88" /><circle cx="6" cy="18" r="3" />
+                                    <path d="M14.8 14.8 20 20" />
+                                </svg>
+                            </button>
+                            {/* Screenshots */}
+                            <button className="btn btn-ghost" onClick={() => setShowScreenshots(true)} title={t('screenshots')} style={{ padding: 5, borderRadius: 8, display: 'flex' }}>
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+                                    <circle cx="12" cy="13" r="3" />
+                                </svg>
+                            </button>
+                            {/* GIF */}
+                            <button className="btn btn-ghost" onClick={() => setShowGif(true)} title={t('createGif')} style={{ padding: 5, borderRadius: 8, display: 'flex' }}>
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
+                                    <path d="M7 2v20" /><path d="M17 2v20" />
+                                    <path d="M2 12h20" /><path d="M2 7h5" /><path d="M2 17h5" />
+                                    <path d="M17 7h5" /><path d="M17 17h5" />
+                                </svg>
+                            </button>
+                            {/* Compress */}
+                            <button className="btn btn-ghost" onClick={() => setShowCompress(true)} title={t('compress')} style={{ padding: 5, borderRadius: 8, display: 'flex' }}>
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="4 14 10 14 10 20" /><polyline points="20 10 14 10 14 4" />
+                                    <line x1="14" y1="10" x2="21" y2="3" /><line x1="3" y1="21" x2="10" y2="14" />
+                                </svg>
+                            </button>
+                            {/* Audio */}
+                            <button className="btn btn-ghost" onClick={() => setShowAudio(true)} title={t('extractAudio')} style={{ padding: 5, borderRadius: 8, display: 'flex' }}>
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M9 18V5l12-2v13" />
+                                    <circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
+                                </svg>
+                            </button>
+                            {/* Speed */}
+                            <button className="btn btn-ghost" onClick={() => setShowSpeed(true)} title={t('speedOutput')} style={{ padding: 5, borderRadius: 8, display: 'flex' }}>
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="m12 14 4-4" />
+                                    <path d="M3.34 19a10 10 0 1 1 17.32 0" />
+                                </svg>
+                            </button>
 
-                {/* Pin filter (grid mode only) */}
-                {viewMode === 'grid' && pinnedCount > 0 && (
-                    <button
-                        className="btn btn-ghost"
-                        onClick={() => setShowPinnedOnly(prev => !prev)}
-                        title={showPinnedOnly ? 'Show all' : 'Show pinned only'}
-                        style={{
-                            padding: '4px 8px', fontSize: 11,
-                            color: showPinnedOnly ? '#fbbf24' : undefined,
-                            background: showPinnedOnly ? 'rgba(251,191,36,0.1)' : undefined,
-                            display: 'flex', alignItems: 'center', gap: 4
-                        }}
-                    >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill={showPinnedOnly ? '#fbbf24' : 'none'} stroke="currentColor" strokeWidth="2">
-                            <path d="M12 17v5" /><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
-                        </svg>
-                        {pinnedCount}
-                    </button>
-                )}
+                            <div style={{ width: 1, height: 26, margin: '0 3px', background: theme.borderSecondary }} />
 
-                {/* Grid size (grid mode only) */}
-                {viewMode === 'grid' && files.length > 0 && (
-                    <button
-                        className="btn btn-ghost"
-                        onClick={toggleGridSize}
-                        title="Toggle grid size"
-                        style={{ padding: '4px 8px', fontSize: 10, textTransform: 'uppercase', letterSpacing: 1 }}
-                    >
-                        {gridSize}
-                    </button>
-                )}
+                            {/* Batch Crop */}
+                            <button className="btn btn-ghost" onClick={() => setShowBatchCrop(true)} title={t('batchCrop')} style={{ padding: 5, borderRadius: 8, display: 'flex' }}>
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M6 2v14a2 2 0 0 0 2 2h14" /><path d="M18 22V8a2 2 0 0 0-2-2H2" />
+                                </svg>
+                            </button>
+                            {/* Rename */}
+                            <button className="btn btn-ghost" onClick={() => setShowBatchRename(true)} title={t('batchRename')} style={{ padding: 5, borderRadius: 8, display: 'flex' }}>
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="4 7 4 4 20 4 20 7" /><line x1="9" y1="20" x2="15" y2="20" />
+                                    <line x1="12" y1="4" x2="12" y2="20" />
+                                </svg>
+                            </button>
+                            {/* Concat */}
+                            <button className="btn btn-ghost" onClick={() => setShowConcat(true)} title={t('concatVideos')} style={{ padding: 5, borderRadius: 8, display: 'flex' }}>
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="m8 6 4-4 4 4" /><path d="M12 2v10.3a4 4 0 0 1-1.172 2.872L4 22" />
+                                    <path d="m20 22-5-5" />
+                                </svg>
+                            </button>
+                        </div>
+                    )}
 
-                {/* Sidebar position toggle (viewer mode only) */}
-                {viewMode === 'viewer' && files.length > 0 && (
-                    <button
-                        className="btn btn-ghost"
-                        onClick={toggleSidebarPosition}
-                        title={sidebarTitle}
-                        style={{
-                            padding: 6,
-                            color: '#3b82f6',
-                            background: 'rgba(59,130,246,0.1)'
-                        }}
-                    >
-                        {sidebarIcon}
-                    </button>
-                )}
+                    {viewMode === 'grid' && files.length > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <select
+                                value={sortBy}
+                                onChange={(e) => setSortBy(e.target.value)}
+                                style={{
+                                    background: theme.inputBg,
+                                    color: theme.textSecondary,
+                                    border: `1px solid ${theme.borderSecondary}`,
+                                    borderRadius: 4,
+                                    padding: '3px 6px',
+                                    fontSize: 11,
+                                    cursor: 'pointer',
+                                    outline: 'none'
+                                }}
+                            >
+                                {SORT_OPTIONS.map(opt => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                            </select>
+                            <button
+                                className="btn btn-ghost"
+                                onClick={toggleSortDir}
+                                title={sortDir === 'asc' ? t('ascending') : t('descending')}
+                                style={{ padding: 4, fontSize: 12, lineHeight: 1 }}
+                            >
+                                {sortDir === 'asc' ? (
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="m3 8 4-4 4 4" /><path d="M7 4v16" />
+                                        <path d="M11 12h4" /><path d="M11 16h7" /><path d="M11 20h10" />
+                                    </svg>
+                                ) : (
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="m3 16 4 4 4-4" /><path d="M7 20V4" />
+                                        <path d="M11 4h10" /><path d="M11 8h7" /><path d="M11 12h4" />
+                                    </svg>
+                                )}
+                            </button>
 
-                {/* Crop button (viewer mode with video) */}
-                {viewMode === 'viewer' && currentVideo && (
-                    <button
-                        className="btn btn-ghost"
-                        onClick={() => setIsEditing(true)}
-                        title="Crop Video"
-                        style={{ padding: 6 }}
-                    >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="6" cy="6" r="3" /><path d="M8.12 8.12 12 12" />
-                            <path d="M20 4 8.12 15.88" /><circle cx="6" cy="18" r="3" />
-                            <path d="M14.8 14.8 20 20" />
-                        </svg>
-                    </button>
-                )}
+                            {availableExtensions.length > 1 && (
+                                <select
+                                    value={filterExt}
+                                    onChange={(e) => setFilterExt(e.target.value)}
+                                    style={{
+                                        background: theme.inputBg,
+                                        color: theme.textSecondary,
+                                        border: `1px solid ${theme.borderSecondary}`,
+                                        borderRadius: 4,
+                                        padding: '3px 6px',
+                                        fontSize: 11,
+                                        cursor: 'pointer',
+                                        outline: 'none'
+                                    }}
+                                >
+                                    <option value="all">{t('allTypes')}</option>
+                                    {availableExtensions.map(ext => (
+                                        <option key={ext} value={ext}>{ext.toUpperCase()}</option>
+                                    ))}
+                                </select>
+                            )}
 
-                {/* Tools dropdown (viewer mode with video) */}
-                {viewMode === 'viewer' && currentVideo && (
-                    <div style={{ position: 'relative' }}>
+                            {pinnedCount > 0 && (
+                                <button
+                                    className="btn btn-ghost"
+                                    onClick={() => setShowPinnedOnly(prev => !prev)}
+                                    title={showPinnedOnly ? t('showAll') : t('showPinnedOnly')}
+                                    style={{
+                                        padding: '4px 8px', fontSize: 11,
+                                        color: showPinnedOnly ? theme.pin : undefined,
+                                        background: showPinnedOnly ? (isDark ? 'rgba(251,191,36,0.1)' : 'rgba(217,119,6,0.1)') : undefined,
+                                        display: 'flex', alignItems: 'center', gap: 4
+                                    }}
+                                >
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill={showPinnedOnly ? theme.pin : 'none'} stroke="currentColor" strokeWidth="2">
+                                        <path d="M12 17v5" /><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+                                    </svg>
+                                    {pinnedCount}
+                                </button>
+                            )}
+
+                            <button
+                                className="btn btn-ghost"
+                                onClick={toggleGridSize}
+                                title="Toggle grid size"
+                                style={{ padding: '4px 8px', fontSize: 10, textTransform: 'uppercase', letterSpacing: 1 }}
+                            >
+                                {gridSize}
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                {/* Right: Sidebar + Lang + Theme */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {viewMode === 'viewer' && files.length > 0 && (
                         <button
                             className="btn btn-ghost"
-                            onClick={() => setShowToolsMenu(prev => !prev)}
-                            title="Tools"
-                            style={{ padding: 6, display: 'flex', alignItems: 'center', gap: 4 }}
+                            onClick={toggleSidebarPosition}
+                            title={sidebarTitle}
+                            style={{
+                                padding: 6,
+                                color: theme.accent,
+                                background: theme.accentBg
+                            }}
                         >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /><circle cx="5" cy="12" r="1" />
-                            </svg>
+                            {sidebarIcon}
                         </button>
-                        {showToolsMenu && (
-                            <>
-                                <div
-                                    style={{ position: 'fixed', inset: 0, zIndex: 99 }}
-                                    onClick={() => setShowToolsMenu(false)}
-                                />
-                                <div style={{
-                                    position: 'absolute', top: '100%', right: 0, zIndex: 100,
-                                    marginTop: 4, background: theme.dialogBg,
-                                    border: `1px solid ${theme.borderSecondary}`,
-                                    borderRadius: 8, padding: 4,
-                                    minWidth: 180, boxShadow: '0 8px 24px rgba(0,0,0,0.5)'
-                                }}>
-                                    {[
-                                        { label: t('screenshots'), action: () => setShowScreenshots(true) },
-                                        { label: t('createGif'), action: () => setShowGif(true) },
-                                        { label: t('compress'), action: () => setShowCompress(true) },
-                                        { label: t('extractAudio'), action: () => setShowAudio(true) },
-                                        { label: t('speedOutput'), action: () => setShowSpeed(true) },
-                                        { label: t('batchCrop'), action: () => setShowBatchCrop(true) },
-                                        { label: t('batchRename'), action: () => setShowBatchRename(true) },
-                                        { label: t('concatVideos'), action: () => setShowConcat(true) },
-                                    ].map(item => (
-                                        <button
-                                            key={item.label}
-                                            onClick={() => { item.action(); setShowToolsMenu(false); }}
-                                            style={{
-                                                display: 'block', width: '100%', textAlign: 'left',
-                                                padding: '8px 12px', borderRadius: 4,
-                                                fontSize: 13, color: 'rgba(255,255,255,0.8)',
-                                                transition: 'background 0.1s'
-                                            }}
-                                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
-                                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                        >
-                                            {item.label}
-                                        </button>
-                                    ))}
-                                </div>
-                            </>
-                        )}
-                    </div>
-                )}
-
-                {/* Language toggle */}
-                <button
-                    className="btn btn-ghost"
-                    onClick={() => setLang(lang === 'en' ? 'zh-TW' : 'en')}
-                    title={lang === 'en' ? 'Switch to Chinese' : 'Switch to English'}
-                    style={{ padding: '4px 8px', fontSize: 11, fontWeight: 600 }}
-                >
-                    {lang === 'en' ? 'EN' : 'ZH'}
-                </button>
-
-                {/* Theme toggle */}
-                <button
-                    className="btn btn-ghost"
-                    onClick={toggleTheme}
-                    title={isDark ? t('lightMode') : t('darkMode')}
-                    style={{ padding: 6 }}
-                >
-                    {isDark ? (
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" />
-                            <path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" />
-                            <path d="M2 12h2" /><path d="M20 12h2" />
-                            <path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" />
-                        </svg>
-                    ) : (
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
-                        </svg>
                     )}
-                </button>
+
+                    <button
+                        className="btn btn-ghost"
+                        onClick={() => setLang(lang === 'en' ? 'zh-TW' : 'en')}
+                        title={lang === 'en' ? 'Switch to Chinese' : 'Switch to English'}
+                        style={{ padding: '4px 8px', fontSize: 11, fontWeight: 600 }}
+                    >
+                        {lang === 'en' ? 'EN' : 'ZH'}
+                    </button>
+
+                    <button
+                        className="btn btn-ghost"
+                        onClick={toggleTheme}
+                        title={isDark ? t('lightMode') : t('darkMode')}
+                        style={{ padding: 6 }}
+                    >
+                        {isDark ? (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" />
+                                <path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" />
+                                <path d="M2 12h2" /><path d="M20 12h2" />
+                                <path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" />
+                            </svg>
+                        ) : (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+                            </svg>
+                        )}
+                    </button>
+                </div>
             </div>
 
             {/* Main Content */}
