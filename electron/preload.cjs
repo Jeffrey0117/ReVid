@@ -136,5 +136,56 @@ contextBridge.exposeInMainWorld('electronAPI', {
         dirname: (p) => path.dirname(p)
     },
 
+    // --- Mini Player API ---
+
+    openMiniPlayer: async (options = {}) => {
+        return await ipcRenderer.invoke('mini-player-open', options);
+    },
+
+    closeMiniPlayer: async () => {
+        return await ipcRenderer.invoke('mini-player-close');
+    },
+
+    setMiniPlayerOpacity: async (opacity) => {
+        if (typeof opacity !== 'number') return { success: false, error: 'Invalid opacity' };
+        return await ipcRenderer.invoke('mini-player-set-opacity', opacity);
+    },
+
+    onMiniPlayerInit: (callback) => {
+        ipcRenderer.on('mini-player-init', (_event, data) => callback(data));
+    },
+
+    onMiniPlayerUpdate: (callback) => {
+        ipcRenderer.on('mini-player-update', (_event, data) => callback(data));
+    },
+
+    onMiniPlayerClosed: (callback) => {
+        ipcRenderer.on('mini-player-closed', (_event) => callback());
+    },
+
+    sendTimeSync: (data) => {
+        ipcRenderer.send('mini-player-time-sync', data);
+    },
+
+    sendToMiniPlayer: (data) => {
+        ipcRenderer.send('mini-player-send', data);
+    },
+
+    // --- Theater Session API ---
+
+    createPersistentSession: async (platform) => {
+        if (!platform || typeof platform !== 'string') {
+            return { success: false, error: 'Invalid platform' };
+        }
+        return await ipcRenderer.invoke('create-persistent-session', platform);
+    },
+
+    clearSession: async (platform) => {
+        if (!platform || typeof platform !== 'string') {
+            return { success: false, error: 'Invalid platform' };
+        }
+        return await ipcRenderer.invoke('clear-session', platform);
+    },
+
     isElectron: true
 });

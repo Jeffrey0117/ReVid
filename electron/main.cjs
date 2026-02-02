@@ -10,6 +10,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 let mainWindow = null;
+let miniPlayerWindow = null;
 
 function createWindow() {
     mainWindow = new BrowserWindow({
@@ -23,7 +24,8 @@ function createWindow() {
             nodeIntegration: false,
             contextIsolation: true,
             sandbox: false,
-            webSecurity: false
+            webSecurity: false,
+            webviewTag: true
         }
     });
 
@@ -450,6 +452,112 @@ function setupIpcHandlers() {
                 resolve({ success: false, error: err.message });
             });
         });
+    });
+
+    // --- Mini Player IPC Handlers ---
+
+    ipcMain.handle('mini-player-open', (event, options = {}) => {
+        if (miniPlayerWindow && !miniPlayerWindow.isDestroyed()) {
+            miniPlayerWindow.focus();
+            miniPlayerWindow.webContents.send('mini-player-init', options);
+            return { success: true, alreadyOpen: true };
+        }
+
+        const isDev = !app.isPackaged;
+        const baseUrl = isDev ? 'http://localhost:3001' : `file://${path.join(__dirname, '../dist/index.html')}`;
+
+        miniPlayerWindow = new BrowserWindow({
+            width: 400,
+            height: 250,
+            minWidth: 200,
+            minHeight: 130,
+            frame: false,
+            alwaysOnTop: true,
+            resizable: true,
+            transparent: false,
+            skipTaskbar: false,
+            title: 'Mini Player',
+            webPreferences: {
+                preload: path.join(__dirname, 'preload.cjs'),
+                nodeIntegration: false,
+                contextIsolation: true,
+                sandbox: false,
+                webSecurity: false
+            }
+        });
+
+        miniPlayerWindow.loadURL(`${baseUrl}${isDev ? '' : ''}?mode=mini-player`);
+
+        miniPlayerWindow.webContents.once('did-finish-load', () => {
+            if (miniPlayerWindow && !miniPlayerWindow.isDestroyed()) {
+                miniPlayerWindow.webContents.send('mini-player-init', options);
+            }
+        });
+
+        miniPlayerWindow.on('closed', () => {
+            miniPlayerWindow = null;
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('mini-player-closed');
+            }
+        });
+
+        return { success: true };
+    });
+
+    ipcMain.handle('mini-player-close', () => {
+        if (miniPlayerWindow && !miniPlayerWindow.isDestroyed()) {
+            miniPlayerWindow.close();
+            miniPlayerWindow = null;
+        }
+        return { success: true };
+    });
+
+    ipcMain.handle('mini-player-set-opacity', (event, opacity) => {
+        if (miniPlayerWindow && !miniPlayerWindow.isDestroyed()) {
+            const clamped = Math.max(0.2, Math.min(1.0, opacity));
+            miniPlayerWindow.setOpacity(clamped);
+            return { success: true, opacity: clamped };
+        }
+        return { success: false, error: 'Mini player not open' };
+    });
+
+    ipcMain.on('mini-player-time-sync', (event, data) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('mini-player-update', data);
+        }
+    });
+
+    ipcMain.on('mini-player-send', (event, data) => {
+        if (miniPlayerWindow && !miniPlayerWindow.isDestroyed()) {
+            miniPlayerWindow.webContents.send('mini-player-update', data);
+        }
+    });
+
+    // --- Theater Session Persistence ---
+
+    ipcMain.handle('create-persistent-session', (event, platform) => {
+        if (!platform || typeof platform !== 'string') {
+            return { success: false, error: 'Invalid platform' };
+        }
+        const partitionName = `persist:theater-${platform}`;
+        const { session } = require('electron');
+        session.fromPartition(partitionName);
+        return { success: true, partition: partitionName };
+    });
+
+    ipcMain.handle('clear-session', async (event, platform) => {
+        if (!platform || typeof platform !== 'string') {
+            return { success: false, error: 'Invalid platform' };
+        }
+        try {
+            const { session } = require('electron');
+            const partitionName = `persist:theater-${platform}`;
+            const ses = session.fromPartition(partitionName);
+            await ses.clearStorageData();
+            return { success: true };
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
     });
 }
 
