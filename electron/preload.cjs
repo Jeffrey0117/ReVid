@@ -171,6 +171,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.send('mini-player-send', data);
     },
 
+    // --- Always on Top API ---
+
+    setAlwaysOnTop: async (value) => {
+        return await ipcRenderer.invoke('set-always-on-top', value);
+    },
+
+    getAlwaysOnTop: async () => {
+        return await ipcRenderer.invoke('get-always-on-top');
+    },
+
     // --- Thumbnail API ---
 
     fetchThumbnail: async (url, courseId) => {

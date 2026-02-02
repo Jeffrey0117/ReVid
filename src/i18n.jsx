@@ -89,6 +89,9 @@ const translations = {
     videosJoined: 'Videos joined',
     codecNote: 'Videos must have the same codec/resolution for stream copy.',
     available: 'Available:',
+    // Window
+    pinWindow: 'Pin on Top',
+    unpinWindow: 'Unpin',
     // Theme
     darkMode: 'Dark Mode',
     lightMode: 'Light Mode',
@@ -224,6 +227,8 @@ const translations = {
     videosJoined: '\u5f71\u7247\u5df2\u5408\u4f75',
     codecNote: '\u5f71\u7247\u9700\u8981\u76f8\u540c\u7684\u7de8\u78bc/\u89e3\u6790\u5ea6\u624d\u80fd\u76f4\u63a5\u5408\u4f75',
     available: '\u53ef\u7528\uff1a',
+    pinWindow: '\u91d8\u9078\u7f6e\u9802',
+    unpinWindow: '\u53d6\u6d88\u7f6e\u9802',
     darkMode: '\u6df1\u8272\u6a21\u5f0f',
     lightMode: '\u6dfa\u8272\u6a21\u5f0f',
     settings: '\u8a2d\u5b9a',

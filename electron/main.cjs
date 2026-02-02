@@ -533,6 +533,23 @@ function setupIpcHandlers() {
         }
     });
 
+    // --- Always on Top ---
+
+    ipcMain.handle('set-always-on-top', (_event, value) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.setAlwaysOnTop(!!value);
+            return { success: true, alwaysOnTop: !!value };
+        }
+        return { success: false };
+    });
+
+    ipcMain.handle('get-always-on-top', () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            return { success: true, alwaysOnTop: mainWindow.isAlwaysOnTop() };
+        }
+        return { success: false, alwaysOnTop: false };
+    });
+
     // --- Theater Session Persistence ---
 
     ipcMain.handle('create-persistent-session', (event, platform) => {

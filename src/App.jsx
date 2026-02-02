@@ -71,6 +71,7 @@ export default function App() {
     const [showSettingsMenu, setShowSettingsMenu] = useState(false);
     const [showAbout, setShowAbout] = useState(false);
     const [toast, setToast] = useState(null);
+    const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
 
     const { isPinned, togglePin, pinnedCount } = usePins();
 
@@ -111,6 +112,15 @@ export default function App() {
         }
         theater.closeCourse();
     }, [theater.selectedFolderId, theater.activeCourseId, theater.updateProgress, theater.closeCourse]);
+
+    const toggleAlwaysOnTop = useCallback(async () => {
+        const api = getElectronAPI();
+        if (!api?.setAlwaysOnTop) return;
+        const result = await api.setAlwaysOnTop(!isAlwaysOnTop);
+        if (result?.success) {
+            setIsAlwaysOnTop(result.alwaysOnTop);
+        }
+    }, [isAlwaysOnTop]);
 
     useEffect(() => { localStorage.setItem('revid-view-mode', viewMode); }, [viewMode]);
     useEffect(() => { localStorage.setItem('revid-sidebar-position', sidebarPosition); }, [sidebarPosition]);
@@ -283,9 +293,8 @@ export default function App() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                     <button className="btn btn-ghost" onClick={handleOpenFolder}
                         style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M5 19a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4l2 2h4a2 2 0 0 1 2 2v1" />
-                            <path d="M20 19a2 2 0 0 1-2-2V9a2 2 0 0 0-2-2h-4l-2-2H6a2 2 0 0 0-2 2" />
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
                         </svg>
                         <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {folderName || t('openFolder')}
@@ -543,6 +552,31 @@ export default function App() {
 
                 {/* Right: Actions (REPIC h-9 w-9 pattern) */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {/* Pin / Always on Top */}
+                    <button
+                        onClick={toggleAlwaysOnTop}
+                        title={isAlwaysOnTop ? t('unpinWindow') : t('pinWindow')}
+                        style={{
+                            width: 36, height: 36, padding: 0, borderRadius: 8,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            border: 'none', cursor: 'pointer',
+                            transition: 'background 0.15s',
+                            background: isAlwaysOnTop
+                                ? (isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)')
+                                : 'transparent',
+                            color: isAlwaysOnTop
+                                ? (isDark ? '#fff' : '#1f2937')
+                                : (isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)')
+                        }}
+                        onMouseEnter={e => { if (!isAlwaysOnTop) e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)'; }}
+                        onMouseLeave={e => { if (!isAlwaysOnTop) e.currentTarget.style.background = 'transparent'; }}
+                    >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 17v5" />
+                            <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+                        </svg>
+                    </button>
+
                     {/* About / Info */}
                     <button
                         onClick={() => { setShowAbout(prev => !prev); setShowSettingsMenu(false); }}
