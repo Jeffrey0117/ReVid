@@ -40,6 +40,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
     },
 
+    selectOutputDirectory: () => ipcRenderer.invoke('select-output-directory'),
+
+    extractScreenshots: async (params, onProgress) => {
+        const handler = (_event, pct) => onProgress(pct);
+        ipcRenderer.on('screenshot-progress', handler);
+        try {
+            return await ipcRenderer.invoke('extract-screenshots', params);
+        } finally {
+            ipcRenderer.removeListener('screenshot-progress', handler);
+        }
+    },
+
     showSaveDialog: async (defaultPath) => {
         return await ipcRenderer.invoke('show-save-dialog', defaultPath);
     },

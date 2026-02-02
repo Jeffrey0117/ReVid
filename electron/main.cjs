@@ -69,6 +69,75 @@ function setupIpcHandlers() {
         });
     });
 
+    // Select output directory
+    ipcMain.handle('select-output-directory', async () => {
+        if (!mainWindow) return null;
+        const result = await dialog.showOpenDialog(mainWindow, {
+            properties: ['openDirectory', 'createDirectory']
+        });
+        if (result.canceled) return null;
+        return result.filePaths[0];
+    });
+
+    // Extract screenshots from video at intervals
+    ipcMain.handle('extract-screenshots', async (_event, params) => {
+        const { inputPath, outputDir, interval, format, totalDuration } = params;
+        const ext = format === 'png' ? 'png' : 'jpg';
+        const baseName = path.basename(inputPath, path.extname(inputPath));
+        const outputPattern = path.join(outputDir, `${baseName}_%04d.${ext}`);
+
+        const args = [
+            '-y',
+            '-i', inputPath,
+            '-vf', `fps=1/${interval}`,
+        ];
+
+        if (ext === 'png') {
+            args.push('-compression_level', '3');
+        } else {
+            args.push('-q:v', '2');
+        }
+
+        args.push('-progress', 'pipe:1');
+        args.push(outputPattern);
+
+        const totalUs = (totalDuration || 1) * 1_000_000;
+
+        return new Promise((resolve) => {
+            const proc = spawn(ffmpegPath, args);
+
+            proc.stdout.on('data', (data) => {
+                const str = data.toString();
+                const match = str.match(/out_time_us=(\d+)/);
+                if (match && mainWindow) {
+                    const pct = Math.min(100, Math.round((parseInt(match[1]) / totalUs) * 100));
+                    mainWindow.webContents.send('screenshot-progress', pct);
+                }
+            });
+
+            proc.stderr.on('data', () => {});
+
+            proc.on('close', (code) => {
+                // Count output files
+                try {
+                    const outputFiles = fs.readdirSync(outputDir)
+                        .filter(f => f.startsWith(baseName + '_') && f.endsWith(`.${ext}`));
+                    if (code === 0) {
+                        resolve({ success: true, count: outputFiles.length });
+                    } else {
+                        resolve({ success: false, error: `ffmpeg exited with code ${code}`, count: outputFiles.length });
+                    }
+                } catch (e) {
+                    resolve({ success: code === 0, count: 0, error: code !== 0 ? `ffmpeg exited with code ${code}` : undefined });
+                }
+            });
+
+            proc.on('error', (err) => {
+                resolve({ success: false, error: err.message, count: 0 });
+            });
+        });
+    });
+
     // Crop + trim video using ffmpeg (runs in main process)
     ipcMain.handle('crop-video', async (_event, params) => {
         const { inputPath, outputPath, crop, trim, totalDuration } = params;

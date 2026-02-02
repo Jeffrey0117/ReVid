@@ -6,6 +6,8 @@ import { VideoFilmstrip } from './components/VideoFilmstrip';
 import { useVideoFileSystem } from './hooks/useVideoFileSystem';
 import { useKeyboardNav } from './hooks/useKeyboardNav';
 import { useSortFilter, SORT_OPTIONS } from './hooks/useSortFilter';
+import { ScreenshotDialog } from './components/ScreenshotDialog';
+import { getCachedMetadata } from './utils/videoMetadata';
 
 const VideoEditor = lazy(() => import('./features/editor/VideoEditor'));
 
@@ -37,6 +39,7 @@ export default function App() {
     );
 
     const [isEditing, setIsEditing] = useState(false);
+    const [showScreenshots, setShowScreenshots] = useState(false);
     const [toast, setToast] = useState(null);
 
     useEffect(() => { localStorage.setItem('revid-view-mode', viewMode); }, [viewMode]);
@@ -122,6 +125,12 @@ export default function App() {
         if (!currentVideo) return null;
         return `local-video:///${currentVideo.replace(/\\/g, '/')}`;
     }, [currentVideo]);
+
+    const videoDuration = useMemo(() => {
+        if (!videoSrc) return 0;
+        const meta = getCachedMetadata(videoSrc);
+        return meta?.duration || 0;
+    }, [videoSrc]);
 
     const folderName = useMemo(() => {
         if (!currentPath) return '';
@@ -308,6 +317,21 @@ export default function App() {
                     </button>
                 )}
 
+                {/* Screenshot button (viewer mode with video) */}
+                {viewMode === 'viewer' && currentVideo && (
+                    <button
+                        className="btn btn-ghost"
+                        onClick={() => setShowScreenshots(true)}
+                        title="Extract Screenshots"
+                        style={{ padding: 6 }}
+                    >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+                            <circle cx="12" cy="13" r="3" />
+                        </svg>
+                    </button>
+                )}
+
                 {/* Crop button (viewer mode with video) */}
                 {viewMode === 'viewer' && currentVideo && (
                     <button
@@ -410,6 +434,15 @@ export default function App() {
                         />
                     </Suspense>
                 </div>
+            )}
+
+            {/* Screenshot dialog */}
+            {showScreenshots && currentVideo && (
+                <ScreenshotDialog
+                    videoPath={currentVideo}
+                    videoDuration={videoDuration}
+                    onClose={() => setShowScreenshots(false)}
+                />
             )}
 
             {/* Toast */}
