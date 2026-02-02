@@ -8,6 +8,10 @@ import { useKeyboardNav } from './hooks/useKeyboardNav';
 import { useSortFilter, SORT_OPTIONS } from './hooks/useSortFilter';
 import { ScreenshotDialog } from './components/ScreenshotDialog';
 import { GifDialog } from './components/GifDialog';
+import { BatchCropDialog } from './components/BatchCropDialog';
+import { CompressDialog } from './components/CompressDialog';
+import { AudioDialog } from './components/AudioDialog';
+import { SpeedDialog } from './components/SpeedDialog';
 import { getCachedMetadata } from './utils/videoMetadata';
 
 const VideoEditor = lazy(() => import('./features/editor/VideoEditor'));
@@ -42,6 +46,11 @@ export default function App() {
     const [isEditing, setIsEditing] = useState(false);
     const [showScreenshots, setShowScreenshots] = useState(false);
     const [showGif, setShowGif] = useState(false);
+    const [showBatchCrop, setShowBatchCrop] = useState(false);
+    const [showCompress, setShowCompress] = useState(false);
+    const [showAudio, setShowAudio] = useState(false);
+    const [showSpeed, setShowSpeed] = useState(false);
+    const [showToolsMenu, setShowToolsMenu] = useState(false);
     const [toast, setToast] = useState(null);
 
     useEffect(() => { localStorage.setItem('revid-view-mode', viewMode); }, [viewMode]);
@@ -319,33 +328,6 @@ export default function App() {
                     </button>
                 )}
 
-                {/* Screenshot button (viewer mode with video) */}
-                {viewMode === 'viewer' && currentVideo && (
-                    <button
-                        className="btn btn-ghost"
-                        onClick={() => setShowScreenshots(true)}
-                        title="Extract Screenshots"
-                        style={{ padding: 6 }}
-                    >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
-                            <circle cx="12" cy="13" r="3" />
-                        </svg>
-                    </button>
-                )}
-
-                {/* GIF button (viewer mode with video) */}
-                {viewMode === 'viewer' && currentVideo && (
-                    <button
-                        className="btn btn-ghost"
-                        onClick={() => setShowGif(true)}
-                        title="Create GIF"
-                        style={{ padding: 6, fontSize: 11, fontWeight: 700, lineHeight: 1 }}
-                    >
-                        GIF
-                    </button>
-                )}
-
                 {/* Crop button (viewer mode with video) */}
                 {viewMode === 'viewer' && currentVideo && (
                     <button
@@ -360,6 +342,61 @@ export default function App() {
                             <path d="M14.8 14.8 20 20" />
                         </svg>
                     </button>
+                )}
+
+                {/* Tools dropdown (viewer mode with video) */}
+                {viewMode === 'viewer' && currentVideo && (
+                    <div style={{ position: 'relative' }}>
+                        <button
+                            className="btn btn-ghost"
+                            onClick={() => setShowToolsMenu(prev => !prev)}
+                            title="Tools"
+                            style={{ padding: 6, display: 'flex', alignItems: 'center', gap: 4 }}
+                        >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /><circle cx="5" cy="12" r="1" />
+                            </svg>
+                        </button>
+                        {showToolsMenu && (
+                            <>
+                                <div
+                                    style={{ position: 'fixed', inset: 0, zIndex: 99 }}
+                                    onClick={() => setShowToolsMenu(false)}
+                                />
+                                <div style={{
+                                    position: 'absolute', top: '100%', right: 0, zIndex: 100,
+                                    marginTop: 4, background: '#1a1a1a',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    borderRadius: 8, padding: 4,
+                                    minWidth: 180, boxShadow: '0 8px 24px rgba(0,0,0,0.5)'
+                                }}>
+                                    {[
+                                        { label: 'Screenshots', action: () => setShowScreenshots(true) },
+                                        { label: 'Create GIF', action: () => setShowGif(true) },
+                                        { label: 'Compress', action: () => setShowCompress(true) },
+                                        { label: 'Extract Audio', action: () => setShowAudio(true) },
+                                        { label: 'Speed Output', action: () => setShowSpeed(true) },
+                                        { label: 'Batch Crop', action: () => setShowBatchCrop(true) },
+                                    ].map(item => (
+                                        <button
+                                            key={item.label}
+                                            onClick={() => { item.action(); setShowToolsMenu(false); }}
+                                            style={{
+                                                display: 'block', width: '100%', textAlign: 'left',
+                                                padding: '8px 12px', borderRadius: 4,
+                                                fontSize: 13, color: 'rgba(255,255,255,0.8)',
+                                                transition: 'background 0.1s'
+                                            }}
+                                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
+                                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                        >
+                                            {item.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </>
+                        )}
+                    </div>
                 )}
             </div>
 
@@ -465,6 +502,42 @@ export default function App() {
                     videoPath={currentVideo}
                     videoDuration={videoDuration}
                     onClose={() => setShowGif(false)}
+                />
+            )}
+
+            {/* Batch crop dialog */}
+            {showBatchCrop && (
+                <BatchCropDialog
+                    files={files}
+                    currentVideo={currentVideo}
+                    onClose={() => setShowBatchCrop(false)}
+                />
+            )}
+
+            {/* Compress dialog */}
+            {showCompress && currentVideo && (
+                <CompressDialog
+                    videoPath={currentVideo}
+                    videoDuration={videoDuration}
+                    onClose={() => setShowCompress(false)}
+                />
+            )}
+
+            {/* Audio dialog */}
+            {showAudio && currentVideo && (
+                <AudioDialog
+                    videoPath={currentVideo}
+                    videoDuration={videoDuration}
+                    onClose={() => setShowAudio(false)}
+                />
+            )}
+
+            {/* Speed dialog */}
+            {showSpeed && currentVideo && (
+                <SpeedDialog
+                    videoPath={currentVideo}
+                    videoDuration={videoDuration}
+                    onClose={() => setShowSpeed(false)}
                 />
             )}
 

@@ -52,6 +52,46 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
     },
 
+    compressVideo: async (params, onProgress) => {
+        const handler = (_event, pct) => onProgress(pct);
+        ipcRenderer.on('compress-progress', handler);
+        try {
+            return await ipcRenderer.invoke('compress-video', params);
+        } finally {
+            ipcRenderer.removeListener('compress-progress', handler);
+        }
+    },
+
+    extractAudio: async (params, onProgress) => {
+        const handler = (_event, pct) => onProgress(pct);
+        ipcRenderer.on('audio-progress', handler);
+        try {
+            return await ipcRenderer.invoke('extract-audio', params);
+        } finally {
+            ipcRenderer.removeListener('audio-progress', handler);
+        }
+    },
+
+    speedVideo: async (params, onProgress) => {
+        const handler = (_event, pct) => onProgress(pct);
+        ipcRenderer.on('speed-progress', handler);
+        try {
+            return await ipcRenderer.invoke('speed-video', params);
+        } finally {
+            ipcRenderer.removeListener('speed-progress', handler);
+        }
+    },
+
+    concatVideos: async (params, onProgress) => {
+        const handler = (_event, pct) => onProgress(pct);
+        ipcRenderer.on('concat-progress', handler);
+        try {
+            return await ipcRenderer.invoke('concat-videos', params);
+        } finally {
+            ipcRenderer.removeListener('concat-progress', handler);
+        }
+    },
+
     createGif: async (params, onProgress) => {
         const handler = (_event, pct) => onProgress(pct);
         ipcRenderer.on('gif-progress', handler);

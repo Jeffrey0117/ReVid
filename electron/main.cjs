@@ -190,6 +190,214 @@ function setupIpcHandlers() {
         });
     });
 
+    // Compress video (re-encode with quality/resolution)
+    ipcMain.handle('compress-video', async (_event, params) => {
+        const { inputPath, outputPath, crf, resolution, totalDuration } = params;
+
+        const args = ['-y', '-i', inputPath];
+
+        const vf = resolution ? `scale=${resolution}:-2` : null;
+        if (vf) args.push('-vf', vf);
+
+        args.push('-c:v', 'libx264', '-crf', String(crf), '-preset', 'medium', '-pix_fmt', 'yuv420p');
+        args.push('-c:a', 'aac', '-b:a', '128k');
+        args.push('-progress', 'pipe:1');
+        args.push(outputPath);
+
+        const totalUs = (totalDuration || 1) * 1_000_000;
+
+        return new Promise((resolve) => {
+            const proc = spawn(ffmpegPath, args);
+
+            proc.stdout.on('data', (data) => {
+                const str = data.toString();
+                const match = str.match(/out_time_us=(\d+)/);
+                if (match && mainWindow) {
+                    const pct = Math.min(100, Math.round((parseInt(match[1]) / totalUs) * 100));
+                    mainWindow.webContents.send('compress-progress', pct);
+                }
+            });
+
+            proc.stderr.on('data', () => {});
+
+            proc.on('close', (code) => {
+                if (code === 0) {
+                    try {
+                        const stat = fs.statSync(outputPath);
+                        resolve({ success: true, fileSize: stat.size });
+                    } catch {
+                        resolve({ success: true, fileSize: 0 });
+                    }
+                } else {
+                    resolve({ success: false, error: `ffmpeg exited with code ${code}` });
+                }
+            });
+
+            proc.on('error', (err) => {
+                resolve({ success: false, error: err.message });
+            });
+        });
+    });
+
+    // Extract audio from video
+    ipcMain.handle('extract-audio', async (_event, params) => {
+        const { inputPath, outputPath, format, totalDuration } = params;
+
+        const args = ['-y', '-i', inputPath, '-vn'];
+
+        if (format === 'mp3') {
+            args.push('-c:a', 'libmp3lame', '-q:a', '2');
+        } else if (format === 'aac') {
+            args.push('-c:a', 'aac', '-b:a', '192k');
+        } else {
+            args.push('-c:a', 'copy');
+        }
+
+        args.push('-progress', 'pipe:1');
+        args.push(outputPath);
+
+        const totalUs = (totalDuration || 1) * 1_000_000;
+
+        return new Promise((resolve) => {
+            const proc = spawn(ffmpegPath, args);
+
+            proc.stdout.on('data', (data) => {
+                const str = data.toString();
+                const match = str.match(/out_time_us=(\d+)/);
+                if (match && mainWindow) {
+                    const pct = Math.min(100, Math.round((parseInt(match[1]) / totalUs) * 100));
+                    mainWindow.webContents.send('audio-progress', pct);
+                }
+            });
+
+            proc.stderr.on('data', () => {});
+
+            proc.on('close', (code) => {
+                if (code === 0) {
+                    try {
+                        const stat = fs.statSync(outputPath);
+                        resolve({ success: true, fileSize: stat.size });
+                    } catch {
+                        resolve({ success: true, fileSize: 0 });
+                    }
+                } else {
+                    resolve({ success: false, error: `ffmpeg exited with code ${code}` });
+                }
+            });
+
+            proc.on('error', (err) => {
+                resolve({ success: false, error: err.message });
+            });
+        });
+    });
+
+    // Export video at different speed
+    ipcMain.handle('speed-video', async (_event, params) => {
+        const { inputPath, outputPath, speed, totalDuration } = params;
+
+        const videoFilter = `setpts=${(1 / speed).toFixed(4)}*PTS`;
+        const audioFilter = `atempo=${speed}`;
+
+        const args = [
+            '-y', '-i', inputPath,
+            '-filter:v', videoFilter,
+            '-filter:a', audioFilter,
+            '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-pix_fmt', 'yuv420p',
+            '-progress', 'pipe:1',
+            outputPath
+        ];
+
+        const totalUs = (totalDuration || 1) * 1_000_000;
+
+        return new Promise((resolve) => {
+            const proc = spawn(ffmpegPath, args);
+
+            proc.stdout.on('data', (data) => {
+                const str = data.toString();
+                const match = str.match(/out_time_us=(\d+)/);
+                if (match && mainWindow) {
+                    const outputDur = totalDuration / speed;
+                    const outputUs = outputDur * 1_000_000;
+                    const pct = Math.min(100, Math.round((parseInt(match[1]) / outputUs) * 100));
+                    mainWindow.webContents.send('speed-progress', pct);
+                }
+            });
+
+            proc.stderr.on('data', () => {});
+
+            proc.on('close', (code) => {
+                if (code === 0) {
+                    try {
+                        const stat = fs.statSync(outputPath);
+                        resolve({ success: true, fileSize: stat.size });
+                    } catch {
+                        resolve({ success: true, fileSize: 0 });
+                    }
+                } else {
+                    resolve({ success: false, error: `ffmpeg exited with code ${code}` });
+                }
+            });
+
+            proc.on('error', (err) => {
+                resolve({ success: false, error: err.message });
+            });
+        });
+    });
+
+    // Video concat (join multiple videos)
+    ipcMain.handle('concat-videos', async (_event, params) => {
+        const { inputPaths, outputPath, totalDuration } = params;
+
+        // Create concat file list
+        const listPath = path.join(app.getPath('temp'), `revid-concat-${Date.now()}.txt`);
+        const listContent = inputPaths.map(p => `file '${p.replace(/'/g, "'\\''")}'`).join('\n');
+        fs.writeFileSync(listPath, listContent);
+
+        const args = [
+            '-y', '-f', 'concat', '-safe', '0',
+            '-i', listPath,
+            '-c', 'copy',
+            '-progress', 'pipe:1',
+            outputPath
+        ];
+
+        const totalUs = (totalDuration || 1) * 1_000_000;
+
+        return new Promise((resolve) => {
+            const proc = spawn(ffmpegPath, args);
+
+            proc.stdout.on('data', (data) => {
+                const str = data.toString();
+                const match = str.match(/out_time_us=(\d+)/);
+                if (match && mainWindow) {
+                    const pct = Math.min(100, Math.round((parseInt(match[1]) / totalUs) * 100));
+                    mainWindow.webContents.send('concat-progress', pct);
+                }
+            });
+
+            proc.stderr.on('data', () => {});
+
+            proc.on('close', (code) => {
+                try { fs.unlinkSync(listPath); } catch {}
+                if (code === 0) {
+                    try {
+                        const stat = fs.statSync(outputPath);
+                        resolve({ success: true, fileSize: stat.size });
+                    } catch {
+                        resolve({ success: true, fileSize: 0 });
+                    }
+                } else {
+                    resolve({ success: false, error: `ffmpeg exited with code ${code}` });
+                }
+            });
+
+            proc.on('error', (err) => {
+                try { fs.unlinkSync(listPath); } catch {}
+                resolve({ success: false, error: err.message });
+            });
+        });
+    });
+
     // Crop + trim video using ffmpeg (runs in main process)
     ipcMain.handle('crop-video', async (_event, params) => {
         const { inputPath, outputPath, crop, trim, totalDuration } = params;
