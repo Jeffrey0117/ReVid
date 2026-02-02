@@ -116,6 +116,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
     },
 
+    renameFile: (oldPath, newPath) => {
+        try {
+            fs.renameSync(oldPath, newPath);
+            return { success: true };
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    },
+
     path: {
         basename: (p, ext) => path.basename(p, ext),
         extname: (p) => path.extname(p),

@@ -14,6 +14,7 @@ import { AudioDialog } from './components/AudioDialog';
 import { SpeedDialog } from './components/SpeedDialog';
 import { getCachedMetadata } from './utils/videoMetadata';
 import { usePins } from './hooks/usePins';
+import { BatchRenameDialog } from './components/BatchRenameDialog';
 
 const VideoEditor = lazy(() => import('./features/editor/VideoEditor'));
 
@@ -52,6 +53,7 @@ export default function App() {
     const [showAudio, setShowAudio] = useState(false);
     const [showSpeed, setShowSpeed] = useState(false);
     const [showToolsMenu, setShowToolsMenu] = useState(false);
+    const [showBatchRename, setShowBatchRename] = useState(false);
     const [showPinnedOnly, setShowPinnedOnly] = useState(false);
     const [toast, setToast] = useState(null);
 
@@ -408,6 +410,7 @@ export default function App() {
                                         { label: 'Extract Audio', action: () => setShowAudio(true) },
                                         { label: 'Speed Output', action: () => setShowSpeed(true) },
                                         { label: 'Batch Crop', action: () => setShowBatchCrop(true) },
+                                        { label: 'Batch Rename', action: () => setShowBatchRename(true) },
                                     ].map(item => (
                                         <button
                                             key={item.label}
@@ -571,6 +574,15 @@ export default function App() {
                     videoPath={currentVideo}
                     videoDuration={videoDuration}
                     onClose={() => setShowSpeed(false)}
+                />
+            )}
+
+            {/* Batch rename dialog */}
+            {showBatchRename && files.length > 0 && (
+                <BatchRenameDialog
+                    files={files}
+                    onClose={() => setShowBatchRename(false)}
+                    onComplete={() => loadFolder(currentPath)}
                 />
             )}
 
