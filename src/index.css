@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+@theme {
+  --color-primary: #3b82f6;
+  --color-surface: #1a1a1a;
+}
+
+[data-theme="light"] {
+  --color-primary: #5b8ec9;
+  --color-surface: #ffffff;
+}
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body, #root {
