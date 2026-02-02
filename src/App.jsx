@@ -61,6 +61,8 @@ export default function App() {
     const [showBatchRename, setShowBatchRename] = useState(false);
     const [showConcat, setShowConcat] = useState(false);
     const [showPinnedOnly, setShowPinnedOnly] = useState(false);
+    const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+    const [showAbout, setShowAbout] = useState(false);
     const [toast, setToast] = useState(null);
 
     const { isPinned, togglePin, pinnedCount } = usePins();
@@ -430,51 +432,113 @@ export default function App() {
                     )}
                 </div>
 
-                {/* Right: Sidebar + Lang + Theme */}
+                {/* Right: Sidebar + Settings */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     {viewMode === 'viewer' && files.length > 0 && (
                         <button
                             className="btn btn-ghost"
                             onClick={toggleSidebarPosition}
                             title={sidebarTitle}
-                            style={{
-                                padding: 6,
-                                color: theme.accent,
-                                background: theme.accentBg
-                            }}
+                            style={{ padding: 6, borderRadius: 8, display: 'flex' }}
                         >
                             {sidebarIcon}
                         </button>
                     )}
 
-                    <button
-                        className="btn btn-ghost"
-                        onClick={() => setLang(lang === 'en' ? 'zh-TW' : 'en')}
-                        title={lang === 'en' ? 'Switch to Chinese' : 'Switch to English'}
-                        style={{ padding: '4px 8px', fontSize: 11, fontWeight: 600 }}
-                    >
-                        {lang === 'en' ? 'EN' : 'ZH'}
-                    </button>
+                    <div style={{ width: 1, height: 24, background: theme.borderSecondary }} />
 
-                    <button
-                        className="btn btn-ghost"
-                        onClick={toggleTheme}
-                        title={isDark ? t('lightMode') : t('darkMode')}
-                        style={{ padding: 6 }}
-                    >
-                        {isDark ? (
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" />
-                                <path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" />
-                                <path d="M2 12h2" /><path d="M20 12h2" />
-                                <path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" />
+                    {/* Settings dropdown */}
+                    <div style={{ position: 'relative' }}>
+                        <button
+                            className="btn btn-ghost"
+                            onClick={() => setShowSettingsMenu(prev => !prev)}
+                            title={t('settings')}
+                            style={{
+                                padding: 6, borderRadius: 8, display: 'flex',
+                                ...(showSettingsMenu ? { color: theme.accent, background: theme.accentBg } : {})
+                            }}
+                        >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                                <circle cx="12" cy="12" r="3" />
                             </svg>
-                        ) : (
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
-                            </svg>
+                        </button>
+                        {showSettingsMenu && (
+                            <>
+                                <div style={{ position: 'fixed', inset: 0, zIndex: 99 }} onClick={() => setShowSettingsMenu(false)} />
+                                <div style={{
+                                    position: 'absolute', right: 0, top: '100%', marginTop: 8, zIndex: 100,
+                                    width: 200, padding: '4px 0', borderRadius: 12,
+                                    border: `1px solid ${theme.borderSecondary}`,
+                                    background: theme.dialogBg,
+                                    boxShadow: '0 8px 24px rgba(0,0,0,0.3)'
+                                }}>
+                                    <button
+                                        onClick={() => { toggleTheme(); setShowSettingsMenu(false); }}
+                                        style={{
+                                            width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+                                            padding: '8px 12px', fontSize: 13, color: theme.textSecondary,
+                                            transition: 'background 0.1s'
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.background = theme.hoverBg}
+                                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                    >
+                                        {isDark ? (
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" />
+                                                <path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" />
+                                                <path d="M2 12h2" /><path d="M20 12h2" />
+                                                <path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" />
+                                            </svg>
+                                        ) : (
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+                                            </svg>
+                                        )}
+                                        <span>{isDark ? t('lightMode') : t('darkMode')}</span>
+                                    </button>
+                                    <button
+                                        onClick={() => { setLang(lang === 'en' ? 'zh-TW' : 'en'); setShowSettingsMenu(false); }}
+                                        style={{
+                                            width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+                                            padding: '8px 12px', fontSize: 13, color: theme.textSecondary,
+                                            transition: 'background 0.1s'
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.background = theme.hoverBg}
+                                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                    >
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <circle cx="12" cy="12" r="10" />
+                                            <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+                                            <path d="M2 12h20" />
+                                        </svg>
+                                        <span>{t('changeLanguage')}</span>
+                                        <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: theme.textTertiary }}>
+                                            {lang === 'en' ? 'EN' : '中'}
+                                        </span>
+                                    </button>
+                                    <div style={{ height: 1, margin: '4px 0', background: theme.border }} />
+                                    <button
+                                        onClick={() => { setShowAbout(true); setShowSettingsMenu(false); }}
+                                        style={{
+                                            width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+                                            padding: '8px 12px', fontSize: 13, color: theme.textSecondary,
+                                            transition: 'background 0.1s'
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.background = theme.hoverBg}
+                                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                    >
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <circle cx="12" cy="12" r="10" />
+                                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                                            <path d="M12 17h.01" />
+                                        </svg>
+                                        <span>{t('about')}</span>
+                                    </button>
+                                </div>
+                            </>
                         )}
-                    </button>
+                    </div>
                 </div>
             </div>
 
@@ -636,6 +700,93 @@ export default function App() {
                     files={files}
                     onClose={() => setShowConcat(false)}
                 />
+            )}
+
+            {/* About dialog */}
+            {showAbout && (
+                <div
+                    style={{
+                        position: 'fixed', inset: 0, zIndex: 200,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)'
+                    }}
+                    onClick={() => setShowAbout(false)}
+                >
+                    <div
+                        style={{
+                            maxWidth: 360, width: '100%', margin: '0 16px',
+                            padding: 32, borderRadius: 16, textAlign: 'center',
+                            background: theme.dialogBg,
+                            border: `1px solid ${theme.borderSecondary}`,
+                            boxShadow: '0 16px 48px rgba(0,0,0,0.4)'
+                        }}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        {/* App icon */}
+                        <div style={{
+                            width: 72, height: 72, margin: '0 auto 16px',
+                            borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+                            border: `1px solid ${theme.border}`
+                        }}>
+                            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke={theme.accent} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
+                                <polygon points="10 8 16 12 10 16 10 8" />
+                            </svg>
+                        </div>
+
+                        {/* App name */}
+                        <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4, color: theme.text }}>
+                            ReVid
+                        </h2>
+
+                        {/* Version */}
+                        <p style={{ fontSize: 13, marginBottom: 16, color: theme.textTertiary }}>
+                            v0.1.0
+                        </p>
+
+                        {/* Description */}
+                        <p style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 24, color: theme.textSecondary }}>
+                            {t('appDescription')}
+                        </p>
+
+                        {/* GitHub link */}
+                        <div style={{ marginBottom: 20 }}>
+                            <a
+                                href="https://github.com/Jeffrey0117/ReVid"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                    fontSize: 13, color: theme.textTertiary,
+                                    textDecoration: 'none', display: 'inline-flex',
+                                    alignItems: 'center', gap: 6
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.color = theme.text}
+                                onMouseLeave={e => e.currentTarget.style.color = theme.textTertiary}
+                                onClick={e => e.stopPropagation()}
+                            >
+                                <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+                                </svg>
+                                GitHub
+                            </a>
+                        </div>
+
+                        {/* Copyright */}
+                        <p style={{ fontSize: 11, marginBottom: 20, color: theme.textTertiary }}>
+                            © 2025 ReVid
+                        </p>
+
+                        {/* Close button */}
+                        <button
+                            className="btn btn-ghost"
+                            onClick={() => setShowAbout(false)}
+                            style={{ padding: '6px 24px', fontSize: 13 }}
+                        >
+                            {t('close')}
+                        </button>
+                    </div>
+                </div>
             )}
 
             {/* Toast */}

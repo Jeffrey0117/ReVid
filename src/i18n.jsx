@@ -91,7 +91,12 @@ const translations = {
     available: 'Available:',
     // Theme
     darkMode: 'Dark Mode',
-    lightMode: 'Light Mode'
+    lightMode: 'Light Mode',
+    // Settings
+    settings: 'Settings',
+    about: 'About',
+    changeLanguage: 'Language',
+    appDescription: 'Video Browser & Editor'
   },
   'zh-TW': {
     openFolder: '\u958b\u555f\u8cc7\u6599\u593e',
@@ -172,7 +177,11 @@ const translations = {
     codecNote: '\u5f71\u7247\u9700\u8981\u76f8\u540c\u7684\u7de8\u78bc/\u89e3\u6790\u5ea6\u624d\u80fd\u76f4\u63a5\u5408\u4f75',
     available: '\u53ef\u7528\uff1a',
     darkMode: '\u6df1\u8272\u6a21\u5f0f',
-    lightMode: '\u6dfa\u8272\u6a21\u5f0f'
+    lightMode: '\u6dfa\u8272\u6a21\u5f0f',
+    settings: '\u8a2d\u5b9a',
+    about: '\u95dc\u65bc',
+    changeLanguage: '\u8a9e\u8a00',
+    appDescription: '\u5f71\u7247\u700f\u89bd\u5668\u8207\u7de8\u8f2f\u5668'
   }
 };
 
