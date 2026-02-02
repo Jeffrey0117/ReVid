@@ -724,15 +724,12 @@ export default function App() {
                     >
                         {/* App icon */}
                         <div style={{
-                            width: 72, height: 72, margin: '0 auto 16px',
-                            borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            width: 80, height: 80, margin: '0 auto 16px',
+                            borderRadius: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
                             background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
-                            border: `1px solid ${theme.border}`
+                            border: `1px solid ${theme.border}`, padding: 4, overflow: 'hidden'
                         }}>
-                            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke={theme.accent} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                                <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
-                                <polygon points="10 8 16 12 10 16 10 8" />
-                            </svg>
+                            <img src="/logo.png" alt="ReVid" style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: 14 }} />
                         </div>
 
                         {/* App name */}
