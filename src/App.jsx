@@ -911,6 +911,7 @@ export default function App() {
                             currentIndex={currentIndex}
                             onSelect={selectVideo}
                             position={sidebarPosition}
+                            style={{ order: sidebarPosition === 'bottom' ? 2 : 0 }}
                         />
                     )}
 
@@ -930,7 +931,7 @@ export default function App() {
                     )}
 
                     {/* Main Viewport */}
-                    <main style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
+                    <main style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative', overflow: 'hidden', order: 1 }}>
                         {viewMode === 'theater' ? (
                             <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
                                 {theater.activeCourse ? (

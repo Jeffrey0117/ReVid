@@ -16,7 +16,8 @@ export const VideoThumbnailBar = ({
     files,
     currentIndex,
     onSelect,
-    position = 'left' // 'left' or 'bottom'
+    position = 'left', // 'left' or 'bottom'
+    style = {}
 }) => {
     const isHorizontal = position === 'bottom';
     const scrollContainerRef = useRef(null);
@@ -372,7 +373,7 @@ export const VideoThumbnailBar = ({
     };
 
     return (
-        <div style={containerStyle}>
+        <div style={{ ...containerStyle, ...style }}>
             <div
                 onMouseDown={handleResizeMouseDown}
                 style={resizeHandleStyle}
