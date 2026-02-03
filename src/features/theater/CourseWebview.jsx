@@ -41,6 +41,7 @@ export const CourseWebview = ({
   const [focusMode, setFocusMode] = useState(false);
   const [resumeToast, setResumeToast] = useState(null);
   const seekedRef = useRef(false);
+  const autoFocusedRef = useRef(false);
 
   // Inject video detector script and CSS when webview is ready
   useEffect(() => {
@@ -152,9 +153,18 @@ export const CourseWebview = ({
             setVideoFound(true);
             onVideoDetected?.({ duration: result.duration, src: result.src });
 
-            // If we got a valid video src, switch to native player
-            if (result.src && (result.src.includes('.mp4') || result.src.includes('.m3u8') || result.src.includes('.webm') || result.src.startsWith('blob:'))) {
+            // If we got a valid video src (not blob:), switch to native player
+            const canUseNative = result.src &&
+              !result.src.startsWith('blob:') &&
+              (result.src.includes('.mp4') || result.src.includes('.m3u8') || result.src.includes('.webm'));
+
+            if (canUseNative) {
               setVideoSrc(result.src);
+            } else if (!autoFocusedRef.current) {
+              // Can't use native player, auto-enable focus mode in webview
+              autoFocusedRef.current = true;
+              setFocusMode(true);
+              webview.executeJavaScript('window.__revidEnterFocus && window.__revidEnterFocus()').catch(() => {});
             }
           }
         }).catch(() => {});
@@ -171,7 +181,9 @@ export const CourseWebview = ({
     const handleLoadStart = () => {
       setIsLoading(true);
       setVideoFound(false);
+      setVideoSrc(null);
       seekedRef.current = false;
+      autoFocusedRef.current = false;
       // Clear poll interval
       if (webview._revidPollInterval) {
         clearInterval(webview._revidPollInterval);
