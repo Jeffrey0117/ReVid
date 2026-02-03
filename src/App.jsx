@@ -901,22 +901,13 @@ export default function App() {
             {/* Main Content */}
             <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                 <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'row' }}>
-                    {/* Left Sidebar - always render when in viewer mode with files, animate visibility */}
-                    {viewMode === 'viewer' && files.length > 0 && (
-                        <div style={{
-                            maxWidth: sidebarPosition === 'left' ? 300 : 0,
-                            opacity: sidebarPosition === 'left' ? 1 : 0,
-                            overflow: 'hidden',
-                            transition: 'max-width 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease',
-                            pointerEvents: sidebarPosition === 'left' ? 'auto' : 'none',
-                            flexShrink: 0,
-                        }}>
-                            <VideoSidebar
-                                files={files}
-                                currentIndex={currentIndex}
-                                onSelect={selectVideo}
-                            />
-                        </div>
+                    {/* Left Sidebar */}
+                    {viewMode === 'viewer' && sidebarPosition === 'left' && files.length > 0 && (
+                        <VideoSidebar
+                            files={files}
+                            currentIndex={currentIndex}
+                            onSelect={selectVideo}
+                        />
                     )}
 
                     {/* Theater Sidebar */}
@@ -1262,22 +1253,13 @@ export default function App() {
                     />
                 </div>
 
-                {/* Bottom Filmstrip - always render when in viewer mode with files, animate visibility */}
-                {viewMode === 'viewer' && files.length > 0 && (
-                    <div style={{
-                        maxHeight: sidebarPosition === 'bottom' ? 200 : 0,
-                        opacity: sidebarPosition === 'bottom' ? 1 : 0,
-                        overflow: 'hidden',
-                        transition: 'max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease',
-                        pointerEvents: sidebarPosition === 'bottom' ? 'auto' : 'none',
-                        flexShrink: 0,
-                    }}>
-                        <VideoFilmstrip
-                            files={files}
-                            currentIndex={currentIndex}
-                            onSelect={selectVideo}
-                        />
-                    </div>
+                {/* Bottom Filmstrip */}
+                {viewMode === 'viewer' && sidebarPosition === 'bottom' && files.length > 0 && (
+                    <VideoFilmstrip
+                        files={files}
+                        currentIndex={currentIndex}
+                        onSelect={selectVideo}
+                    />
                 )}
             </div>
 
