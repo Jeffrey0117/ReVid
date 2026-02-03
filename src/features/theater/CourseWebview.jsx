@@ -27,28 +27,79 @@ export const CourseWebview = ({
   const webviewRef = useRef(null);
   const [isLoading, setIsLoading] = useState(true);
   const [videoFound, setVideoFound] = useState(false);
-  const [focusMode, setFocusMode] = useState(false);
+  const [focusMode, setFocusMode] = useState(true); // Auto-enabled when video detected
   const [resumeToast, setResumeToast] = useState(null);
   const seekedRef = useRef(false);
 
-  // Inject video detector script when webview is ready
+  // Inject video detector script and CSS when webview is ready
   useEffect(() => {
     const webview = webviewRef.current;
     if (!webview) return;
 
     const handleDomReady = () => {
       setIsLoading(false);
-      // Inject video detector
+
+      // Inject CSS to fullscreen video (most reliable method)
+      const focusCSS = `
+        video {
+          position: fixed !important;
+          top: 0 !important;
+          left: 0 !important;
+          width: 100vw !important;
+          height: 100vh !important;
+          z-index: 999999 !important;
+          object-fit: contain !important;
+          background: #000 !important;
+        }
+        body { overflow: hidden !important; }
+        nav, header, footer, .sidebar, .header, .footer,
+        [role="navigation"], [role="banner"] {
+          display: none !important;
+        }
+      `;
+      webview.insertCSS(focusCSS).catch(() => {});
+
+      // Inject video detector script
       const script = getVideoDetectorScript();
-      webview.executeJavaScript(script).catch(() => {
-        // Script injection may fail on some pages
-      });
+      webview.executeJavaScript(script).catch(() => {});
+
+      // Simple video check - poll for video element
+      const checkVideo = `
+        (function() {
+          var v = document.querySelector('video');
+          if (v) {
+            return { found: true, duration: v.duration || 0, src: v.src || v.currentSrc || '' };
+          }
+          return { found: false };
+        })();
+      `;
+
+      // Poll for video
+      const pollVideo = () => {
+        webview.executeJavaScript(checkVideo).then((result) => {
+          if (result && result.found) {
+            setVideoFound(true);
+            onVideoDetected?.({ duration: result.duration, src: result.src });
+          }
+        }).catch(() => {});
+      };
+
+      // Check immediately and every 2 seconds
+      pollVideo();
+      const pollInterval = setInterval(pollVideo, 2000);
+
+      // Store interval for cleanup
+      webview._revidPollInterval = pollInterval;
     };
 
     const handleLoadStart = () => {
       setIsLoading(true);
       setVideoFound(false);
       seekedRef.current = false;
+      // Clear poll interval
+      if (webview._revidPollInterval) {
+        clearInterval(webview._revidPollInterval);
+      }
     };
 
     webview.addEventListener('dom-ready', handleDomReady);
@@ -57,8 +108,11 @@ export const CourseWebview = ({
     return () => {
       webview.removeEventListener('dom-ready', handleDomReady);
       webview.removeEventListener('did-start-loading', handleLoadStart);
+      if (webview._revidPollInterval) {
+        clearInterval(webview._revidPollInterval);
+      }
     };
-  }, [url]);
+  }, [url, onVideoDetected]);
 
   // Listen for messages from injected script
   useEffect(() => {

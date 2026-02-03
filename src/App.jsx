@@ -89,6 +89,8 @@ export default function App() {
     const [showUploadDialog, setShowUploadDialog] = useState(false);
     const [theaterSidebarVisible, setTheaterSidebarVisible] = useState(true);
     const theaterVideoStateRef = useRef(null);
+    const [renamingCourseId, setRenamingCourseId] = useState(null);
+    const [courseContextMenu, setCourseContextMenu] = useState(null); // { courseId, x, y }
 
     const handleAddCourse = useCallback(({ url, title, platform }) => {
         if (!theater.selectedFolderId) return;
@@ -947,10 +949,15 @@ export default function App() {
                                             const progress = course.progress?.duration > 0
                                                 ? Math.round((course.progress.lastPosition / course.progress.duration) * 100)
                                                 : 0;
+                                            const isRenaming = renamingCourseId === course.id;
                                             return (
                                                 <div
                                                     key={course.id}
-                                                    onClick={() => theater.openCourse(course.id)}
+                                                    onClick={() => !isRenaming && theater.openCourse(course.id)}
+                                                    onContextMenu={(e) => {
+                                                        e.preventDefault();
+                                                        setCourseContextMenu({ courseId: course.id, x: e.clientX, y: e.clientY });
+                                                    }}
                                                     style={{
                                                         cursor: 'pointer', borderRadius: 8,
                                                         background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
@@ -1002,14 +1009,50 @@ export default function App() {
                                                     </div>
                                                     {/* Title */}
                                                     <div style={{ padding: '8px 10px' }}>
-                                                        <p style={{
-                                                            fontSize: 13, fontWeight: 500,
-                                                            color: isDark ? '#fff' : '#1f2937',
-                                                            overflow: 'hidden', textOverflow: 'ellipsis',
-                                                            whiteSpace: 'nowrap'
-                                                        }}>
-                                                            {course.title}
-                                                        </p>
+                                                        {isRenaming ? (
+                                                            <input
+                                                                autoFocus
+                                                                defaultValue={course.title}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                onBlur={(e) => {
+                                                                    const newTitle = e.target.value.trim();
+                                                                    if (newTitle && newTitle !== course.title) {
+                                                                        theater.renameCourse(theater.selectedFolderId, course.id, newTitle);
+                                                                    }
+                                                                    setRenamingCourseId(null);
+                                                                }}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') {
+                                                                        e.target.blur();
+                                                                    } else if (e.key === 'Escape') {
+                                                                        setRenamingCourseId(null);
+                                                                    }
+                                                                }}
+                                                                style={{
+                                                                    width: '100%', padding: '2px 4px',
+                                                                    fontSize: 13, fontWeight: 500,
+                                                                    background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                                                                    border: `1px solid ${theme.accent}`,
+                                                                    borderRadius: 4, outline: 'none',
+                                                                    color: isDark ? '#fff' : '#1f2937',
+                                                                }}
+                                                            />
+                                                        ) : (
+                                                            <p
+                                                                onDoubleClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setRenamingCourseId(course.id);
+                                                                }}
+                                                                style={{
+                                                                    fontSize: 13, fontWeight: 500,
+                                                                    color: isDark ? '#fff' : '#1f2937',
+                                                                    overflow: 'hidden', textOverflow: 'ellipsis',
+                                                                    whiteSpace: 'nowrap'
+                                                                }}
+                                                            >
+                                                                {course.title}
+                                                            </p>
+                                                        )}
                                                     </div>
                                                 </div>
                                             );
@@ -1364,6 +1407,67 @@ export default function App() {
                         </button>
                     </div>
                 </div>
+            )}
+
+            {/* Course context menu */}
+            {courseContextMenu && (
+                <>
+                    <div
+                        style={{ position: 'fixed', inset: 0, zIndex: 998 }}
+                        onClick={() => setCourseContextMenu(null)}
+                    />
+                    <div style={{
+                        position: 'fixed',
+                        left: courseContextMenu.x,
+                        top: courseContextMenu.y,
+                        zIndex: 999,
+                        minWidth: 140, padding: '4px 0',
+                        borderRadius: 8,
+                        background: theme.dialogBg,
+                        border: `1px solid ${theme.borderSecondary}`,
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.3)'
+                    }}>
+                        <button
+                            onClick={() => {
+                                setRenamingCourseId(courseContextMenu.courseId);
+                                setCourseContextMenu(null);
+                            }}
+                            style={{
+                                width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                                padding: '8px 12px', fontSize: 13,
+                                color: theme.textSecondary, background: 'transparent',
+                                border: 'none', cursor: 'pointer', textAlign: 'left'
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.background = theme.hoverBg}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                            </svg>
+                            {t('rename')}
+                        </button>
+                        <button
+                            onClick={() => {
+                                theater.removeCourse(theater.selectedFolderId, courseContextMenu.courseId);
+                                setCourseContextMenu(null);
+                            }}
+                            style={{
+                                width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                                padding: '8px 12px', fontSize: 13,
+                                color: '#ef4444', background: 'transparent',
+                                border: 'none', cursor: 'pointer', textAlign: 'left'
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.background = theme.hoverBg}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                            </svg>
+                            {t('delete')}
+                        </button>
+                    </div>
+                </>
             )}
 
             {/* Toast */}

@@ -1,7 +1,7 @@
 import { useTheme } from '../theme.jsx';
 
 /**
- * Horizontal pill-button speed selector.
+ * Horizontal segmented speed selector with sliding indicator.
  * Can be embedded inside VideoPlayer or used standalone.
  *
  * Props:
@@ -16,28 +16,79 @@ export const SpeedControl = ({
   onSelect,
   compact = false
 }) => {
-  const { isDark } = useTheme();
+  const { isDark, theme } = useTheme();
+
+  const activeIndex = presets.indexOf(speed);
+  const itemWidth = compact ? 36 : 44;
 
   return (
-    <div className="flex items-center gap-1">
+    <div
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        position: 'relative',
+        padding: 3,
+        borderRadius: 999,
+        background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+        border: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`,
+      }}
+    >
+      {/* Sliding indicator */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 3,
+          bottom: 3,
+          left: activeIndex >= 0 ? 3 + activeIndex * itemWidth : 3,
+          width: itemWidth,
+          borderRadius: 999,
+          background: theme.accent,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+          transition: 'left 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+          opacity: activeIndex >= 0 ? 1 : 0,
+        }}
+      />
+
+      {/* Speed buttons */}
       {presets.map((preset) => {
         const isActive = speed === preset;
-        const label = `${preset}x`;
+        const label = preset === 1 ? '1x' : `${preset}x`;
 
         return (
           <button
             key={preset}
             onClick={() => onSelect?.(preset)}
-            className={`
-              rounded-full font-medium transition-all select-none
-              ${compact ? 'px-2 py-0.5 text-[10px]' : 'px-3 py-1 text-xs'}
-              ${isActive
-                ? 'bg-primary text-white shadow-sm'
+            style={{
+              position: 'relative',
+              zIndex: 1,
+              width: itemWidth,
+              padding: compact ? '4px 0' : '6px 0',
+              fontSize: compact ? 11 : 12,
+              fontWeight: 600,
+              fontVariantNumeric: 'tabular-nums',
+              textAlign: 'center',
+              border: 'none',
+              borderRadius: 999,
+              cursor: 'pointer',
+              background: 'transparent',
+              color: isActive
+                ? '#fff'
                 : isDark
-                  ? 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white'
-                  : 'bg-black/5 text-gray-500 hover:bg-black/10 hover:text-gray-700'
+                  ? 'rgba(255,255,255,0.5)'
+                  : 'rgba(0,0,0,0.45)',
+              transition: 'color 0.15s',
+              userSelect: 'none',
+            }}
+            onMouseEnter={(e) => {
+              if (!isActive) {
+                e.currentTarget.style.color = isDark ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.7)';
               }
-            `}
+            }}
+            onMouseLeave={(e) => {
+              if (!isActive) {
+                e.currentTarget.style.color = isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.45)';
+              }
+            }}
           >
             {label}
           </button>
