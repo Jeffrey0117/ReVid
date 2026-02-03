@@ -1,9 +1,11 @@
-import { memo, useState, useCallback } from 'react';
+import { memo, useState, useCallback, useEffect } from 'react';
 import { useTheme } from '../theme.jsx';
 import { useI18n } from '../i18n.jsx';
 
 const PANEL_WIDTH = 280;
 const TRANSITION_DURATION = 250;
+
+const getElectronAPI = () => window.electronAPI || null;
 
 // Copy button component
 const CopyButton = memo(function CopyButton({ text, theme, isDark }) {
@@ -75,6 +77,20 @@ const InfoItem = memo(function InfoItem({ icon, label, value, theme, isDark }) {
 export const InfoPanel = memo(function InfoPanel({ metadata, isVisible = true, mode = 'local' }) {
     const { t, lang } = useI18n();
     const { theme, isDark } = useTheme();
+    const [fileStat, setFileStat] = useState(null);
+
+    // Fetch file stat for local videos
+    useEffect(() => {
+        if (mode === 'local' && metadata?.filePath) {
+            const api = getElectronAPI();
+            if (api?.getFileStat) {
+                const stat = api.getFileStat(metadata.filePath);
+                setFileStat(stat);
+            }
+        } else {
+            setFileStat(null);
+        }
+    }, [mode, metadata?.filePath]);
 
     const formatDate = (date) => {
         if (!date) return t('unknown') || 'Unknown';
@@ -345,7 +361,7 @@ export const InfoPanel = memo(function InfoPanel({ metadata, isVisible = true, m
                                     <InfoItem
                                         icon={SizeIcon}
                                         label={t('fileSize') || 'File Size'}
-                                        value={formatSize(metadata.size)}
+                                        value={formatSize(fileStat?.size || 0)}
                                         theme={theme}
                                         isDark={isDark}
                                     />
@@ -370,11 +386,11 @@ export const InfoPanel = memo(function InfoPanel({ metadata, isVisible = true, m
                                         />
                                     )}
 
-                                    {metadata.mtime && (
+                                    {fileStat?.mtimeMs && (
                                         <InfoItem
                                             icon={CalendarIcon}
                                             label={t('modifiedDate') || 'Modified'}
-                                            value={formatDate(metadata.mtime)}
+                                            value={formatDate(fileStat.mtimeMs)}
                                             theme={theme}
                                             isDark={isDark}
                                         />
