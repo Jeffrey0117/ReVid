@@ -459,68 +459,131 @@ export const CourseWebview = ({
     );
   }
 
+  // Playlist component (shared between native and webview modes)
+  const PlaylistSidebar = () => (
+    playlist.length > 1 ? (
+      <div style={{
+        width: 220, flexShrink: 0,
+        background: isDark ? '#111' : '#f5f5f5',
+        borderLeft: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
+        overflowY: 'auto', display: 'flex', flexDirection: 'column'
+      }}>
+        <div style={{
+          padding: '10px 12px',
+          fontSize: 12, fontWeight: 600,
+          color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
+          borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`
+        }}>
+          {t('playlist')} ({playlist.length})
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          {playlist.map((course, index) => {
+            const isActive = course.id === currentCourseId;
+            const progress = course.progress?.duration > 0
+              ? Math.round((course.progress.lastPosition / course.progress.duration) * 100)
+              : 0;
+            return (
+              <div
+                key={course.id}
+                onClick={() => onPlaylistSelect?.(course.id)}
+                style={{
+                  padding: '8px 12px', cursor: 'pointer',
+                  background: isActive ? (isDark ? 'rgba(59,130,246,0.2)' : 'rgba(91,142,201,0.15)') : 'transparent',
+                  borderLeft: isActive ? `3px solid ${theme.accent}` : '3px solid transparent',
+                  transition: 'background 0.15s'
+                }}
+                onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'; }}
+                onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 11, color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)', minWidth: 20 }}>
+                    {index + 1}
+                  </span>
+                  <span style={{
+                    fontSize: 12, flex: 1,
+                    color: isActive ? theme.accent : (isDark ? '#fff' : '#1f2937'),
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                  }}>
+                    {course.title}
+                  </span>
+                </div>
+                {progress > 0 && (
+                  <div style={{
+                    marginTop: 4, marginLeft: 28, height: 2, borderRadius: 1,
+                    background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
+                  }}>
+                    <div style={{ height: '100%', borderRadius: 1, background: theme.accent, width: `${progress}%` }} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    ) : null
+  );
+
   // Webview mode (fallback)
   return (
-    <div className={`relative flex flex-col ${className}`}>
-      {/* Webview */}
-      <webview
-        ref={webviewRef}
-        src={url}
-        partition={partition}
-        className="flex-1 w-full"
-        style={{ minHeight: 0 }}
-        allowpopups="true"
-      />
+    <div className={`relative flex ${className}`} style={{ background: '#000' }}>
+      {/* Main content */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        {/* Webview */}
+        <webview
+          ref={webviewRef}
+          src={url}
+          partition={partition}
+          style={{ flex: 1, width: '100%', minHeight: 0 }}
+          allowpopups="true"
+        />
 
-      {/* Loading overlay */}
-      {isLoading && (
-        <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10">
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-8 h-8 border-2 border-white/30 border-t-primary rounded-full animate-spin" />
-            <span className="text-white/60 text-sm">{t('detectingVideo')}</span>
+        {/* Status bar */}
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-surface/50 border-t border-white/5 text-xs">
+          <div className={`w-2 h-2 rounded-full ${videoFound ? 'bg-green-500' : 'bg-white/20'}`} />
+          <span className="text-white/50">
+            {videoFound ? t('videoDetected') : t('detectingVideo')}
+          </span>
+          <div className="flex-1" />
+          {videoFound && (
+            <button
+              onClick={toggleFocusMode}
+              className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                focusMode
+                  ? 'bg-primary/20 text-primary'
+                  : 'bg-white/5 text-white/40 hover:bg-white/10'
+              }`}
+            >
+              {t('focusMode')}
+            </button>
+          )}
+          <span className="text-white/30">{playbackRate}x</span>
+        </div>
+
+        {/* Loading overlay */}
+        {isLoading && (
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10" style={{ right: playlist.length > 1 ? 220 : 0 }}>
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-8 h-8 border-2 border-white/30 border-t-primary rounded-full animate-spin" />
+              <span className="text-white/60 text-sm">{t('detectingVideo')}</span>
+            </div>
           </div>
-        </div>
-      )}
-
-      {/* Resume toast */}
-      {resumeToast && (
-        <div style={{
-          position: 'absolute', bottom: 48, left: '50%', transform: 'translateX(-50%)',
-          padding: '6px 16px', borderRadius: 8,
-          background: 'rgba(0,0,0,0.85)', color: '#fff',
-          fontSize: 13, zIndex: 20, whiteSpace: 'nowrap'
-        }}>
-          {t('resumedAt')} {resumeToast}
-        </div>
-      )}
-
-      {/* Status bar */}
-      <div className="flex items-center gap-2 px-3 py-1.5 bg-surface/50 border-t border-white/5 text-xs">
-        {/* Video detection indicator */}
-        <div className={`w-2 h-2 rounded-full ${videoFound ? 'bg-green-500' : 'bg-white/20'}`} />
-        <span className="text-white/50">
-          {videoFound ? t('videoDetected') : t('detectingVideo')}
-        </span>
-
-        <div className="flex-1" />
-
-        {/* Focus mode toggle */}
-        {videoFound && (
-          <button
-            onClick={toggleFocusMode}
-            className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
-              focusMode
-                ? 'bg-primary/20 text-primary'
-                : 'bg-white/5 text-white/40 hover:bg-white/10'
-            }`}
-          >
-            {t('focusMode')}
-          </button>
         )}
 
-        {/* Speed indicator */}
-        <span className="text-white/30">{playbackRate}x</span>
+        {/* Resume toast */}
+        {resumeToast && (
+          <div style={{
+            position: 'absolute', bottom: 48, left: '50%', transform: 'translateX(-50%)',
+            padding: '6px 16px', borderRadius: 8,
+            background: 'rgba(0,0,0,0.85)', color: '#fff',
+            fontSize: 13, zIndex: 20, whiteSpace: 'nowrap'
+          }}>
+            {t('resumedAt')} {resumeToast}
+          </div>
+        )}
       </div>
+
+      {/* Playlist sidebar */}
+      <PlaylistSidebar />
     </div>
   );
 };
