@@ -1,9 +1,11 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { getVideoDetectorScript } from '../../utils/webviewVideoDetector';
 import { useI18n } from '../../i18n.jsx';
+import { useTheme } from '../../theme.jsx';
 
 /**
  * CourseWebview — renders a <webview> for a course URL with video detection.
+ * When video src is detected, switches to native player mode with playlist.
  *
  * Props:
  *   url            - course URL to load
@@ -13,6 +15,9 @@ import { useI18n } from '../../i18n.jsx';
  *   onVideoDetected - callback({ duration, src })
  *   onVideoState   - callback({ currentTime, duration, paused, playbackRate })
  *   className      - additional CSS classes
+ *   playlist       - array of courses in same folder for playlist display
+ *   currentCourseId - current course id for playlist highlighting
+ *   onPlaylistSelect - callback when user selects from playlist
  */
 export const CourseWebview = ({
   url,
@@ -21,13 +26,19 @@ export const CourseWebview = ({
   startAt = 0,
   onVideoDetected,
   onVideoState,
-  className = ''
+  className = '',
+  playlist = [],
+  currentCourseId = null,
+  onPlaylistSelect
 }) => {
   const { t } = useI18n();
+  const { theme, isDark } = useTheme();
   const webviewRef = useRef(null);
+  const nativeVideoRef = useRef(null);
   const [isLoading, setIsLoading] = useState(true);
   const [videoFound, setVideoFound] = useState(false);
-  const [focusMode, setFocusMode] = useState(false); // User can toggle to fullscreen
+  const [videoSrc, setVideoSrc] = useState(null); // If set, use native player
+  const [focusMode, setFocusMode] = useState(false);
   const [resumeToast, setResumeToast] = useState(null);
   const seekedRef = useRef(false);
 
@@ -117,12 +128,18 @@ export const CourseWebview = ({
       const script = getVideoDetectorScript();
       webview.executeJavaScript(script).catch(() => {});
 
-      // Simple video check - poll for video element
+      // Simple video check - poll for video element and get src
       const checkVideo = `
         (function() {
           var v = document.querySelector('video');
           if (v) {
-            return { found: true, duration: v.duration || 0, src: v.src || v.currentSrc || '' };
+            var src = v.src || v.currentSrc || '';
+            // Also check for source elements
+            if (!src) {
+              var source = v.querySelector('source');
+              if (source) src = source.src || '';
+            }
+            return { found: true, duration: v.duration || 0, src: src };
           }
           return { found: false };
         })();
@@ -134,6 +151,11 @@ export const CourseWebview = ({
           if (result && result.found) {
             setVideoFound(true);
             onVideoDetected?.({ duration: result.duration, src: result.src });
+
+            // If we got a valid video src, switch to native player
+            if (result.src && (result.src.includes('.mp4') || result.src.includes('.m3u8') || result.src.includes('.webm') || result.src.startsWith('blob:'))) {
+              setVideoSrc(result.src);
+            }
           }
         }).catch(() => {});
       };
@@ -268,6 +290,146 @@ export const CourseWebview = ({
 
   const partition = `persist:theater-${platform}`;
 
+  // Handle native video time updates
+  useEffect(() => {
+    const video = nativeVideoRef.current;
+    if (!video || !videoSrc) return;
+
+    const handleTimeUpdate = () => {
+      onVideoState?.({
+        currentTime: video.currentTime,
+        duration: video.duration || 0,
+        paused: video.paused,
+        playbackRate: video.playbackRate
+      });
+    };
+
+    const handleLoadedMetadata = () => {
+      onVideoDetected?.({ duration: video.duration, src: videoSrc });
+      // Auto-seek
+      if (startAt > 0 && !seekedRef.current) {
+        seekedRef.current = true;
+        video.currentTime = startAt;
+        const mins = Math.floor(startAt / 60);
+        const secs = Math.floor(startAt % 60);
+        const timeStr = mins > 0 ? mins + ':' + String(secs).padStart(2, '0') : secs + 's';
+        setResumeToast(timeStr);
+        setTimeout(() => setResumeToast(null), 3000);
+      }
+    };
+
+    video.addEventListener('timeupdate', handleTimeUpdate);
+    video.addEventListener('loadedmetadata', handleLoadedMetadata);
+    video.addEventListener('pause', handleTimeUpdate);
+
+    return () => {
+      video.removeEventListener('timeupdate', handleTimeUpdate);
+      video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      video.removeEventListener('pause', handleTimeUpdate);
+    };
+  }, [videoSrc, startAt, onVideoState, onVideoDetected]);
+
+  // Update native video playback rate
+  useEffect(() => {
+    const video = nativeVideoRef.current;
+    if (video && videoSrc) {
+      video.playbackRate = playbackRate;
+    }
+  }, [playbackRate, videoSrc]);
+
+  // Native player mode
+  if (videoSrc && !videoSrc.startsWith('blob:')) {
+    return (
+      <div className={`relative flex ${className}`} style={{ background: '#000' }}>
+        {/* Video player */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <video
+            ref={nativeVideoRef}
+            src={videoSrc}
+            controls
+            autoPlay
+            style={{ flex: 1, width: '100%', background: '#000', objectFit: 'contain' }}
+          />
+
+          {/* Resume toast */}
+          {resumeToast && (
+            <div style={{
+              position: 'absolute', bottom: 60, left: '50%', transform: 'translateX(-50%)',
+              padding: '6px 16px', borderRadius: 8,
+              background: 'rgba(0,0,0,0.85)', color: '#fff',
+              fontSize: 13, zIndex: 20, whiteSpace: 'nowrap'
+            }}>
+              {t('resumedAt')} {resumeToast}
+            </div>
+          )}
+        </div>
+
+        {/* Playlist sidebar */}
+        {playlist.length > 1 && (
+          <div style={{
+            width: 240, flexShrink: 0,
+            background: isDark ? '#111' : '#f5f5f5',
+            borderLeft: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
+            overflowY: 'auto', display: 'flex', flexDirection: 'column'
+          }}>
+            <div style={{
+              padding: '10px 12px',
+              fontSize: 12, fontWeight: 600,
+              color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
+              borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`
+            }}>
+              {t('playlist')} ({playlist.length})
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              {playlist.map((course, index) => {
+                const isActive = course.id === currentCourseId;
+                const progress = course.progress?.duration > 0
+                  ? Math.round((course.progress.lastPosition / course.progress.duration) * 100)
+                  : 0;
+                return (
+                  <div
+                    key={course.id}
+                    onClick={() => onPlaylistSelect?.(course.id)}
+                    style={{
+                      padding: '8px 12px', cursor: 'pointer',
+                      background: isActive ? (isDark ? 'rgba(59,130,246,0.2)' : 'rgba(91,142,201,0.15)') : 'transparent',
+                      borderLeft: isActive ? `3px solid ${theme.accent}` : '3px solid transparent',
+                      transition: 'background 0.15s'
+                    }}
+                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'; }}
+                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 11, color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)', minWidth: 20 }}>
+                        {index + 1}
+                      </span>
+                      <span style={{
+                        fontSize: 12, flex: 1,
+                        color: isActive ? theme.accent : (isDark ? '#fff' : '#1f2937'),
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                      }}>
+                        {course.title}
+                      </span>
+                    </div>
+                    {progress > 0 && (
+                      <div style={{
+                        marginTop: 4, marginLeft: 28, height: 2, borderRadius: 1,
+                        background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
+                      }}>
+                        <div style={{ height: '100%', borderRadius: 1, background: theme.accent, width: `${progress}%` }} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Webview mode (fallback)
   return (
     <div className={`relative flex flex-col ${className}`}>
       {/* Webview */}

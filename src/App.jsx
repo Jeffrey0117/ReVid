@@ -933,6 +933,9 @@ export default function App() {
                                             onVideoState={(state) => {
                                                 theaterVideoStateRef.current = state;
                                             }}
+                                            playlist={theater.activeCourses}
+                                            currentCourseId={theater.activeCourseId}
+                                            onPlaylistSelect={(courseId) => theater.openCourse(courseId)}
                                             className="flex-1 min-h-0"
                                         />
                                     )
