@@ -19,7 +19,6 @@ export const TheaterSidebar = ({
   onOpenCourse,
   onRemoveCourse,
   onAddCourse,
-  onAddCourseUrl,
   onExport,
   onImport,
   isVisible = true
@@ -74,29 +73,6 @@ export const TheaterSidebar = ({
       closeRenameDialog();
     }
   }, [closeRenameDialog]);
-
-  // Quick-paste handler for empty state
-  const handleQuickPaste = useCallback((e) => {
-    if (e.key === 'Enter' && e.target.value.trim()) {
-      const url = e.target.value.trim();
-      const detected = detectPlatform(url);
-      onAddCourseUrl?.({ url, title: url, platform: detected.id });
-      e.target.value = '';
-    }
-  }, [onAddCourseUrl]);
-
-  const handleQuickPasteEvent = useCallback((e) => {
-    const pastedText = e.clipboardData.getData('text');
-    if (!pastedText) return;
-    const urls = pastedText.split(/[\n,]/).map(u => u.trim()).filter(Boolean);
-    if (urls.length > 0 && urls.every(u => u.startsWith('http'))) {
-      e.preventDefault();
-      for (const url of urls) {
-        const detected = detectPlatform(url);
-        onAddCourseUrl?.({ url, title: url, platform: detected.id });
-      }
-    }
-  }, [onAddCourseUrl]);
 
   const selectedFolder = folders.find(f => f.id === selectedFolderId);
   const courses = selectedFolder?.courses?.filter(c => !c.deletedAt) || [];
@@ -471,66 +447,6 @@ export const TheaterSidebar = ({
           );
         })}
 
-        {/* Empty state — matches REPIC pattern with icon + paste URL input */}
-        {selectedFolder && courses.length === 0 && (
-          <div style={{
-            padding: '32px 16px', textAlign: 'center',
-            display: 'flex', flexDirection: 'column', alignItems: 'center'
-          }}>
-            {/* Icon */}
-            <div style={{
-              width: 56, height: 56, borderRadius: 14,
-              background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
-              border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              marginBottom: 12
-            }}>
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-                style={{ color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)' }}
-              >
-                <circle cx="12" cy="12" r="10" />
-                <polygon points="10 8 16 12 10 16 10 8" />
-              </svg>
-            </div>
-            <p style={{
-              fontSize: 14, fontWeight: 500,
-              color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.5)',
-              marginBottom: 4
-            }}>
-              {t('emptyAlbum')}
-            </p>
-            <p style={{
-              fontSize: 12,
-              color: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)',
-              marginBottom: 12
-            }}>
-              {t('emptyAlbumHint')}
-            </p>
-            {/* Quick paste input */}
-            <input
-              type="text"
-              placeholder={t('pasteVideoUrl')}
-              onKeyDown={handleQuickPaste}
-              onPaste={handleQuickPasteEvent}
-              style={{
-                width: '100%', padding: '10px 14px',
-                fontSize: 13, borderRadius: 10,
-                background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
-                border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
-                color: isDark ? '#fff' : '#1f2937',
-                outline: 'none', transition: 'border-color 0.15s'
-              }}
-              onFocus={e => e.currentTarget.style.borderColor = isDark ? 'rgba(59,130,246,0.5)' : 'rgba(91,142,201,0.5)'}
-              onBlur={e => e.currentTarget.style.borderColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}
-            />
-            <p style={{
-              fontSize: 11, marginTop: 6,
-              color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)'
-            }}>
-              {t('pasteOrEnter')}
-            </p>
-          </div>
-        )}
       </div>
 
       {/* ── Rename Dialog (REPIC modal pattern) ── */}

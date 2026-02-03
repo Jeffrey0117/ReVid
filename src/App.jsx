@@ -894,7 +894,6 @@ export default function App() {
                             onOpenCourse={theater.openCourse}
                             onRemoveCourse={theater.removeCourse}
                             onAddCourse={() => setShowAddCourseDialog(true)}
-                            onAddCourseUrl={handleAddCourse}
                             onExport={() => setShowExportDialog(true)}
                             onImport={handleImport}
                             isVisible={theaterSidebarVisible}
