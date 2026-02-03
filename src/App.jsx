@@ -644,9 +644,9 @@ export default function App() {
                                 className="btn btn-ghost"
                                 onClick={toggleGridSize}
                                 title="Toggle grid size"
-                                style={{ padding: '4px 8px', fontSize: 10, textTransform: 'uppercase', letterSpacing: 1 }}
+                                style={{ padding: '4px 8px', fontSize: 10, letterSpacing: 1 }}
                             >
-                                {gridSize}
+                                {gridSize === 'small' ? t('gridSmall') : gridSize === 'medium' ? t('gridMedium') : t('gridLarge')}
                             </button>
                         </div>
                     )}
@@ -780,7 +780,7 @@ export default function App() {
                             <>
                                 <div style={{ position: 'fixed', inset: 0, zIndex: 99 }} onClick={() => setShowSettingsMenu(false)} />
                                 <div style={{
-                                    position: 'absolute', right: 0, top: '100%', marginTop: 8, zIndex: 100,
+                                    position: 'fixed', right: 12, top: 52, zIndex: 100,
                                     width: 200, padding: '4px 0', borderRadius: 12,
                                     border: `1px solid ${theme.borderSecondary}`,
                                     background: theme.dialogBg,

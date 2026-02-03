@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { generateVideoThumbnail, getCachedThumbnail } from '../utils/videoThumbnails';
 import { getVideoMetadata, formatDuration, formatFileSize } from '../utils/videoMetadata';
+import { useTheme } from '../theme.jsx';
 
 const getElectronAPI = () => window.electronAPI || null;
 
@@ -12,6 +13,7 @@ export const VideoThumbnailGrid = ({
   isPinned,
   onTogglePin
 }) => {
+  const { theme, isDark } = useTheme();
   const sizes = { small: 128, medium: 192, large: 256 };
   const thumbSize = sizes[size] || sizes.medium;
 
@@ -128,7 +130,7 @@ export const VideoThumbnailGrid = ({
         width: '100%', height: '100%',
         display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center',
-        color: 'rgba(255,255,255,0.4)'
+        color: theme.textTertiary
       }}>
         <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" style={{ marginBottom: 16 }}>
           <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
@@ -143,7 +145,7 @@ export const VideoThumbnailGrid = ({
     <div style={{
       width: '100%', height: '100%',
       overflowY: 'auto', overflowX: 'hidden',
-      padding: 16, background: '#0a0a0a'
+      padding: 16, background: isDark ? '#0a0a0a' : '#f3f4f6'
     }}>
       <div style={{
         display: 'grid',
