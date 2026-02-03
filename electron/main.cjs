@@ -666,13 +666,19 @@ function setupIpcHandlers() {
         }
     });
 
-    // Download video file
+    // Download video file (supports direct URLs and m3u8/HLS streams)
     ipcMain.handle('download-video', async (_event, { url, filename }) => {
         if (!url || !mainWindow) return { success: false, error: 'Missing url or window' };
 
-        // Show save dialog
+        const isHLS = url.includes('.m3u8');
+
+        // Show save dialog - force mp4 extension for HLS
+        const defaultFilename = isHLS
+            ? (filename?.replace(/\.[^.]+$/, '.mp4') || 'video.mp4')
+            : (filename || 'video.mp4');
+
         const result = await dialog.showSaveDialog(mainWindow, {
-            defaultPath: filename || 'video.mp4',
+            defaultPath: defaultFilename,
             filters: [
                 { name: 'Video', extensions: ['mp4', 'webm', 'mkv', 'avi'] },
                 { name: 'All Files', extensions: ['*'] }
@@ -685,6 +691,58 @@ function setupIpcHandlers() {
 
         const savePath = result.filePath;
 
+        // Use ffmpeg for HLS/m3u8 streams
+        if (isHLS) {
+            return new Promise((resolve) => {
+                const args = [
+                    '-y',
+                    '-i', url,
+                    '-c', 'copy',
+                    '-bsf:a', 'aac_adtstoasc',
+                    '-progress', 'pipe:1',
+                    savePath
+                ];
+
+                const proc = spawn(ffmpegPath, args);
+                let duration = 0;
+
+                proc.stderr.on('data', (data) => {
+                    const str = data.toString();
+                    // Try to extract duration from stderr
+                    const durMatch = str.match(/Duration:\s*(\d+):(\d+):(\d+)/);
+                    if (durMatch) {
+                        duration = parseInt(durMatch[1]) * 3600 + parseInt(durMatch[2]) * 60 + parseInt(durMatch[3]);
+                    }
+                });
+
+                proc.stdout.on('data', (data) => {
+                    const str = data.toString();
+                    const timeMatch = str.match(/out_time_us=(\d+)/);
+                    if (timeMatch && duration > 0 && mainWindow) {
+                        const currentTime = parseInt(timeMatch[1]) / 1000000;
+                        const progress = Math.min(99, Math.round((currentTime / duration) * 100));
+                        mainWindow.webContents.send('download-progress', { progress });
+                    }
+                });
+
+                proc.on('close', (code) => {
+                    if (code === 0) {
+                        mainWindow?.webContents.send('download-progress', { progress: 100 });
+                        resolve({ success: true, filePath: savePath });
+                    } else {
+                        fs.unlink(savePath, () => {});
+                        resolve({ success: false, error: `ffmpeg exited with code ${code}` });
+                    }
+                });
+
+                proc.on('error', (err) => {
+                    fs.unlink(savePath, () => {});
+                    resolve({ success: false, error: err.message });
+                });
+            });
+        }
+
+        // Direct download for non-HLS URLs
         return new Promise((resolve) => {
             const https = require('https');
             const http = require('http');
