@@ -2,8 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } fro
 import { createPortal } from 'react-dom';
 import { VideoViewer } from './features/viewer/VideoViewer';
 import { VideoThumbnailGrid } from './components/VideoThumbnailGrid';
-import { VideoSidebar } from './components/VideoSidebar';
-import { VideoFilmstrip } from './components/VideoFilmstrip';
+import { VideoThumbnailBar } from './components/VideoThumbnailBar';
 import { useVideoFileSystem } from './hooks/useVideoFileSystem';
 import { useKeyboardNav } from './hooks/useKeyboardNav';
 import { useSortFilter, SORT_OPTIONS } from './hooks/useSortFilter';
@@ -900,13 +899,18 @@ export default function App() {
 
             {/* Main Content */}
             <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'row' }}>
-                    {/* Left Sidebar */}
-                    {viewMode === 'viewer' && sidebarPosition === 'left' && files.length > 0 && (
-                        <VideoSidebar
+                {/* Inner container: flex direction changes based on sidebar position */}
+                <div style={{
+                    flex: 1, overflow: 'hidden', display: 'flex',
+                    flexDirection: viewMode === 'viewer' && sidebarPosition === 'bottom' ? 'column' : 'row'
+                }}>
+                    {/* Video Thumbnail Bar - single component handles both positions */}
+                    {viewMode === 'viewer' && files.length > 0 && (
+                        <VideoThumbnailBar
                             files={files}
                             currentIndex={currentIndex}
                             onSelect={selectVideo}
+                            position={sidebarPosition}
                         />
                     )}
 
@@ -1253,14 +1257,6 @@ export default function App() {
                     />
                 </div>
 
-                {/* Bottom Filmstrip */}
-                {viewMode === 'viewer' && sidebarPosition === 'bottom' && files.length > 0 && (
-                    <VideoFilmstrip
-                        files={files}
-                        currentIndex={currentIndex}
-                        onSelect={selectVideo}
-                    />
-                )}
             </div>
 
             {/* Editor overlay */}
