@@ -782,13 +782,16 @@ export default function App() {
                         {showSettingsMenu && (
                             <>
                                 <div style={{ position: 'fixed', inset: 0, zIndex: 99 }} onClick={() => setShowSettingsMenu(false)} />
-                                <div style={{
-                                    position: 'fixed', right: 12, top: 52, zIndex: 100,
-                                    width: 200, padding: '4px 0', borderRadius: 12,
-                                    border: `1px solid ${theme.borderSecondary}`,
-                                    background: theme.dialogBg,
-                                    boxShadow: '0 8px 24px rgba(0,0,0,0.3)'
-                                }}>
+                                <div
+                                    onClick={e => e.stopPropagation()}
+                                    style={{
+                                        position: 'fixed', right: 12, top: 52, zIndex: 100,
+                                        width: 200, padding: '4px 0', borderRadius: 12,
+                                        border: `1px solid ${theme.borderSecondary}`,
+                                        background: theme.dialogBg,
+                                        boxShadow: '0 8px 24px rgba(0,0,0,0.3)'
+                                    }}
+                                >
                                     <button
                                         onClick={() => { toggleTheme(); setShowSettingsMenu(false); }}
                                         style={{
