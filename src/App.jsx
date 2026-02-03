@@ -29,6 +29,7 @@ import { ExportDialog } from './features/theater/ExportDialog';
 import { UploadSettings } from './features/theater/UploadSettings';
 import { UploadDialog } from './features/theater/UploadDialog';
 import { SpeedControl } from './components/SpeedControl';
+import { InfoPanel } from './components/InfoPanel';
 import { validateRevidFile } from './utils/revidFile';
 import { detectPlatform } from './utils/platformDetect';
 
@@ -89,6 +90,7 @@ export default function App() {
     const [showUploadSettings, setShowUploadSettings] = useState(false);
     const [showUploadDialog, setShowUploadDialog] = useState(false);
     const [theaterSidebarVisible, setTheaterSidebarVisible] = useState(true);
+    const [showInfoPanel, setShowInfoPanel] = useState(false);
     const theaterVideoStateRef = useRef(null);
     const [renamingCourseId, setRenamingCourseId] = useState(null);
     const [courseContextMenu, setCourseContextMenu] = useState(null); // { courseId, x, y }
@@ -696,6 +698,31 @@ export default function App() {
                         </svg>
                     </button>
 
+                    {/* Info Panel Toggle */}
+                    <button
+                        onClick={() => setShowInfoPanel(prev => !prev)}
+                        title={t('toggleInfo')}
+                        style={{
+                            width: 36, height: 36, padding: 0, borderRadius: 8,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            border: 'none', cursor: 'pointer',
+                            transition: 'background 0.15s',
+                            background: showInfoPanel
+                                ? (isDark ? 'rgba(59,130,246,0.2)' : 'rgba(91,142,201,0.15)')
+                                : 'transparent',
+                            color: showInfoPanel
+                                ? theme.accent
+                                : (isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)')
+                        }}
+                        onMouseEnter={e => { if (!showInfoPanel) e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)'; }}
+                        onMouseLeave={e => { if (!showInfoPanel) e.currentTarget.style.background = 'transparent'; }}
+                    >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="10" />
+                            <path d="M12 16v-4" /><path d="M12 8h.01" />
+                        </svg>
+                    </button>
+
                     {/* About / Info */}
                     <button
                         onClick={() => { setShowAbout(prev => !prev); setShowSettingsMenu(false); }}
@@ -1226,6 +1253,31 @@ export default function App() {
                             <VideoViewer src={videoSrc} />
                         ) : null}
                     </main>
+
+                    {/* Info Panel */}
+                    <InfoPanel
+                        isVisible={showInfoPanel}
+                        mode={viewMode === 'theater' ? 'theater' : 'local'}
+                        metadata={
+                            viewMode === 'theater' && theater.activeCourse
+                                ? {
+                                    title: theater.activeCourse.title,
+                                    url: theater.activeCourse.url,
+                                    platform: theater.activeCourse.platform,
+                                    progress: theater.activeCourse.progress,
+                                }
+                                : currentVideo
+                                    ? {
+                                        filePath: currentVideo,
+                                        size: getCachedMetadata(currentVideo)?.size || 0,
+                                        duration: getCachedMetadata(currentVideo)?.duration || 0,
+                                        mtime: getCachedMetadata(currentVideo)?.mtimeMs,
+                                        index: currentIndex,
+                                        total: files.length,
+                                    }
+                                    : null
+                        }
+                    />
                 </div>
 
                 {/* Bottom Filmstrip */}
