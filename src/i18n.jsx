@@ -182,7 +182,8 @@ const translations = {
     importMerge: 'Merge with existing data',
     importReplace: 'Replace all data',
     filesExported: '{count} files exported',
-    // Upload
+    // Upload / Export
+    export: 'Export',
     uploadSettings: 'Upload Settings',
     uploadVideo: 'Upload',
     uploadApiUrl: 'API URL',
@@ -369,7 +370,8 @@ const translations = {
     importMerge: '\u8207\u73fe\u6709\u8cc7\u6599\u5408\u4f75',
     importReplace: '\u53d6\u4ee3\u6240\u6709\u8cc7\u6599',
     filesExported: '\u5df2\u532f\u51fa {count} \u500b\u6a94\u6848',
-    // 上傳
+    // 匯出 / 上傳
+    export: '\u532f\u51fa',
     uploadSettings: '\u4e0a\u50b3\u8a2d\u5b9a',
     uploadVideo: '\u4e0a\u50b3',
     uploadApiUrl: 'API \u7db2\u5740',

@@ -456,27 +456,6 @@ export default function App() {
                                 </svg>
                                 {t('addCourseUrl')}
                             </button>
-                            <button
-                                onClick={() => setShowUploadDialog(true)}
-                                style={{
-                                    display: 'flex', alignItems: 'center', gap: 6,
-                                    padding: '6px 12px', borderRadius: 8,
-                                    fontSize: 12, fontWeight: 500,
-                                    background: isDark ? 'rgba(59,130,246,0.2)' : 'rgba(91,142,201,0.15)',
-                                    color: theme.accent,
-                                    border: 'none', cursor: 'pointer',
-                                    transition: 'background 0.15s'
-                                }}
-                                onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(59,130,246,0.3)' : 'rgba(91,142,201,0.25)'}
-                                onMouseLeave={e => e.currentTarget.style.background = isDark ? 'rgba(59,130,246,0.2)' : 'rgba(91,142,201,0.15)'}
-                            >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                    <polyline points="17 8 12 3 7 8" />
-                                    <line x1="12" y1="3" x2="12" y2="15" />
-                                </svg>
-                                {t('uploadVideo')}
-                            </button>
                         </>
                     )}
                 </div>
@@ -557,6 +536,17 @@ export default function App() {
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                                     <path d="m8 6 4-4 4 4" /><path d="M12 2v10.3a4 4 0 0 1-1.172 2.872L4 22" />
                                     <path d="m20 22-5-5" />
+                                </svg>
+                            </button>
+
+                            <div style={{ width: 1, height: 20, margin: '0 3px', background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
+
+                            {/* Export / Upload */}
+                            <button className="btn btn-ghost" onClick={() => setShowUploadDialog(true)} title={t('export')} style={{ padding: 6, borderRadius: 8, display: 'flex' }}>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                    <polyline points="17 8 12 3 7 8" />
+                                    <line x1="12" y1="3" x2="12" y2="15" />
                                 </svg>
                             </button>
                         </div>
@@ -651,6 +641,29 @@ export default function App() {
                                 style={{ padding: '4px 8px', fontSize: 10, letterSpacing: 1 }}
                             >
                                 {gridSize === 'small' ? t('gridSmall') : gridSize === 'medium' ? t('gridMedium') : t('gridLarge')}
+                            </button>
+
+                            {/* Export / Upload button */}
+                            <button
+                                onClick={() => setShowUploadDialog(true)}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: 4,
+                                    padding: '4px 10px', borderRadius: 6,
+                                    fontSize: 11, fontWeight: 500,
+                                    background: isDark ? 'rgba(59,130,246,0.15)' : 'rgba(91,142,201,0.12)',
+                                    color: theme.accent,
+                                    border: 'none', cursor: 'pointer',
+                                    transition: 'background 0.15s'
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(59,130,246,0.25)' : 'rgba(91,142,201,0.2)'}
+                                onMouseLeave={e => e.currentTarget.style.background = isDark ? 'rgba(59,130,246,0.15)' : 'rgba(91,142,201,0.12)'}
+                            >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                    <polyline points="17 8 12 3 7 8" />
+                                    <line x1="12" y1="3" x2="12" y2="15" />
+                                </svg>
+                                {t('export')}
                             </button>
                         </div>
                     )}
@@ -837,23 +850,26 @@ export default function App() {
                                             {lang === 'en' ? 'EN' : '中'}
                                         </span>
                                     </button>
-                                    <button
-                                        onClick={() => { setShowUploadSettings(true); setShowSettingsMenu(false); }}
-                                        style={{
-                                            width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-                                            padding: '8px 12px', fontSize: 13, color: theme.textSecondary,
-                                            transition: 'background 0.1s'
-                                        }}
-                                        onMouseEnter={e => e.currentTarget.style.background = theme.hoverBg}
-                                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                                    >
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                            <polyline points="17 8 12 3 7 8" />
-                                            <line x1="12" y1="3" x2="12" y2="15" />
-                                        </svg>
-                                        <span>{t('uploadSettings')}</span>
-                                    </button>
+                                    {/* Upload settings - only in local video mode */}
+                                    {viewMode !== 'theater' && (
+                                        <button
+                                            onClick={() => { setShowUploadSettings(true); setShowSettingsMenu(false); }}
+                                            style={{
+                                                width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+                                                padding: '8px 12px', fontSize: 13, color: theme.textSecondary,
+                                                transition: 'background 0.1s'
+                                            }}
+                                            onMouseEnter={e => e.currentTarget.style.background = theme.hoverBg}
+                                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                        >
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                                <polyline points="17 8 12 3 7 8" />
+                                                <line x1="12" y1="3" x2="12" y2="15" />
+                                            </svg>
+                                            <span>{t('uploadSettings')}</span>
+                                        </button>
+                                    )}
                                     <div style={{ height: 1, margin: '4px 0', background: theme.border }} />
                                     <button
                                         onClick={() => { setShowAbout(true); setShowSettingsMenu(false); }}
