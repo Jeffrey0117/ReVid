@@ -413,30 +413,15 @@ export const TheaterSidebar = ({
                     onError={(e) => { e.currentTarget.style.display = 'none'; }}
                   />
                 ) : (
-                  <div style={{
-                    width: 48, height: 27, borderRadius: 4,
+                  <span style={{
+                    width: 18, height: 18, borderRadius: 4,
+                    fontSize: 10, fontWeight: 700,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    flexShrink: 0, position: 'relative',
-                    background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
-                    border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`
+                    color: '#fff', flexShrink: 0,
+                    backgroundColor: platformColor
                   }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.25)'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                    </svg>
-                    {/* Platform badge corner */}
-                    <span style={{
-                      position: 'absolute', bottom: -3, right: -3,
-                      width: 12, height: 12, borderRadius: 3,
-                      fontSize: 7, fontWeight: 700,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      color: '#fff',
-                      backgroundColor: platformColor,
-                      border: `1px solid ${isDark ? '#1c1c1e' : '#f9fafb'}`
-                    }}>
-                      {getPlatformIcon(course.platform) || '?'}
-                    </span>
-                  </div>
+                    {getPlatformIcon(course.platform) || '?'}
+                  </span>
                 )}
                 <span style={{
                   fontSize: 13, flex: 1,
