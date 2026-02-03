@@ -941,6 +941,11 @@ export default function App() {
                                             onVideoState={(state) => {
                                                 theaterVideoStateRef.current = state;
                                             }}
+                                            onThumbnailCaptured={(thumbnail) => {
+                                                if (!theater.activeCourse?.thumbnail) {
+                                                    theater.updateCourseThumbnail(theater.selectedFolderId, theater.activeCourseId, thumbnail);
+                                                }
+                                            }}
                                             playlist={theater.activeCourses}
                                             currentCourseId={theater.activeCourseId}
                                             onPlaylistSelect={(courseId) => theater.openCourse(courseId)}

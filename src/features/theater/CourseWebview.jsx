@@ -14,6 +14,7 @@ import { useTheme } from '../../theme.jsx';
  *   startAt        - seconds to resume from (auto-seek on video detect)
  *   onVideoDetected - callback({ duration, src })
  *   onVideoState   - callback({ currentTime, duration, paused, playbackRate })
+ *   onThumbnailCaptured - callback(thumbnailDataUrl) when thumbnail is captured
  *   className      - additional CSS classes
  *   playlist       - array of courses in same folder for playlist display
  *   currentCourseId - current course id for playlist highlighting
@@ -26,6 +27,7 @@ export const CourseWebview = ({
   startAt = 0,
   onVideoDetected,
   onVideoState,
+  onThumbnailCaptured,
   className = '',
   playlist = [],
   currentCourseId = null,
@@ -40,9 +42,11 @@ export const CourseWebview = ({
   const [videoSrc, setVideoSrc] = useState(null); // If set, use native player
   const [resumeToast, setResumeToast] = useState(null);
   const [focusVideoState, setFocusVideoState] = useState({ currentTime: 0, duration: 0, paused: true });
+  const [downloadProgress, setDownloadProgress] = useState(null); // null | { progress, status }
   const seekedRef = useRef(false);
   const focusAppliedRef = useRef(false);
   const focusStateIntervalRef = useRef(null);
+  const thumbnailCapturedRef = useRef(false);
 
   // Inject video detector script and CSS when webview is ready
   useEffect(() => {
@@ -165,12 +169,56 @@ export const CourseWebview = ({
         })();
       `;
 
+      // Thumbnail capture script
+      const captureThumbnail = `
+        (function() {
+          return new Promise(function(resolve) {
+            var v = document.querySelector('video');
+            if (!v) return resolve(null);
+
+            var tryCapture = function() {
+              if (v.readyState < 2 || v.videoWidth === 0) return false;
+              try {
+                var canvas = document.createElement('canvas');
+                canvas.width = Math.min(v.videoWidth, 320);
+                canvas.height = Math.round(canvas.width * v.videoHeight / v.videoWidth);
+                var ctx = canvas.getContext('2d');
+                ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+                return canvas.toDataURL('image/jpeg', 0.7);
+              } catch(e) { return null; }
+            };
+
+            var result = tryCapture();
+            if (result) return resolve(result);
+
+            // Wait for video to be ready
+            var attempts = 0;
+            var interval = setInterval(function() {
+              attempts++;
+              var result = tryCapture();
+              if (result || attempts > 20) {
+                clearInterval(interval);
+                resolve(result);
+              }
+            }, 500);
+          });
+        })();
+      `;
+
       // Poll for video
       const pollVideo = () => {
         webview.executeJavaScript(checkVideo).then((result) => {
           if (result && result.found) {
             setVideoFound(true);
             onVideoDetected?.({ duration: result.duration, src: result.src });
+
+            // Capture thumbnail if not already done
+            if (!thumbnailCapturedRef.current && onThumbnailCaptured) {
+              thumbnailCapturedRef.current = true;
+              webview.executeJavaScript(captureThumbnail).then((thumbnail) => {
+                if (thumbnail) onThumbnailCaptured(thumbnail);
+              }).catch(() => {});
+            }
 
             // If we got a valid video src (not blob:), switch to native player
             const canUseNative = result.src &&
@@ -202,6 +250,7 @@ export const CourseWebview = ({
       setVideoSrc(null);
       seekedRef.current = false;
       focusAppliedRef.current = false;
+      thumbnailCapturedRef.current = false;
       // Clear poll interval
       if (webview._revidPollInterval) {
         clearInterval(webview._revidPollInterval);
@@ -376,6 +425,42 @@ export const CourseWebview = ({
 
   const partition = `persist:theater-${platform}`;
 
+  // Handle video download
+  const handleDownload = useCallback(async () => {
+    const srcToDownload = videoSrc || null;
+    if (!srcToDownload) return;
+
+    const api = window.electronAPI;
+    if (!api?.downloadVideo) return;
+
+    setDownloadProgress({ progress: 0, status: 'downloading' });
+
+    // Listen for progress
+    const unsubscribe = api.onDownloadProgress?.(({ progress }) => {
+      setDownloadProgress({ progress, status: 'downloading' });
+    });
+
+    try {
+      const filename = srcToDownload.split('/').pop()?.split('?')[0] || 'video.mp4';
+      const result = await api.downloadVideo(srcToDownload, filename);
+
+      if (result.success) {
+        setDownloadProgress({ progress: 100, status: 'complete' });
+        setTimeout(() => setDownloadProgress(null), 2000);
+      } else if (!result.canceled) {
+        setDownloadProgress({ progress: 0, status: 'failed' });
+        setTimeout(() => setDownloadProgress(null), 2000);
+      } else {
+        setDownloadProgress(null);
+      }
+    } catch {
+      setDownloadProgress({ progress: 0, status: 'failed' });
+      setTimeout(() => setDownloadProgress(null), 2000);
+    }
+
+    unsubscribe?.();
+  }, [videoSrc]);
+
   // Handle native video time updates
   useEffect(() => {
     const video = nativeVideoRef.current;
@@ -392,6 +477,28 @@ export const CourseWebview = ({
 
     const handleLoadedMetadata = () => {
       onVideoDetected?.({ duration: video.duration, src: videoSrc });
+
+      // Capture thumbnail for native video
+      if (!thumbnailCapturedRef.current && onThumbnailCaptured) {
+        const tryCapture = () => {
+          if (video.readyState >= 2 && video.videoWidth > 0) {
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = Math.min(video.videoWidth, 320);
+              canvas.height = Math.round(canvas.width * video.videoHeight / video.videoWidth);
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+              const thumbnail = canvas.toDataURL('image/jpeg', 0.7);
+              thumbnailCapturedRef.current = true;
+              onThumbnailCaptured(thumbnail);
+            } catch (e) { /* CORS or other error */ }
+          }
+        };
+        // Try immediately or wait for more data
+        if (video.readyState >= 2) tryCapture();
+        else video.addEventListener('canplay', tryCapture, { once: true });
+      }
+
       // Auto-seek
       if (startAt > 0 && !seekedRef.current) {
         seekedRef.current = true;
@@ -413,7 +520,7 @@ export const CourseWebview = ({
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
       video.removeEventListener('pause', handleTimeUpdate);
     };
-  }, [videoSrc, startAt, onVideoState, onVideoDetected]);
+  }, [videoSrc, startAt, onVideoState, onVideoDetected, onThumbnailCaptured]);
 
   // Update native video playback rate
   useEffect(() => {
@@ -436,6 +543,43 @@ export const CourseWebview = ({
             autoPlay
             style={{ flex: 1, width: '100%', background: '#000', objectFit: 'contain' }}
           />
+
+          {/* Download button */}
+          <button
+            onClick={handleDownload}
+            disabled={!!downloadProgress}
+            style={{
+              position: 'absolute', top: 12, right: 12, zIndex: 10,
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '6px 12px', borderRadius: 8,
+              background: downloadProgress?.status === 'complete' ? 'rgba(34,197,94,0.9)'
+                : downloadProgress?.status === 'failed' ? 'rgba(239,68,68,0.9)'
+                : 'rgba(0,0,0,0.7)',
+              color: '#fff', fontSize: 12, fontWeight: 500,
+              cursor: downloadProgress ? 'default' : 'pointer',
+              transition: 'background 0.2s',
+              backdropFilter: 'blur(4px)',
+            }}
+          >
+            {downloadProgress ? (
+              downloadProgress.status === 'downloading' ? (
+                <>{t('downloading')} {downloadProgress.progress}%</>
+              ) : downloadProgress.status === 'complete' ? (
+                <>{t('downloadComplete')}</>
+              ) : (
+                <>{t('downloadFailed')}</>
+              )
+            ) : (
+              <>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                {t('download')}
+              </>
+            )}
+          </button>
 
           {/* Resume toast */}
           {resumeToast && (

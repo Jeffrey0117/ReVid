@@ -188,6 +188,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return await ipcRenderer.invoke('fetch-thumbnail', { url, courseId });
     },
 
+    // --- Video Download API ---
+
+    downloadVideo: async (url, filename) => {
+        return await ipcRenderer.invoke('download-video', { url, filename });
+    },
+
+    onDownloadProgress: (callback) => {
+        const handler = (_event, data) => callback(data);
+        ipcRenderer.on('download-progress', handler);
+        return () => ipcRenderer.removeListener('download-progress', handler);
+    },
+
     // --- Theater Session API ---
 
     createPersistentSession: async (platform) => {

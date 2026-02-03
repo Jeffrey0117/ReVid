@@ -666,6 +666,99 @@ function setupIpcHandlers() {
         }
     });
 
+    // Download video file
+    ipcMain.handle('download-video', async (_event, { url, filename }) => {
+        if (!url || !mainWindow) return { success: false, error: 'Missing url or window' };
+
+        // Show save dialog
+        const result = await dialog.showSaveDialog(mainWindow, {
+            defaultPath: filename || 'video.mp4',
+            filters: [
+                { name: 'Video', extensions: ['mp4', 'webm', 'mkv', 'avi'] },
+                { name: 'All Files', extensions: ['*'] }
+            ]
+        });
+
+        if (result.canceled || !result.filePath) {
+            return { success: false, canceled: true };
+        }
+
+        const savePath = result.filePath;
+
+        return new Promise((resolve) => {
+            const https = require('https');
+            const http = require('http');
+            const fileStream = fs.createWriteStream(savePath);
+
+            const fetchWithRedirect = (targetUrl, redirectCount = 0) => {
+                if (redirectCount > 5) {
+                    resolve({ success: false, error: 'Too many redirects' });
+                    return;
+                }
+
+                const protocol = targetUrl.startsWith('https') ? https : http;
+                const req = protocol.get(targetUrl, {
+                    timeout: 30000,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    }
+                }, (res) => {
+                    // Handle redirects
+                    if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                        let redirectUrl = res.headers.location;
+                        if (!redirectUrl.startsWith('http')) {
+                            const urlObj = new URL(targetUrl);
+                            redirectUrl = `${urlObj.protocol}//${urlObj.host}${redirectUrl}`;
+                        }
+                        fetchWithRedirect(redirectUrl, redirectCount + 1);
+                        return;
+                    }
+
+                    if (res.statusCode !== 200) {
+                        resolve({ success: false, error: `HTTP ${res.statusCode}` });
+                        return;
+                    }
+
+                    const totalSize = parseInt(res.headers['content-length'], 10) || 0;
+                    let downloadedSize = 0;
+
+                    res.on('data', (chunk) => {
+                        downloadedSize += chunk.length;
+                        if (totalSize > 0 && mainWindow) {
+                            const progress = Math.round((downloadedSize / totalSize) * 100);
+                            mainWindow.webContents.send('download-progress', { progress, downloaded: downloadedSize, total: totalSize });
+                        }
+                    });
+
+                    res.pipe(fileStream);
+
+                    fileStream.on('finish', () => {
+                        fileStream.close();
+                        resolve({ success: true, filePath: savePath });
+                    });
+
+                    fileStream.on('error', (err) => {
+                        fs.unlink(savePath, () => {});
+                        resolve({ success: false, error: err.message });
+                    });
+                });
+
+                req.on('error', (err) => {
+                    fs.unlink(savePath, () => {});
+                    resolve({ success: false, error: err.message });
+                });
+
+                req.on('timeout', () => {
+                    req.destroy();
+                    fs.unlink(savePath, () => {});
+                    resolve({ success: false, error: 'Download timeout' });
+                });
+            };
+
+            fetchWithRedirect(url);
+        });
+    });
+
     ipcMain.handle('clear-session', async (event, platform) => {
         if (!platform || typeof platform !== 'string') {
             return { success: false, error: 'Invalid platform' };
