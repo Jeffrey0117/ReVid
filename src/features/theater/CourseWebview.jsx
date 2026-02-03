@@ -27,7 +27,7 @@ export const CourseWebview = ({
   const webviewRef = useRef(null);
   const [isLoading, setIsLoading] = useState(true);
   const [videoFound, setVideoFound] = useState(false);
-  const [focusMode, setFocusMode] = useState(true); // Auto-enabled when video detected
+  const [focusMode, setFocusMode] = useState(false); // User can toggle to fullscreen
   const [resumeToast, setResumeToast] = useState(null);
   const seekedRef = useRef(false);
 
@@ -39,56 +39,79 @@ export const CourseWebview = ({
     const handleDomReady = () => {
       setIsLoading(false);
 
-      // Inject JavaScript to fullscreen video (more reliable than CSS)
-      const fullscreenScript = `
+      // Define focus mode functions (will be called when user toggles)
+      const defineFocusFunctions = `
         (function() {
-          function makeVideoFullscreen() {
+          window.__revidEnterFocus = function() {
             var video = document.querySelector('video');
             if (!video) return false;
 
-            // Hide all other elements
+            // Store original styles
+            window.__revidOriginalStyles = [];
             var all = document.body.querySelectorAll('*');
             for (var i = 0; i < all.length; i++) {
-              if (all[i].tagName !== 'VIDEO' && !all[i].contains(video) && all[i] !== video) {
-                all[i].style.setProperty('display', 'none', 'important');
+              var el = all[i];
+              if (el.tagName !== 'VIDEO' && !el.contains(video) && el !== video) {
+                window.__revidOriginalStyles.push({ el: el, display: el.style.display });
+                el.style.setProperty('display', 'none', 'important');
               }
             }
 
-            // Style the video
+            // Store video original styles
+            window.__revidVideoOriginal = {
+              position: video.style.position,
+              top: video.style.top,
+              left: video.style.left,
+              width: video.style.width,
+              height: video.style.height,
+              zIndex: video.style.zIndex,
+              objectFit: video.style.objectFit,
+              background: video.style.background
+            };
+
+            // Fullscreen video
             video.style.setProperty('position', 'fixed', 'important');
             video.style.setProperty('top', '0', 'important');
             video.style.setProperty('left', '0', 'important');
             video.style.setProperty('width', '100vw', 'important');
             video.style.setProperty('height', '100vh', 'important');
-            video.style.setProperty('max-width', '100vw', 'important');
-            video.style.setProperty('max-height', '100vh', 'important');
             video.style.setProperty('z-index', '2147483647', 'important');
             video.style.setProperty('object-fit', 'contain', 'important');
             video.style.setProperty('background', '#000', 'important');
-            video.style.setProperty('margin', '0', 'important');
-            video.style.setProperty('padding', '0', 'important');
 
-            // Style body
             document.body.style.setProperty('overflow', 'hidden', 'important');
-            document.body.style.setProperty('background', '#000', 'important');
-            document.documentElement.style.setProperty('background', '#000', 'important');
-
             return true;
-          }
+          };
 
-          // Try immediately
-          if (!makeVideoFullscreen()) {
-            // Retry a few times
-            var attempts = 0;
-            var interval = setInterval(function() {
-              if (makeVideoFullscreen() || attempts++ > 10) {
-                clearInterval(interval);
+          window.__revidExitFocus = function() {
+            // Restore hidden elements
+            if (window.__revidOriginalStyles) {
+              for (var i = 0; i < window.__revidOriginalStyles.length; i++) {
+                var item = window.__revidOriginalStyles[i];
+                item.el.style.display = item.display || '';
               }
-            }, 500);
-          }
+              window.__revidOriginalStyles = null;
+            }
+
+            // Restore video styles
+            var video = document.querySelector('video');
+            if (video && window.__revidVideoOriginal) {
+              video.style.position = window.__revidVideoOriginal.position || '';
+              video.style.top = window.__revidVideoOriginal.top || '';
+              video.style.left = window.__revidVideoOriginal.left || '';
+              video.style.width = window.__revidVideoOriginal.width || '';
+              video.style.height = window.__revidVideoOriginal.height || '';
+              video.style.zIndex = window.__revidVideoOriginal.zIndex || '';
+              video.style.objectFit = window.__revidVideoOriginal.objectFit || '';
+              video.style.background = window.__revidVideoOriginal.background || '';
+              window.__revidVideoOriginal = null;
+            }
+
+            document.body.style.overflow = '';
+          };
         })();
       `;
-      webview.executeJavaScript(fullscreenScript).catch((e) => console.error('fullscreen script failed:', e));
+      webview.executeJavaScript(defineFocusFunctions).catch(() => {});
 
       // Inject video detector script
       const script = getVideoDetectorScript();
@@ -235,9 +258,12 @@ export const CourseWebview = ({
 
     const newMode = !focusMode;
     setFocusMode(newMode);
-    webview.executeJavaScript(
-      `window.__toggleFocusMode && window.__toggleFocusMode(${newMode})`
-    ).catch(() => {});
+
+    if (newMode) {
+      webview.executeJavaScript('window.__revidEnterFocus && window.__revidEnterFocus()').catch(() => {});
+    } else {
+      webview.executeJavaScript('window.__revidExitFocus && window.__revidExitFocus()').catch(() => {});
+    }
   }, [focusMode, videoFound]);
 
   const partition = `persist:theater-${platform}`;
