@@ -69,29 +69,47 @@ export const CourseWebview = ({
               }
             }
 
-            // Store video original styles
-            window.__revidVideoOriginal = {
-              position: video.style.position,
-              top: video.style.top,
-              left: video.style.left,
-              width: video.style.width,
-              height: video.style.height,
-              zIndex: video.style.zIndex,
-              objectFit: video.style.objectFit,
-              background: video.style.background
-            };
+            // Also hide video ancestors' siblings
+            var parent = video.parentElement;
+            while (parent && parent !== document.body) {
+              var siblings = parent.parentElement ? parent.parentElement.children : [];
+              for (var j = 0; j < siblings.length; j++) {
+                if (siblings[j] !== parent && !siblings[j].contains(video)) {
+                  window.__revidOriginalStyles.push({ el: siblings[j], display: siblings[j].style.display });
+                  siblings[j].style.setProperty('display', 'none', 'important');
+                }
+              }
+              parent = parent.parentElement;
+            }
 
-            // Fullscreen video
+            // Fullscreen video with absolute pixel values
+            var w = window.innerWidth;
+            var h = window.innerHeight;
             video.style.setProperty('position', 'fixed', 'important');
-            video.style.setProperty('top', '0', 'important');
-            video.style.setProperty('left', '0', 'important');
-            video.style.setProperty('width', '100vw', 'important');
-            video.style.setProperty('height', '100vh', 'important');
+            video.style.setProperty('top', '0px', 'important');
+            video.style.setProperty('left', '0px', 'important');
+            video.style.setProperty('width', w + 'px', 'important');
+            video.style.setProperty('height', h + 'px', 'important');
+            video.style.setProperty('max-width', 'none', 'important');
+            video.style.setProperty('max-height', 'none', 'important');
+            video.style.setProperty('min-width', '0', 'important');
+            video.style.setProperty('min-height', '0', 'important');
             video.style.setProperty('z-index', '2147483647', 'important');
             video.style.setProperty('object-fit', 'contain', 'important');
             video.style.setProperty('background', '#000', 'important');
+            video.style.setProperty('margin', '0', 'important');
+            video.style.setProperty('padding', '0', 'important');
+            video.style.setProperty('border', 'none', 'important');
+            video.style.setProperty('transform', 'none', 'important');
 
+            // Style html and body
+            document.documentElement.style.setProperty('background', '#000', 'important');
+            document.documentElement.style.setProperty('overflow', 'hidden', 'important');
+            document.body.style.setProperty('background', '#000', 'important');
             document.body.style.setProperty('overflow', 'hidden', 'important');
+            document.body.style.setProperty('margin', '0', 'important');
+            document.body.style.setProperty('padding', '0', 'important');
+
             return true;
           };
 
