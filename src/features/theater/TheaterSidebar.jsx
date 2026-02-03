@@ -135,9 +135,8 @@ export const TheaterSidebar = ({
 
       {/* ── Folder list ── */}
       <div style={{
-        flex: '0 1 auto', maxHeight: '50%',
+        flex: 1,
         overflowY: 'auto',
-        borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.08)'}`,
         padding: 8
       }}>
         {folders.map(folder => {

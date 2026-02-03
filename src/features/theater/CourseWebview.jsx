@@ -38,10 +38,11 @@ export const CourseWebview = ({
   const [isLoading, setIsLoading] = useState(true);
   const [videoFound, setVideoFound] = useState(false);
   const [videoSrc, setVideoSrc] = useState(null); // If set, use native player
-  const [focusMode, setFocusMode] = useState(false);
   const [resumeToast, setResumeToast] = useState(null);
+  const [focusVideoState, setFocusVideoState] = useState({ currentTime: 0, duration: 0, paused: true });
   const seekedRef = useRef(false);
-  const autoFocusedRef = useRef(false);
+  const focusAppliedRef = useRef(false);
+  const focusStateIntervalRef = useRef(null);
 
   // Inject video detector script and CSS when webview is ready
   useEffect(() => {
@@ -178,10 +179,9 @@ export const CourseWebview = ({
 
             if (canUseNative) {
               setVideoSrc(result.src);
-            } else if (!autoFocusedRef.current) {
-              // Can't use native player, auto-enable focus mode in webview
-              autoFocusedRef.current = true;
-              setFocusMode(true);
+            } else if (!focusAppliedRef.current) {
+              // Can't use native player, apply focus mode in webview (default behavior)
+              focusAppliedRef.current = true;
               webview.executeJavaScript('window.__revidEnterFocus && window.__revidEnterFocus()').catch(() => {});
             }
           }
@@ -201,7 +201,7 @@ export const CourseWebview = ({
       setVideoFound(false);
       setVideoSrc(null);
       seekedRef.current = false;
-      autoFocusedRef.current = false;
+      focusAppliedRef.current = false;
       // Clear poll interval
       if (webview._revidPollInterval) {
         clearInterval(webview._revidPollInterval);
@@ -303,20 +303,76 @@ export const CourseWebview = ({
     ).catch(() => {});
   }, [playbackRate, videoFound]);
 
-  // Toggle focus mode
-  const toggleFocusMode = useCallback(() => {
-    const webview = webviewRef.current;
-    if (!webview || !videoFound) return;
 
-    const newMode = !focusMode;
-    setFocusMode(newMode);
 
-    if (newMode) {
-      webview.executeJavaScript('window.__revidEnterFocus && window.__revidEnterFocus()').catch(() => {});
-    } else {
-      webview.executeJavaScript('window.__revidExitFocus && window.__revidExitFocus()').catch(() => {});
+  // Poll video state for controls (always runs when video found in webview mode)
+  useEffect(() => {
+    if (!videoFound || videoSrc || !webviewRef.current) {
+      if (focusStateIntervalRef.current) {
+        clearInterval(focusStateIntervalRef.current);
+        focusStateIntervalRef.current = null;
+      }
+      return;
     }
-  }, [focusMode, videoFound]);
+
+    const pollState = () => {
+      const webview = webviewRef.current;
+      if (!webview) return;
+
+      webview.executeJavaScript(`
+        (function() {
+          var v = document.querySelector('video');
+          if (v) return { currentTime: v.currentTime, duration: v.duration || 0, paused: v.paused };
+          return null;
+        })();
+      `).then(result => {
+        if (result) setFocusVideoState(result);
+      }).catch(() => {});
+    };
+
+    pollState();
+    focusStateIntervalRef.current = setInterval(pollState, 500);
+
+    return () => {
+      if (focusStateIntervalRef.current) {
+        clearInterval(focusStateIntervalRef.current);
+      }
+    };
+  }, [videoFound, videoSrc]);
+
+  // Focus mode video controls
+  const focusTogglePlay = useCallback(() => {
+    const webview = webviewRef.current;
+    if (!webview) return;
+    webview.executeJavaScript(`
+      (function() {
+        var v = document.querySelector('video');
+        if (v) { v.paused ? v.play() : v.pause(); }
+      })();
+    `).catch(() => {});
+  }, []);
+
+  const focusSeek = useCallback((time) => {
+    const webview = webviewRef.current;
+    if (!webview) return;
+    webview.executeJavaScript(`
+      (function() {
+        var v = document.querySelector('video');
+        if (v) v.currentTime = ${time};
+      })();
+    `).catch(() => {});
+  }, []);
+
+  const focusSkip = useCallback((delta) => {
+    const webview = webviewRef.current;
+    if (!webview) return;
+    webview.executeJavaScript(`
+      (function() {
+        var v = document.querySelector('video');
+        if (v) v.currentTime = Math.max(0, Math.min(v.duration || 0, v.currentTime + ${delta}));
+      })();
+    `).catch(() => {});
+  }, []);
 
   const partition = `persist:theater-${platform}`;
 
@@ -459,73 +515,12 @@ export const CourseWebview = ({
     );
   }
 
-  // Playlist component (shared between native and webview modes)
-  const PlaylistSidebar = () => (
-    playlist.length > 0 ? (
-      <div style={{
-        width: 220, flexShrink: 0,
-        background: isDark ? '#111' : '#f5f5f5',
-        borderLeft: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
-        overflowY: 'auto', display: 'flex', flexDirection: 'column'
-      }}>
-        <div style={{
-          padding: '10px 12px',
-          fontSize: 12, fontWeight: 600,
-          color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
-          borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`
-        }}>
-          {t('playlist')} ({playlist.length})
-        </div>
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {playlist.map((course, index) => {
-            const isActive = course.id === currentCourseId;
-            const progress = course.progress?.duration > 0
-              ? Math.round((course.progress.lastPosition / course.progress.duration) * 100)
-              : 0;
-            return (
-              <div
-                key={course.id}
-                onClick={() => onPlaylistSelect?.(course.id)}
-                style={{
-                  padding: '8px 12px', cursor: 'pointer',
-                  background: isActive ? (isDark ? 'rgba(59,130,246,0.2)' : 'rgba(91,142,201,0.15)') : 'transparent',
-                  borderLeft: isActive ? `3px solid ${theme.accent}` : '3px solid transparent',
-                  transition: 'background 0.15s'
-                }}
-                onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'; }}
-                onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 11, color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)', minWidth: 20 }}>
-                    {index + 1}
-                  </span>
-                  <span style={{
-                    fontSize: 12, flex: 1,
-                    color: isActive ? theme.accent : (isDark ? '#fff' : '#1f2937'),
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-                  }}>
-                    {course.title}
-                  </span>
-                </div>
-                {progress > 0 && (
-                  <div style={{
-                    marginTop: 4, marginLeft: 28, height: 2, borderRadius: 1,
-                    background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
-                  }}>
-                    <div style={{ height: '100%', borderRadius: 1, background: theme.accent, width: `${progress}%` }} />
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    ) : null
-  );
-
   // Webview mode (fallback)
   return (
-    <div className={`relative flex ${className}`} style={{ background: '#000' }}>
+    <div
+      className={`relative flex ${className}`}
+      style={{ background: '#000' }}
+    >
       {/* Main content */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         {/* Webview */}
@@ -537,33 +532,10 @@ export const CourseWebview = ({
           allowpopups="true"
         />
 
-        {/* Status bar - hide when focus mode is active */}
-        {!focusMode && (
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-surface/50 border-t border-white/5 text-xs">
-            <div className={`w-2 h-2 rounded-full ${videoFound ? 'bg-green-500' : 'bg-white/20'}`} />
-            <span className="text-white/50">
-              {videoFound ? t('videoDetected') : t('detectingVideo')}
-            </span>
-            <div className="flex-1" />
-            {videoFound && (
-              <button
-                onClick={toggleFocusMode}
-                className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
-                  focusMode
-                    ? 'bg-primary/20 text-primary'
-                    : 'bg-white/5 text-white/40 hover:bg-white/10'
-                }`}
-              >
-                {t('focusMode')}
-              </button>
-            )}
-            <span className="text-white/30">{playbackRate}x</span>
-          </div>
-        )}
 
         {/* Loading overlay */}
         {isLoading && (
-          <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10" style={{ right: playlist.length > 0 ? 220 : 0 }}>
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10">
             <div className="flex flex-col items-center gap-3">
               <div className="w-8 h-8 border-2 border-white/30 border-t-primary rounded-full animate-spin" />
               <span className="text-white/60 text-sm">{t('detectingVideo')}</span>
@@ -582,10 +554,65 @@ export const CourseWebview = ({
             {t('resumedAt')} {resumeToast}
           </div>
         )}
-      </div>
 
-      {/* Playlist sidebar */}
-      <PlaylistSidebar />
+        {/* Fixed bottom playback toolbar */}
+        {videoFound && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '8px 16px',
+              background: 'rgba(0,0,0,0.9)',
+              borderTop: '1px solid rgba(255,255,255,0.1)',
+            }}
+          >
+            {/* Play/Pause */}
+            <button
+              onClick={focusTogglePlay}
+              style={{
+                padding: 6, borderRadius: 6, cursor: 'pointer',
+                color: '#fff', background: 'transparent',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              {focusVideoState.paused ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="5 3 19 12 5 21 5 3" />
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="6" y="4" width="4" height="16" />
+                  <rect x="14" y="4" width="4" height="16" />
+                </svg>
+              )}
+            </button>
+
+            {/* Time */}
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', minWidth: 36 }}>
+              {Math.floor(focusVideoState.currentTime / 60)}:{String(Math.floor(focusVideoState.currentTime % 60)).padStart(2, '0')}
+            </span>
+
+            {/* Progress bar */}
+            <input
+              type="range"
+              min="0"
+              max={focusVideoState.duration || 100}
+              value={focusVideoState.currentTime}
+              onChange={(e) => focusSeek(parseFloat(e.target.value))}
+              style={{
+                flex: 1, height: 4, cursor: 'pointer',
+                accentColor: theme.accent,
+              }}
+            />
+
+            {/* Duration */}
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', minWidth: 36 }}>
+              {Math.floor((focusVideoState.duration || 0) / 60)}:{String(Math.floor((focusVideoState.duration || 0) % 60)).padStart(2, '0')}
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
