@@ -395,7 +395,7 @@ export const CourseWebview = ({
         </div>
 
         {/* Playlist sidebar */}
-        {playlist.length > 1 && (
+        {playlist.length > 0 && (
           <div style={{
             width: 240, flexShrink: 0,
             background: isDark ? '#111' : '#f5f5f5',
@@ -461,7 +461,7 @@ export const CourseWebview = ({
 
   // Playlist component (shared between native and webview modes)
   const PlaylistSidebar = () => (
-    playlist.length > 1 ? (
+    playlist.length > 0 ? (
       <div style={{
         width: 220, flexShrink: 0,
         background: isDark ? '#111' : '#f5f5f5',
@@ -537,31 +537,33 @@ export const CourseWebview = ({
           allowpopups="true"
         />
 
-        {/* Status bar */}
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-surface/50 border-t border-white/5 text-xs">
-          <div className={`w-2 h-2 rounded-full ${videoFound ? 'bg-green-500' : 'bg-white/20'}`} />
-          <span className="text-white/50">
-            {videoFound ? t('videoDetected') : t('detectingVideo')}
-          </span>
-          <div className="flex-1" />
-          {videoFound && (
-            <button
-              onClick={toggleFocusMode}
-              className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
-                focusMode
-                  ? 'bg-primary/20 text-primary'
-                  : 'bg-white/5 text-white/40 hover:bg-white/10'
-              }`}
-            >
-              {t('focusMode')}
-            </button>
-          )}
-          <span className="text-white/30">{playbackRate}x</span>
-        </div>
+        {/* Status bar - hide when focus mode is active */}
+        {!focusMode && (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-surface/50 border-t border-white/5 text-xs">
+            <div className={`w-2 h-2 rounded-full ${videoFound ? 'bg-green-500' : 'bg-white/20'}`} />
+            <span className="text-white/50">
+              {videoFound ? t('videoDetected') : t('detectingVideo')}
+            </span>
+            <div className="flex-1" />
+            {videoFound && (
+              <button
+                onClick={toggleFocusMode}
+                className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                  focusMode
+                    ? 'bg-primary/20 text-primary'
+                    : 'bg-white/5 text-white/40 hover:bg-white/10'
+                }`}
+              >
+                {t('focusMode')}
+              </button>
+            )}
+            <span className="text-white/30">{playbackRate}x</span>
+          </div>
+        )}
 
         {/* Loading overlay */}
         {isLoading && (
-          <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10" style={{ right: playlist.length > 1 ? 220 : 0 }}>
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10" style={{ right: playlist.length > 0 ? 220 : 0 }}>
             <div className="flex flex-col items-center gap-3">
               <div className="w-8 h-8 border-2 border-white/30 border-t-primary rounded-full animate-spin" />
               <span className="text-white/60 text-sm">{t('detectingVideo')}</span>
