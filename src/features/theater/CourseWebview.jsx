@@ -40,6 +40,7 @@ export const CourseWebview = ({
   const [isLoading, setIsLoading] = useState(true);
   const [videoFound, setVideoFound] = useState(false);
   const [videoSrc, setVideoSrc] = useState(null); // If set, use native player
+  const [detectedVideoUrl, setDetectedVideoUrl] = useState(null); // For download (even if not using native player)
   const [resumeToast, setResumeToast] = useState(null);
   const [focusVideoState, setFocusVideoState] = useState({ currentTime: 0, duration: 0, paused: true });
   const [downloadProgress, setDownloadProgress] = useState(null); // null | { progress, status }
@@ -220,6 +221,11 @@ export const CourseWebview = ({
               }).catch(() => {});
             }
 
+            // Store detected video URL for download (if not blob:)
+            if (result.src && !result.src.startsWith('blob:')) {
+              setDetectedVideoUrl(result.src);
+            }
+
             // If we got a valid video src (not blob:), switch to native player
             const canUseNative = result.src &&
               !result.src.startsWith('blob:') &&
@@ -248,6 +254,7 @@ export const CourseWebview = ({
       setIsLoading(true);
       setVideoFound(false);
       setVideoSrc(null);
+      setDetectedVideoUrl(null);
       seekedRef.current = false;
       focusAppliedRef.current = false;
       thumbnailCapturedRef.current = false;
@@ -427,7 +434,7 @@ export const CourseWebview = ({
 
   // Handle video download
   const handleDownload = useCallback(async () => {
-    const srcToDownload = videoSrc || null;
+    const srcToDownload = videoSrc || detectedVideoUrl;
     if (!srcToDownload) return;
 
     const api = window.electronAPI;
@@ -459,7 +466,7 @@ export const CourseWebview = ({
     }
 
     unsubscribe?.();
-  }, [videoSrc]);
+  }, [videoSrc, detectedVideoUrl]);
 
   // Handle native video time updates
   useEffect(() => {
@@ -754,6 +761,41 @@ export const CourseWebview = ({
             <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', minWidth: 36 }}>
               {Math.floor((focusVideoState.duration || 0) / 60)}:{String(Math.floor((focusVideoState.duration || 0) % 60)).padStart(2, '0')}
             </span>
+
+            {/* Download button - show when downloadable URL available */}
+            {detectedVideoUrl && (
+              <>
+                <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.2)' }} />
+                <button
+                  onClick={handleDownload}
+                  disabled={!!downloadProgress}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    padding: '4px 8px', borderRadius: 4,
+                    background: downloadProgress?.status === 'complete' ? 'rgba(34,197,94,0.9)'
+                      : downloadProgress?.status === 'failed' ? 'rgba(239,68,68,0.9)'
+                      : 'rgba(255,255,255,0.1)',
+                    color: '#fff', fontSize: 11,
+                    cursor: downloadProgress ? 'default' : 'pointer',
+                  }}
+                >
+                  {downloadProgress ? (
+                    downloadProgress.status === 'downloading' ? `${downloadProgress.progress}%`
+                    : downloadProgress.status === 'complete' ? '✓'
+                    : '✗'
+                  ) : (
+                    <>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                      </svg>
+                      {t('download')}
+                    </>
+                  )}
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
