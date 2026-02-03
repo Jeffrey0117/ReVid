@@ -2,23 +2,18 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useTheme } from '../../theme.jsx';
 import { useI18n } from '../../i18n.jsx';
-import { getPlatformColor, getPlatformIcon, detectPlatform } from '../../utils/platformDetect';
 
 /**
- * TheaterSidebar — folder/course list for online video mode.
- * Styled to match REPIC's AlbumSidebar pattern.
+ * TheaterSidebar — folder list for online video mode.
+ * Courses are shown in the main viewport as a grid.
  */
 export const TheaterSidebar = ({
   folders,
   selectedFolderId,
-  activeCourseId,
   onSelectFolder,
   onCreateFolder,
   onRenameFolder,
   onDeleteFolder,
-  onOpenCourse,
-  onRemoveCourse,
-  onAddCourse,
   onExport,
   onImport,
   isVisible = true
@@ -29,7 +24,6 @@ export const TheaterSidebar = ({
   const [isCreating, setIsCreating] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [hoveredFolderId, setHoveredFolderId] = useState(null);
-  const [hoveredCourseId, setHoveredCourseId] = useState(null);
 
   // Rename dialog state (modal, REPIC-style)
   const [renameDialog, setRenameDialog] = useState({ open: false, folderId: null, albumName: '' });
@@ -74,8 +68,6 @@ export const TheaterSidebar = ({
     }
   }, [closeRenameDialog]);
 
-  const selectedFolder = folders.find(f => f.id === selectedFolderId);
-  const courses = selectedFolder?.courses?.filter(c => !c.deletedAt) || [];
 
   if (!isVisible) return null;
 
@@ -303,150 +295,6 @@ export const TheaterSidebar = ({
             {t('selectOrCreateAlbum')}
           </div>
         )}
-      </div>
-
-      {/* ── Course list header ── */}
-      {selectedFolder && (
-        <div style={{
-          padding: '10px 12px',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.08)'}`
-        }}>
-          <span style={{
-            fontSize: 13, fontWeight: 600,
-            color: isDark ? '#fff' : '#1f2937',
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            flex: 1, minWidth: 0
-          }}>
-            {selectedFolder.name}
-          </span>
-          <button
-            onClick={onAddCourse}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '5px 10px', borderRadius: 8,
-              fontSize: 12, fontWeight: 500,
-              background: isDark ? 'rgba(59,130,246,0.2)' : 'rgba(91,142,201,0.12)',
-              color: theme.accent,
-              border: 'none', cursor: 'pointer',
-              transition: 'background 0.15s', flexShrink: 0
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(59,130,246,0.3)' : 'rgba(91,142,201,0.22)'}
-            onMouseLeave={e => e.currentTarget.style.background = isDark ? 'rgba(59,130,246,0.2)' : 'rgba(91,142,201,0.12)'}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-            </svg>
-            {t('addCourse')}
-          </button>
-        </div>
-      )}
-
-      {/* ── Course list ── */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
-        {courses.map(course => {
-          const isActive = course.id === activeCourseId;
-          const isHovered = course.id === hoveredCourseId;
-          const platformColor = getPlatformColor(course.platform);
-          const progress = course.progress?.duration > 0
-            ? Math.round((course.progress.lastPosition / course.progress.duration) * 100)
-            : 0;
-
-          return (
-            <div
-              key={course.id}
-              onClick={() => onOpenCourse?.(course.id)}
-              onMouseEnter={() => setHoveredCourseId(course.id)}
-              onMouseLeave={() => setHoveredCourseId(null)}
-              style={{
-                padding: '10px 12px', margin: '0 4px', marginBottom: 2,
-                cursor: 'pointer', borderRadius: 8,
-                transition: 'all 0.15s',
-                background: isActive
-                  ? (isDark ? 'rgba(59,130,246,0.2)' : 'rgba(91,142,201,0.15)')
-                  : isHovered
-                    ? (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)')
-                    : 'transparent',
-                border: `1px solid ${isActive
-                  ? (isDark ? 'rgba(59,130,246,0.3)' : 'rgba(91,142,201,0.3)')
-                  : 'transparent'
-                }`
-              }}
-            >
-              {/* Course title row */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                {/* Thumbnail or platform badge */}
-                {course.thumbnail ? (
-                  <img
-                    src={course.thumbnail}
-                    alt=""
-                    style={{
-                      width: 48, height: 27, borderRadius: 4,
-                      objectFit: 'cover', flexShrink: 0,
-                      background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'
-                    }}
-                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                  />
-                ) : (
-                  <span style={{
-                    width: 18, height: 18, borderRadius: 4,
-                    fontSize: 10, fontWeight: 700,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: '#fff', flexShrink: 0,
-                    backgroundColor: platformColor
-                  }}>
-                    {getPlatformIcon(course.platform) || '?'}
-                  </span>
-                )}
-                <span style={{
-                  fontSize: 13, flex: 1,
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  color: isActive ? theme.accent : (isDark ? '#fff' : '#1f2937'),
-                  fontWeight: isActive ? 500 : 400
-                }}>
-                  {course.title}
-                </span>
-
-                {/* Delete button (on hover) */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onRemoveCourse?.(selectedFolderId, course.id);
-                  }}
-                  style={{
-                    opacity: isHovered ? 1 : 0,
-                    color: theme.error,
-                    transition: 'opacity 0.15s',
-                    padding: 2, flexShrink: 0
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M18 6 6 18" /><path d="m6 6 12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Progress bar */}
-              {progress > 0 && (
-                <div style={{
-                  marginTop: 6, height: 2,
-                  background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
-                  borderRadius: 999, overflow: 'hidden'
-                }}>
-                  <div style={{
-                    height: '100%',
-                    background: theme.accent,
-                    borderRadius: 999,
-                    transition: 'width 0.3s',
-                    width: `${Math.min(100, progress)}%`
-                  }} />
-                </div>
-              )}
-            </div>
-          );
-        })}
-
       </div>
 
       {/* ── Rename Dialog (REPIC modal pattern) ── */}

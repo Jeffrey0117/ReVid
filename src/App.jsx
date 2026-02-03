@@ -29,6 +29,7 @@ import { UploadSettings } from './features/theater/UploadSettings';
 import { UploadDialog } from './features/theater/UploadDialog';
 import { SpeedControl } from './components/SpeedControl';
 import { validateRevidFile } from './utils/revidFile';
+import { detectPlatform } from './utils/platformDetect';
 
 const VideoEditor = lazy(() => import('./features/editor/VideoEditor'));
 
@@ -886,14 +887,10 @@ export default function App() {
                         <TheaterSidebar
                             folders={theater.folders}
                             selectedFolderId={theater.selectedFolderId}
-                            activeCourseId={theater.activeCourseId}
                             onSelectFolder={theater.selectFolder}
                             onCreateFolder={theater.createFolder}
                             onRenameFolder={theater.renameFolder}
                             onDeleteFolder={theater.deleteFolder}
-                            onOpenCourse={theater.openCourse}
-                            onRemoveCourse={theater.removeCourse}
-                            onAddCourse={() => setShowAddCourseDialog(true)}
                             onExport={() => setShowExportDialog(true)}
                             onImport={handleImport}
                             isVisible={theaterSidebarVisible}
@@ -937,21 +934,143 @@ export default function App() {
                                             className="flex-1 min-h-0"
                                         />
                                     )
+                                ) : theater.selectedFolder && theater.activeCourses.length > 0 ? (
+                                    /* Course thumbnail grid */
+                                    <div style={{
+                                        width: '100%', height: '100%',
+                                        overflowY: 'auto', padding: 16,
+                                        display: 'grid',
+                                        gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+                                        gap: 12, alignContent: 'start'
+                                    }}>
+                                        {theater.activeCourses.map(course => {
+                                            const progress = course.progress?.duration > 0
+                                                ? Math.round((course.progress.lastPosition / course.progress.duration) * 100)
+                                                : 0;
+                                            return (
+                                                <div
+                                                    key={course.id}
+                                                    onClick={() => theater.openCourse(course.id)}
+                                                    style={{
+                                                        cursor: 'pointer', borderRadius: 8,
+                                                        background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                                                        border: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`,
+                                                        overflow: 'hidden',
+                                                        transition: 'transform 0.15s, box-shadow 0.15s'
+                                                    }}
+                                                    onMouseEnter={e => {
+                                                        e.currentTarget.style.transform = 'translateY(-2px)';
+                                                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                                                    }}
+                                                    onMouseLeave={e => {
+                                                        e.currentTarget.style.transform = 'translateY(0)';
+                                                        e.currentTarget.style.boxShadow = 'none';
+                                                    }}
+                                                >
+                                                    {/* Thumbnail */}
+                                                    <div style={{
+                                                        width: '100%', aspectRatio: '16/9',
+                                                        background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                        position: 'relative'
+                                                    }}>
+                                                        {course.thumbnail ? (
+                                                            <img
+                                                                src={course.thumbnail}
+                                                                alt=""
+                                                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                                            />
+                                                        ) : (
+                                                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)'} strokeWidth="1.5">
+                                                                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                                                                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                                                            </svg>
+                                                        )}
+                                                        {/* Progress bar overlay */}
+                                                        {progress > 0 && (
+                                                            <div style={{
+                                                                position: 'absolute', bottom: 0, left: 0, right: 0,
+                                                                height: 3, background: 'rgba(0,0,0,0.3)'
+                                                            }}>
+                                                                <div style={{
+                                                                    height: '100%', background: theme.accent,
+                                                                    width: `${Math.min(100, progress)}%`
+                                                                }} />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    {/* Title */}
+                                                    <div style={{ padding: '8px 10px' }}>
+                                                        <p style={{
+                                                            fontSize: 13, fontWeight: 500,
+                                                            color: isDark ? '#fff' : '#1f2937',
+                                                            overflow: 'hidden', textOverflow: 'ellipsis',
+                                                            whiteSpace: 'nowrap'
+                                                        }}>
+                                                            {course.title}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : theater.selectedFolder ? (
+                                    /* Empty folder - show input to add URLs */
+                                    <div style={{
+                                        width: '100%', height: '100%',
+                                        display: 'flex', flexDirection: 'column',
+                                        alignItems: 'center', justifyContent: 'center',
+                                        padding: 32
+                                    }}>
+                                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: theme.textTertiary, marginBottom: 16 }}>
+                                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                                        </svg>
+                                        <p style={{ fontSize: 16, color: theme.textTertiary, marginBottom: 8 }}>
+                                            {t('emptyAlbum')}
+                                        </p>
+                                        <p style={{ fontSize: 13, color: theme.textTertiary, marginBottom: 16 }}>
+                                            {t('emptyAlbumHint')}
+                                        </p>
+                                        <input
+                                            type="text"
+                                            placeholder={t('pasteVideoUrl')}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' && e.target.value.trim()) {
+                                                    const url = e.target.value.trim();
+                                                    const detected = detectPlatform(url);
+                                                    handleAddCourse({ url, title: url, platform: detected.id });
+                                                    e.target.value = '';
+                                                }
+                                            }}
+                                            style={{
+                                                width: '100%', maxWidth: 400, padding: '12px 16px',
+                                                fontSize: 14, borderRadius: 10,
+                                                background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+                                                border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
+                                                color: isDark ? '#fff' : '#1f2937',
+                                                outline: 'none', transition: 'border-color 0.15s'
+                                            }}
+                                            onFocus={e => e.currentTarget.style.borderColor = isDark ? 'rgba(59,130,246,0.5)' : 'rgba(91,142,201,0.5)'}
+                                            onBlur={e => e.currentTarget.style.borderColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}
+                                        />
+                                        <p style={{ fontSize: 12, marginTop: 8, color: theme.textTertiary }}>
+                                            {t('pasteOrEnter')}
+                                        </p>
+                                    </div>
                                 ) : (
+                                    /* No folder selected */
                                     <div style={{
                                         width: '100%', height: '100%',
                                         display: 'flex', flexDirection: 'column',
                                         alignItems: 'center', justifyContent: 'center'
                                     }}>
                                         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: theme.textTertiary, marginBottom: 16 }}>
-                                            <circle cx="12" cy="12" r="10" />
-                                            <polygon points="10 8 16 12 10 16 10 8" />
+                                            <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
                                         </svg>
                                         <p style={{ fontSize: 16, color: theme.textTertiary, marginBottom: 8 }}>
-                                            {t('courseTheater')}
-                                        </p>
-                                        <p style={{ fontSize: 13, color: theme.textTertiary }}>
-                                            {t('courseTheaterHint')}
+                                            {t('selectOrCreateAlbum')}
                                         </p>
                                     </div>
                                 )}
