@@ -39,25 +39,56 @@ export const CourseWebview = ({
     const handleDomReady = () => {
       setIsLoading(false);
 
-      // Inject CSS to fullscreen video (most reliable method)
-      const focusCSS = `
-        video {
-          position: fixed !important;
-          top: 0 !important;
-          left: 0 !important;
-          width: 100vw !important;
-          height: 100vh !important;
-          z-index: 999999 !important;
-          object-fit: contain !important;
-          background: #000 !important;
-        }
-        body { overflow: hidden !important; }
-        nav, header, footer, .sidebar, .header, .footer,
-        [role="navigation"], [role="banner"] {
-          display: none !important;
-        }
+      // Inject JavaScript to fullscreen video (more reliable than CSS)
+      const fullscreenScript = `
+        (function() {
+          function makeVideoFullscreen() {
+            var video = document.querySelector('video');
+            if (!video) return false;
+
+            // Hide all other elements
+            var all = document.body.querySelectorAll('*');
+            for (var i = 0; i < all.length; i++) {
+              if (all[i].tagName !== 'VIDEO' && !all[i].contains(video) && all[i] !== video) {
+                all[i].style.setProperty('display', 'none', 'important');
+              }
+            }
+
+            // Style the video
+            video.style.setProperty('position', 'fixed', 'important');
+            video.style.setProperty('top', '0', 'important');
+            video.style.setProperty('left', '0', 'important');
+            video.style.setProperty('width', '100vw', 'important');
+            video.style.setProperty('height', '100vh', 'important');
+            video.style.setProperty('max-width', '100vw', 'important');
+            video.style.setProperty('max-height', '100vh', 'important');
+            video.style.setProperty('z-index', '2147483647', 'important');
+            video.style.setProperty('object-fit', 'contain', 'important');
+            video.style.setProperty('background', '#000', 'important');
+            video.style.setProperty('margin', '0', 'important');
+            video.style.setProperty('padding', '0', 'important');
+
+            // Style body
+            document.body.style.setProperty('overflow', 'hidden', 'important');
+            document.body.style.setProperty('background', '#000', 'important');
+            document.documentElement.style.setProperty('background', '#000', 'important');
+
+            return true;
+          }
+
+          // Try immediately
+          if (!makeVideoFullscreen()) {
+            // Retry a few times
+            var attempts = 0;
+            var interval = setInterval(function() {
+              if (makeVideoFullscreen() || attempts++ > 10) {
+                clearInterval(interval);
+              }
+            }, 500);
+          }
+        })();
       `;
-      webview.insertCSS(focusCSS).catch(() => {});
+      webview.executeJavaScript(fullscreenScript).catch((e) => console.error('fullscreen script failed:', e));
 
       // Inject video detector script
       const script = getVideoDetectorScript();
