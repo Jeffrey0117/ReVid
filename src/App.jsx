@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
+import { createPortal } from 'react-dom';
 import { VideoViewer } from './features/viewer/VideoViewer';
 import { VideoThumbnailGrid } from './components/VideoThumbnailGrid';
 import { VideoSidebar } from './components/VideoSidebar';
@@ -779,13 +780,13 @@ export default function App() {
                                 <circle cx="12" cy="12" r="3" />
                             </svg>
                         </button>
-                        {showSettingsMenu && (
+                        {showSettingsMenu && createPortal(
                             <>
-                                <div style={{ position: 'fixed', inset: 0, zIndex: 99 }} onClick={() => setShowSettingsMenu(false)} />
+                                <div style={{ position: 'fixed', inset: 0, zIndex: 9999 }} onClick={() => setShowSettingsMenu(false)} />
                                 <div
                                     onClick={e => e.stopPropagation()}
                                     style={{
-                                        position: 'fixed', right: 12, top: 52, zIndex: 100,
+                                        position: 'fixed', right: 12, top: 52, zIndex: 10000,
                                         width: 200, padding: '4px 0', borderRadius: 12,
                                         border: `1px solid ${theme.borderSecondary}`,
                                         background: theme.dialogBg,
@@ -872,7 +873,8 @@ export default function App() {
                                         <span>{t('about')}</span>
                                     </button>
                                 </div>
-                            </>
+                            </>,
+                            document.body
                         )}
                     </div>
                 </div>
