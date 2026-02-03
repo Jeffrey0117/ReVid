@@ -577,7 +577,9 @@ export default function App() {
                                 }}
                             >
                                 {SORT_OPTIONS.map(opt => (
-                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                    <option key={opt.value} value={opt.value}>
+                                        {t(`sort${opt.value.charAt(0).toUpperCase()}${opt.value.slice(1)}`)}
+                                    </option>
                                 ))}
                             </select>
                             <button
