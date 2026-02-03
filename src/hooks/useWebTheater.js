@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { extractYouTubeVideoId } from '../utils/youtubeUrl';
+import { validateRevidFile, revidToCourse } from '../utils/revidFile';
 
 const STORAGE_KEY = 'revid-web-theater';
 
@@ -206,6 +207,87 @@ export const useWebTheater = () => {
     setActiveCourseId(null);
   }, []);
 
+  // --- Import ---
+
+  const importRevidFile = useCallback((revidData, targetFolderId) => {
+    const validation = validateRevidFile(revidData);
+    if (!validation.valid) {
+      return { success: false, error: validation.error };
+    }
+
+    const fId = targetFolderId || selectedFolderId;
+    if (!fId) {
+      return { success: false, error: 'No folder selected' };
+    }
+
+    const course = revidToCourse(revidData);
+    setFolders(prev => prev.map(f => {
+      if (f.id !== fId) return f;
+      return { ...f, courses: [...f.courses, course] };
+    }));
+
+    return { success: true, course };
+  }, [selectedFolderId]);
+
+  const importRevidFiles = useCallback((revidDataArray, targetFolderId) => {
+    const fId = targetFolderId || selectedFolderId;
+    if (!fId) {
+      return { success: false, error: 'No folder selected' };
+    }
+
+    const courses = [];
+    for (const revidData of revidDataArray) {
+      const validation = validateRevidFile(revidData);
+      if (validation.valid) {
+        courses.push(revidToCourse(revidData));
+      }
+    }
+
+    if (courses.length === 0) {
+      return { success: false, error: 'No valid .revid data' };
+    }
+
+    setFolders(prev => prev.map(f => {
+      if (f.id !== fId) return f;
+      return { ...f, courses: [...f.courses, ...courses] };
+    }));
+
+    return { success: true, count: courses.length };
+  }, [selectedFolderId]);
+
+  const importJsonBackup = useCallback((collectionData, mode = 'merge') => {
+    const validation = validateRevidFile(collectionData);
+    if (!validation.valid) {
+      return { success: false, error: validation.error };
+    }
+
+    if (collectionData.type !== 'revid-collection') {
+      return { success: false, error: 'Not a collection file' };
+    }
+
+    const importedFolders = (collectionData.folders || []).map(folder => {
+      const folderId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      return {
+        id: folderId,
+        name: folder.name || 'Imported Folder',
+        platform: folder.platform || 'custom',
+        courses: (folder.courses || []).map(c => revidToCourse(c)),
+        createdAt: Date.now(),
+      };
+    });
+
+    if (mode === 'replace') {
+      setFolders(importedFolders);
+      if (importedFolders.length > 0) {
+        setSelectedFolderId(importedFolders[0].id);
+      }
+    } else {
+      setFolders(prev => [...prev, ...importedFolders]);
+    }
+
+    return { success: true, count: importedFolders.length };
+  }, []);
+
   return useMemo(() => ({
     folders,
     selectedFolder,
@@ -223,12 +305,16 @@ export const useWebTheater = () => {
     updateProgress,
     updateCourseThumbnail,
     openCourse,
-    closeCourse
+    closeCourse,
+    importRevidFile,
+    importRevidFiles,
+    importJsonBackup,
   }), [
     folders, selectedFolder, selectedFolderId,
     activeCourses, activeCourse, activeCourseId,
     selectFolder, createFolder, renameFolder, deleteFolder,
     addCourse, removeCourse, renameCourse, updateProgress,
-    updateCourseThumbnail, openCourse, closeCourse
+    updateCourseThumbnail, openCourse, closeCourse,
+    importRevidFile, importRevidFiles, importJsonBackup,
   ]);
 };

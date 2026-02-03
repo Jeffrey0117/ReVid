@@ -204,5 +204,59 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return await ipcRenderer.invoke('clear-session', platform);
     },
 
+    // --- .revid File API ---
+
+    writeRevidFile: async (filePath, data) => {
+        return await ipcRenderer.invoke('write-revid-file', { filePath, data });
+    },
+
+    writeRevidFilesBatch: async (dirPath, files) => {
+        return await ipcRenderer.invoke('write-revid-files-batch', { dirPath, files });
+    },
+
+    readRevidFile: async (filePath) => {
+        return await ipcRenderer.invoke('read-revid-file', filePath);
+    },
+
+    selectRevidFile: async () => {
+        return await ipcRenderer.invoke('select-revid-file');
+    },
+
+    saveRevidFileDialog: async (defaultName) => {
+        return await ipcRenderer.invoke('save-revid-file-dialog', defaultName);
+    },
+
+    exportTheaterData: async (data, defaultName) => {
+        return await ipcRenderer.invoke('export-theater-data', { data, defaultName });
+    },
+
+    importTheaterData: async () => {
+        return await ipcRenderer.invoke('import-theater-data');
+    },
+
+    // --- Upload API ---
+
+    uploadVideoFile: async (filePath, config, onProgress) => {
+        const handler = (_event, data) => {
+            if (data.filePath === filePath) onProgress(data.pct);
+        };
+        ipcRenderer.on('upload-progress', handler);
+        try {
+            return await ipcRenderer.invoke('upload-video-file', { filePath, config });
+        } finally {
+            ipcRenderer.removeListener('upload-progress', handler);
+        }
+    },
+
+    selectVideoForUpload: async () => {
+        return await ipcRenderer.invoke('select-video-for-upload');
+    },
+
+    // --- .revid File Association ---
+
+    onOpenRevidFile: (callback) => {
+        ipcRenderer.on('open-revid-file', (_event, payload) => callback(payload));
+    },
+
     isElectron: true
 });

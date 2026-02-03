@@ -24,7 +24,11 @@ import { TheaterSidebar } from './features/theater/TheaterSidebar';
 import { CourseWebview } from './features/theater/CourseWebview';
 import { YouTubePlayer } from './features/theater/YouTubePlayer';
 import { AddCourseDialog } from './features/theater/AddCourseDialog';
+import { ExportDialog } from './features/theater/ExportDialog';
+import { UploadSettings } from './features/theater/UploadSettings';
+import { UploadDialog } from './features/theater/UploadDialog';
 import { SpeedControl } from './components/SpeedControl';
+import { validateRevidFile } from './utils/revidFile';
 
 const VideoEditor = lazy(() => import('./features/editor/VideoEditor'));
 
@@ -79,6 +83,9 @@ export default function App() {
     const theater = useWebTheater();
     const { speed: theaterSpeed, selectSpeed: selectTheaterSpeed, SPEED_PRESETS } = usePlaybackSpeed();
     const [showAddCourseDialog, setShowAddCourseDialog] = useState(false);
+    const [showExportDialog, setShowExportDialog] = useState(false);
+    const [showUploadSettings, setShowUploadSettings] = useState(false);
+    const [showUploadDialog, setShowUploadDialog] = useState(false);
     const [theaterSidebarVisible, setTheaterSidebarVisible] = useState(true);
     const theaterVideoStateRef = useRef(null);
 
@@ -112,6 +119,72 @@ export default function App() {
         }
         theater.closeCourse();
     }, [theater.selectedFolderId, theater.activeCourseId, theater.updateProgress, theater.closeCourse]);
+
+    // Import .revid / JSON backup
+    const handleImport = useCallback(async () => {
+        const api = getElectronAPI();
+        if (!api) return;
+
+        const selectResult = await api.selectRevidFile();
+        if (!selectResult?.success || !selectResult.filePaths) return;
+
+        for (const filePath of selectResult.filePaths) {
+            const readResult = await api.readRevidFile(filePath);
+            if (!readResult?.success || !readResult.data) continue;
+
+            const data = readResult.data;
+            const validation = validateRevidFile(data);
+            if (!validation.valid) continue;
+
+            if (data.type === 'revid-collection') {
+                const result = theater.importJsonBackup(data, 'merge');
+                if (result.success) {
+                    setToast(t('importSuccess'));
+                    setTimeout(() => setToast(null), 2000);
+                }
+            } else {
+                if (!theater.selectedFolderId) {
+                    const folder = theater.createFolder('Imported');
+                    theater.importRevidFile(data, folder.id);
+                } else {
+                    theater.importRevidFile(data);
+                }
+                setToast(t('importSuccess'));
+                setTimeout(() => setToast(null), 2000);
+            }
+        }
+    }, [theater, t]);
+
+    // Handle .revid file opened externally (double-click / file association)
+    useEffect(() => {
+        const api = getElectronAPI();
+        if (!api?.onOpenRevidFile) return;
+
+        api.onOpenRevidFile(({ data }) => {
+            if (!data) return;
+            const validation = validateRevidFile(data);
+            if (!validation.valid) return;
+
+            setViewMode('theater');
+
+            if (data.type === 'revid-collection') {
+                theater.importJsonBackup(data, 'merge');
+            } else {
+                if (!theater.selectedFolderId) {
+                    const folder = theater.createFolder('Imported');
+                    const result = theater.importRevidFile(data, folder.id);
+                    if (result?.success && result.course) {
+                        theater.openCourse(result.course.id);
+                    }
+                } else {
+                    const result = theater.importRevidFile(data);
+                    if (result?.success && result.course) {
+                        theater.openCourse(result.course.id);
+                    }
+                }
+            }
+        });
+    }, [theater]);
 
     const toggleAlwaysOnTop = useCallback(async () => {
         const api = getElectronAPI();
@@ -357,26 +430,49 @@ export default function App() {
 
                     {/* Add URL — theater mode with folder selected (REPIC pattern) */}
                     {viewMode === 'theater' && theater.selectedFolderId && (
-                        <button
-                            onClick={() => setShowAddCourseDialog(true)}
-                            style={{
-                                display: 'flex', alignItems: 'center', gap: 6,
-                                padding: '6px 12px', borderRadius: 8,
-                                fontSize: 12, fontWeight: 500,
-                                background: isDark ? 'rgba(59,130,246,0.2)' : 'rgba(91,142,201,0.15)',
-                                color: theme.accent,
-                                border: 'none', cursor: 'pointer',
-                                transition: 'background 0.15s'
-                            }}
-                            onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(59,130,246,0.3)' : 'rgba(91,142,201,0.25)'}
-                            onMouseLeave={e => e.currentTarget.style.background = isDark ? 'rgba(59,130,246,0.2)' : 'rgba(91,142,201,0.15)'}
-                        >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                            </svg>
-                            {t('addCourseUrl')}
-                        </button>
+                        <>
+                            <button
+                                onClick={() => setShowAddCourseDialog(true)}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: 6,
+                                    padding: '6px 12px', borderRadius: 8,
+                                    fontSize: 12, fontWeight: 500,
+                                    background: isDark ? 'rgba(59,130,246,0.2)' : 'rgba(91,142,201,0.15)',
+                                    color: theme.accent,
+                                    border: 'none', cursor: 'pointer',
+                                    transition: 'background 0.15s'
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(59,130,246,0.3)' : 'rgba(91,142,201,0.25)'}
+                                onMouseLeave={e => e.currentTarget.style.background = isDark ? 'rgba(59,130,246,0.2)' : 'rgba(91,142,201,0.15)'}
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                                </svg>
+                                {t('addCourseUrl')}
+                            </button>
+                            <button
+                                onClick={() => setShowUploadDialog(true)}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: 6,
+                                    padding: '6px 12px', borderRadius: 8,
+                                    fontSize: 12, fontWeight: 500,
+                                    background: isDark ? 'rgba(59,130,246,0.2)' : 'rgba(91,142,201,0.15)',
+                                    color: theme.accent,
+                                    border: 'none', cursor: 'pointer',
+                                    transition: 'background 0.15s'
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(59,130,246,0.3)' : 'rgba(91,142,201,0.25)'}
+                                onMouseLeave={e => e.currentTarget.style.background = isDark ? 'rgba(59,130,246,0.2)' : 'rgba(91,142,201,0.15)'}
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                    <polyline points="17 8 12 3 7 8" />
+                                    <line x1="12" y1="3" x2="12" y2="15" />
+                                </svg>
+                                {t('uploadVideo')}
+                            </button>
+                        </>
                     )}
                 </div>
 
@@ -731,6 +827,23 @@ export default function App() {
                                             {lang === 'en' ? 'EN' : '中'}
                                         </span>
                                     </button>
+                                    <button
+                                        onClick={() => { setShowUploadSettings(true); setShowSettingsMenu(false); }}
+                                        style={{
+                                            width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+                                            padding: '8px 12px', fontSize: 13, color: theme.textSecondary,
+                                            transition: 'background 0.1s'
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.background = theme.hoverBg}
+                                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                    >
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                            <polyline points="17 8 12 3 7 8" />
+                                            <line x1="12" y1="3" x2="12" y2="15" />
+                                        </svg>
+                                        <span>{t('uploadSettings')}</span>
+                                    </button>
                                     <div style={{ height: 1, margin: '4px 0', background: theme.border }} />
                                     <button
                                         onClick={() => { setShowAbout(true); setShowSettingsMenu(false); }}
@@ -782,6 +895,8 @@ export default function App() {
                             onRemoveCourse={theater.removeCourse}
                             onAddCourse={() => setShowAddCourseDialog(true)}
                             onAddCourseUrl={handleAddCourse}
+                            onExport={() => setShowExportDialog(true)}
+                            onImport={handleImport}
                             isVisible={theaterSidebarVisible}
                         />
                     )}
@@ -1024,6 +1139,29 @@ export default function App() {
                 isOpen={showAddCourseDialog}
                 onClose={() => setShowAddCourseDialog(false)}
                 onAdd={handleAddCourse}
+            />
+
+            {/* Export dialog (theater) */}
+            <ExportDialog
+                isOpen={showExportDialog}
+                onClose={() => setShowExportDialog(false)}
+                activeCourse={theater.activeCourse}
+                selectedFolder={theater.selectedFolder}
+                folders={theater.folders}
+            />
+
+            {/* Upload settings */}
+            <UploadSettings
+                isOpen={showUploadSettings}
+                onClose={() => setShowUploadSettings(false)}
+            />
+
+            {/* Upload dialog */}
+            <UploadDialog
+                isOpen={showUploadDialog}
+                onClose={() => setShowUploadDialog(false)}
+                selectedFolderId={theater.selectedFolderId}
+                onAddCourse={handleAddCourse}
             />
 
             {/* About dialog */}

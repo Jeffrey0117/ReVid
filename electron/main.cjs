@@ -680,7 +680,273 @@ function setupIpcHandlers() {
             return { success: false, error: e.message };
         }
     });
+
+    // --- .revid File Handlers ---
+
+    ipcMain.handle('write-revid-file', async (_event, { filePath, data }) => {
+        try {
+            fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+            return { success: true };
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    });
+
+    ipcMain.handle('write-revid-files-batch', async (_event, { dirPath, files }) => {
+        try {
+            if (!fs.existsSync(dirPath)) {
+                fs.mkdirSync(dirPath, { recursive: true });
+            }
+            let written = 0;
+            for (const file of files) {
+                const fullPath = path.join(dirPath, file.fileName);
+                fs.writeFileSync(fullPath, JSON.stringify(file.data, null, 2), 'utf-8');
+                written++;
+            }
+            return { success: true, count: written };
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    });
+
+    ipcMain.handle('read-revid-file', async (_event, filePath) => {
+        try {
+            const content = fs.readFileSync(filePath, 'utf-8');
+            const data = JSON.parse(content);
+            return { success: true, data };
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    });
+
+    ipcMain.handle('select-revid-file', async () => {
+        if (!mainWindow) return { success: false, error: 'No window' };
+        const result = await dialog.showOpenDialog(mainWindow, {
+            properties: ['openFile', 'multiSelections'],
+            filters: [
+                { name: 'ReVid Files', extensions: ['revid'] },
+                { name: 'JSON Backup', extensions: ['json'] },
+                { name: 'All Files', extensions: ['*'] }
+            ]
+        });
+        if (result.canceled || !result.filePaths.length) {
+            return { success: false, canceled: true };
+        }
+        return { success: true, filePaths: result.filePaths };
+    });
+
+    ipcMain.handle('save-revid-file-dialog', async (_event, defaultName) => {
+        if (!mainWindow) return { success: false, error: 'No window' };
+        const result = await dialog.showSaveDialog(mainWindow, {
+            defaultPath: defaultName || 'video.revid',
+            filters: [
+                { name: 'ReVid File', extensions: ['revid'] }
+            ]
+        });
+        if (result.canceled) {
+            return { success: false, canceled: true };
+        }
+        return { success: true, filePath: result.filePath };
+    });
+
+    ipcMain.handle('export-theater-data', async (_event, { data, defaultName }) => {
+        if (!mainWindow) return { success: false, error: 'No window' };
+        const result = await dialog.showSaveDialog(mainWindow, {
+            defaultPath: defaultName || 'revid-backup.json',
+            filters: [
+                { name: 'JSON Backup', extensions: ['json'] }
+            ]
+        });
+        if (result.canceled) {
+            return { success: false, canceled: true };
+        }
+        try {
+            fs.writeFileSync(result.filePath, JSON.stringify(data, null, 2), 'utf-8');
+            return { success: true, filePath: result.filePath };
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    });
+
+    ipcMain.handle('import-theater-data', async () => {
+        if (!mainWindow) return { success: false, error: 'No window' };
+        const result = await dialog.showOpenDialog(mainWindow, {
+            properties: ['openFile'],
+            filters: [
+                { name: 'JSON Backup', extensions: ['json'] },
+                { name: 'All Files', extensions: ['*'] }
+            ]
+        });
+        if (result.canceled || !result.filePaths.length) {
+            return { success: false, canceled: true };
+        }
+        try {
+            const content = fs.readFileSync(result.filePaths[0], 'utf-8');
+            const data = JSON.parse(content);
+            return { success: true, data };
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    });
+
+    // --- Upload Video File ---
+
+    ipcMain.handle('upload-video-file', async (_event, { filePath, config }) => {
+        try {
+            const https = require('https');
+            const http = require('http');
+            const { URL } = require('url');
+
+            const apiUrl = new URL(config.apiUrl);
+            const isHttps = apiUrl.protocol === 'https:';
+            const transport = isHttps ? https : http;
+
+            const fileSize = fs.statSync(filePath).size;
+            const fileName = path.basename(filePath);
+            const boundary = `----ReVidBoundary${Date.now()}`;
+
+            // Build multipart body parts
+            const headerPart = Buffer.from(
+                `--${boundary}\r\n` +
+                `Content-Disposition: form-data; name="file"; filename="${fileName}"\r\n` +
+                `Content-Type: video/mp4\r\n\r\n`
+            );
+            const footerPart = Buffer.from(`\r\n--${boundary}--\r\n`);
+            const totalSize = headerPart.length + fileSize + footerPart.length;
+
+            const headers = {
+                'Content-Type': `multipart/form-data; boundary=${boundary}`,
+                'Content-Length': totalSize,
+            };
+
+            // Auth headers
+            if (config.authType === 'bearer' && config.authToken) {
+                headers['Authorization'] = `Bearer ${config.authToken}`;
+            } else if (config.authType === 'apikey' && config.authToken) {
+                headers['X-API-Key'] = config.authToken;
+            }
+
+            // Custom headers
+            if (config.customHeaders) {
+                try {
+                    const custom = typeof config.customHeaders === 'string'
+                        ? JSON.parse(config.customHeaders)
+                        : config.customHeaders;
+                    Object.assign(headers, custom);
+                } catch {}
+            }
+
+            return new Promise((resolve) => {
+                const req = transport.request({
+                    hostname: apiUrl.hostname,
+                    port: apiUrl.port || (isHttps ? 443 : 80),
+                    path: apiUrl.pathname + apiUrl.search,
+                    method: 'POST',
+                    headers,
+                    timeout: 300000,
+                }, (res) => {
+                    const chunks = [];
+                    res.on('data', (chunk) => chunks.push(chunk));
+                    res.on('end', () => {
+                        try {
+                            const body = Buffer.concat(chunks).toString('utf-8');
+                            const json = JSON.parse(body);
+                            resolve({ success: true, data: json });
+                        } catch (e) {
+                            resolve({ success: false, error: `Invalid response: ${e.message}` });
+                        }
+                    });
+                });
+
+                req.on('error', (e) => {
+                    resolve({ success: false, error: e.message });
+                });
+
+                req.on('timeout', () => {
+                    req.destroy();
+                    resolve({ success: false, error: 'Upload timeout' });
+                });
+
+                // Write multipart body with progress tracking
+                req.write(headerPart);
+
+                const readStream = fs.createReadStream(filePath);
+                let uploaded = 0;
+
+                readStream.on('data', (chunk) => {
+                    req.write(chunk);
+                    uploaded += chunk.length;
+                    if (mainWindow && !mainWindow.isDestroyed()) {
+                        const pct = Math.round((uploaded / fileSize) * 100);
+                        mainWindow.webContents.send('upload-progress', { filePath, pct });
+                    }
+                });
+
+                readStream.on('end', () => {
+                    req.write(footerPart);
+                    req.end();
+                });
+
+                readStream.on('error', (e) => {
+                    req.destroy();
+                    resolve({ success: false, error: e.message });
+                });
+            });
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    });
+
+    ipcMain.handle('select-video-for-upload', async () => {
+        if (!mainWindow) return { success: false, error: 'No window' };
+        const result = await dialog.showOpenDialog(mainWindow, {
+            properties: ['openFile', 'multiSelections'],
+            filters: [
+                { name: 'Video', extensions: ['mp4', 'webm', 'mov', 'avi', 'mkv'] }
+            ]
+        });
+        if (result.canceled || !result.filePaths.length) {
+            return { success: false, canceled: true };
+        }
+        return { success: true, filePaths: result.filePaths };
+    });
 }
+
+// --- .revid file association ---
+// Handle file open from command line (Windows: double-click .revid)
+const handleRevidFileOpen = (filePath) => {
+    if (!filePath || !filePath.endsWith('.revid')) return;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        try {
+            const content = fs.readFileSync(filePath, 'utf-8');
+            const data = JSON.parse(content);
+            mainWindow.webContents.send('open-revid-file', { filePath, data });
+        } catch {}
+    }
+};
+
+// Windows: check process.argv for .revid file
+const checkArgvForRevid = () => {
+    const args = process.argv.slice(1);
+    for (const arg of args) {
+        if (arg.endsWith('.revid') && fs.existsSync(arg)) {
+            // Delay to ensure window is ready
+            setTimeout(() => handleRevidFileOpen(arg), 500);
+            break;
+        }
+    }
+};
+
+// macOS: open-file event
+app.on('open-file', (event, filePath) => {
+    event.preventDefault();
+    if (mainWindow) {
+        handleRevidFileOpen(filePath);
+    } else {
+        // Store for when window is ready
+        app._pendingRevidFile = filePath;
+    }
+});
 
 app.whenReady().then(() => {
     // local-video:// protocol handler with range request support
@@ -734,6 +1000,16 @@ app.whenReady().then(() => {
 
     setupIpcHandlers();
     createWindow();
+
+    // Check for .revid file in argv after window loads
+    mainWindow.webContents.once('did-finish-load', () => {
+        checkArgvForRevid();
+        // macOS: handle pending file
+        if (app._pendingRevidFile) {
+            handleRevidFileOpen(app._pendingRevidFile);
+            app._pendingRevidFile = null;
+        }
+    });
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();
