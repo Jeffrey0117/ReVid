@@ -185,8 +185,8 @@ export const CourseWebview = ({
               window.__revidOriginalStyles = null;
             }
 
-            // Restore video styles
-            var video = document.querySelector('video');
+            // Restore video styles (use BFS to find video in Shadow DOM)
+            var video = findVideoInShadow();
             if (video && window.__revidVideoOriginal) {
               video.style.position = window.__revidVideoOriginal.position || '';
               video.style.top = window.__revidVideoOriginal.top || '';
@@ -301,11 +301,33 @@ export const CourseWebview = ({
         })();
       `;
 
-      // Thumbnail capture script
+      // Thumbnail capture script (with BFS for Shadow DOM)
       const captureThumbnail = `
         (function() {
           return new Promise(function(resolve) {
-            var v = document.querySelector('video');
+            // BFS to find video in Shadow DOM
+            function findVideo() {
+              var queue = [document];
+              var visited = new Set();
+              while (queue.length > 0) {
+                var root = queue.shift();
+                if (!root || visited.has(root)) continue;
+                visited.add(root);
+                try {
+                  var videos = root.querySelectorAll ? root.querySelectorAll('video') : [];
+                  if (videos.length > 0) return videos[0];
+                  var all = root.querySelectorAll ? root.querySelectorAll('*') : [];
+                  for (var i = 0; i < all.length; i++) {
+                    if (all[i].shadowRoot && !visited.has(all[i].shadowRoot)) {
+                      queue.push(all[i].shadowRoot);
+                    }
+                  }
+                } catch(e) {}
+              }
+              return null;
+            }
+
+            var v = findVideo();
             if (!v) return resolve(null);
 
             var tryCapture = function() {
@@ -490,7 +512,25 @@ export const CourseWebview = ({
             setTimeout(() => {
               webview.executeJavaScript(`
                 (function() {
-                  var v = document.querySelector('video');
+                  // BFS to find video in Shadow DOM
+                  var queue = [document];
+                  var visited = new Set();
+                  var v = null;
+                  while (queue.length > 0) {
+                    var root = queue.shift();
+                    if (!root || visited.has(root)) continue;
+                    visited.add(root);
+                    try {
+                      var videos = root.querySelectorAll ? root.querySelectorAll('video') : [];
+                      if (videos.length > 0) { v = videos[0]; break; }
+                      var all = root.querySelectorAll ? root.querySelectorAll('*') : [];
+                      for (var i = 0; i < all.length; i++) {
+                        if (all[i].shadowRoot && !visited.has(all[i].shadowRoot)) {
+                          queue.push(all[i].shadowRoot);
+                        }
+                      }
+                    } catch(e) {}
+                  }
                   if (v && v.duration > 0) v.currentTime = ${startAt};
                 })();
               `).catch(function() {});
@@ -558,10 +598,29 @@ export const CourseWebview = ({
       const webview = webviewRef.current;
       if (!webview) return;
 
+      // Use BFS to find video in nested Shadow DOMs
       webview.executeJavaScript(`
         (function() {
-          var v = document.querySelector('video');
-          if (v) return { currentTime: v.currentTime, duration: v.duration || 0, paused: v.paused };
+          var queue = [document];
+          var visited = new Set();
+          while (queue.length > 0) {
+            var root = queue.shift();
+            if (!root || visited.has(root)) continue;
+            visited.add(root);
+            try {
+              var videos = root.querySelectorAll ? root.querySelectorAll('video') : [];
+              if (videos.length > 0) {
+                var v = videos[0];
+                return { currentTime: v.currentTime, duration: v.duration || 0, paused: v.paused };
+              }
+              var all = root.querySelectorAll ? root.querySelectorAll('*') : [];
+              for (var i = 0; i < all.length; i++) {
+                if (all[i].shadowRoot && !visited.has(all[i].shadowRoot)) {
+                  queue.push(all[i].shadowRoot);
+                }
+              }
+            } catch(e) {}
+          }
           return null;
         })();
       `).then(result => {
@@ -579,13 +638,38 @@ export const CourseWebview = ({
     };
   }, [videoFound, videoSrc]);
 
+  // Helper function to find video in nested Shadow DOMs (BFS)
+  const findVideoScript = `
+    function findVideo() {
+      var queue = [document];
+      var visited = new Set();
+      while (queue.length > 0) {
+        var root = queue.shift();
+        if (!root || visited.has(root)) continue;
+        visited.add(root);
+        try {
+          var videos = root.querySelectorAll ? root.querySelectorAll('video') : [];
+          if (videos.length > 0) return videos[0];
+          var all = root.querySelectorAll ? root.querySelectorAll('*') : [];
+          for (var i = 0; i < all.length; i++) {
+            if (all[i].shadowRoot && !visited.has(all[i].shadowRoot)) {
+              queue.push(all[i].shadowRoot);
+            }
+          }
+        } catch(e) {}
+      }
+      return null;
+    }
+  `;
+
   // Focus mode video controls
   const focusTogglePlay = useCallback(() => {
     const webview = webviewRef.current;
     if (!webview) return;
     webview.executeJavaScript(`
       (function() {
-        var v = document.querySelector('video');
+        ${findVideoScript}
+        var v = findVideo();
         if (v) { v.paused ? v.play() : v.pause(); }
       })();
     `).catch(() => {});
@@ -596,7 +680,8 @@ export const CourseWebview = ({
     if (!webview) return;
     webview.executeJavaScript(`
       (function() {
-        var v = document.querySelector('video');
+        ${findVideoScript}
+        var v = findVideo();
         if (v) v.currentTime = ${time};
       })();
     `).catch(() => {});
@@ -607,7 +692,8 @@ export const CourseWebview = ({
     if (!webview) return;
     webview.executeJavaScript(`
       (function() {
-        var v = document.querySelector('video');
+        ${findVideoScript}
+        var v = findVideo();
         if (v) v.currentTime = Math.max(0, Math.min(v.duration || 0, v.currentTime + ${delta}));
       })();
     `).catch(() => {});
