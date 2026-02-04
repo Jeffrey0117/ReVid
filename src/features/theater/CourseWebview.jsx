@@ -1086,6 +1086,7 @@ export const CourseWebview = ({
           partition={partition}
           style={{ flex: 1, width: '100%', minHeight: 0, pointerEvents: 'auto' }}
           allowpopups="true"
+          webpreferences="contextIsolation=no, nodeIntegration=no"
         />
 
 
