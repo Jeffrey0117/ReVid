@@ -48,7 +48,15 @@ export const CourseWebview = ({
   const [downloadProgress, setDownloadProgress] = useState(null); // null | { progress, status }
   const [needsLogin, setNeedsLogin] = useState(false); // Show login hint after timeout
   const [pollCount, setPollCount] = useState(0);
-  const [browseMode, setBrowseMode] = useState(true); // Start in browse mode, switch to focus when video found
+  // Remember user's preferred mode (localStorage persists across sessions)
+  const [browseMode, setBrowseMode] = useState(() => {
+    try {
+      const saved = localStorage.getItem('revid-theater-browse-mode');
+      return saved === null ? true : saved === 'true';
+    } catch {
+      return true;
+    }
+  });
   const [currentUrl, setCurrentUrl] = useState(url); // Track webview's current URL
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
@@ -610,6 +618,16 @@ export const CourseWebview = ({
     ).catch(() => {});
   }, [playbackRate, videoFound]);
 
+  // Manual toggle with save to localStorage
+  const toggleBrowseMode = useCallback((newValue) => {
+    setBrowseMode(newValue);
+    try {
+      localStorage.setItem('revid-theater-browse-mode', String(newValue));
+    } catch {
+      // Ignore
+    }
+  }, []);
+
   // Toggle focus mode when browseMode changes
   useEffect(() => {
     const webview = webviewRef.current;
@@ -1065,7 +1083,7 @@ export const CourseWebview = ({
             {/* Exit browse mode - only show when video found */}
             {videoFound && (
               <button
-                onClick={() => setBrowseMode(false)}
+                onClick={() => toggleBrowseMode(false)}
                 style={{
                   padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
                   background: theme.accent, color: '#fff', fontSize: 12, fontWeight: 500,
@@ -1233,7 +1251,7 @@ export const CourseWebview = ({
             {/* Browse mode button */}
             <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.2)' }} />
             <button
-              onClick={() => setBrowseMode(true)}
+              onClick={() => toggleBrowseMode(true)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 4,
                 padding: '4px 8px', borderRadius: 4,
