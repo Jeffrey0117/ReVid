@@ -48,7 +48,7 @@ export const CourseWebview = ({
   const [downloadProgress, setDownloadProgress] = useState(null); // null | { progress, status }
   const [needsLogin, setNeedsLogin] = useState(false); // Show login hint after timeout
   const [pollCount, setPollCount] = useState(0);
-  const [browseMode, setBrowseMode] = useState(false); // Toggle between browse/focus mode
+  const [browseMode, setBrowseMode] = useState(true); // Start in browse mode, switch to focus when video found
   const [currentUrl, setCurrentUrl] = useState(url); // Track webview's current URL
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
@@ -376,6 +376,7 @@ export const CourseWebview = ({
             videoFoundRef.current = true;
             setVideoFound(true);
             setNeedsLogin(false);
+            setBrowseMode(false); // Auto-switch to focus mode when video found
             onVideoDetected?.({ duration: result.duration, src: result.src });
 
             // Capture thumbnail if not already done
@@ -1049,21 +1050,23 @@ export const CourseWebview = ({
               {currentUrl}
             </div>
 
-            {/* Exit browse mode */}
-            <button
-              onClick={() => setBrowseMode(false)}
-              style={{
-                padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
-                background: theme.accent, color: '#fff', fontSize: 12, fontWeight: 500,
-                display: 'flex', alignItems: 'center', gap: 6,
-              }}
-              title={t('focusMode')}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polygon points="5 3 19 12 5 21 5 3" />
-              </svg>
-              {t('focusMode')}
-            </button>
+            {/* Exit browse mode - only show when video found */}
+            {videoFound && (
+              <button
+                onClick={() => setBrowseMode(false)}
+                style={{
+                  padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
+                  background: theme.accent, color: '#fff', fontSize: 12, fontWeight: 500,
+                  display: 'flex', alignItems: 'center', gap: 6,
+                }}
+                title={t('focusMode')}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="5 3 19 12 5 21 5 3" />
+                </svg>
+                {t('focusMode')}
+              </button>
+            )}
           </div>
         )}
 
@@ -1122,8 +1125,8 @@ export const CourseWebview = ({
           </div>
         )}
 
-        {/* Fixed bottom playback toolbar */}
-        {videoFound && (
+        {/* Fixed bottom playback toolbar - only in focus mode */}
+        {videoFound && !browseMode && (
           <div
             style={{
               display: 'flex',
