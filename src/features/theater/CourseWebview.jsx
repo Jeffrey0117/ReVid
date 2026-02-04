@@ -174,57 +174,54 @@ export const CourseWebview = ({
       // Comprehensive video check - poll for video in document, iframes, and nested shadow DOMs
       const checkVideo = `
         (function() {
-          function findVideo(root, visited) {
-            if (!root) return null;
-            if (!visited) visited = new Set();
-            if (visited.has(root)) return null;
+          // Iterative approach to find video in nested shadow DOMs
+          var queue = [document];
+          var visited = new Set();
+
+          while (queue.length > 0) {
+            var root = queue.shift();
+            if (!root || visited.has(root)) continue;
             visited.add(root);
 
-            // Check direct video elements first
+            // Check for video elements
             try {
               var videos = root.querySelectorAll ? root.querySelectorAll('video') : [];
-              for (var i = 0; i < videos.length; i++) {
-                if (videos[i]) return videos[i];
+              if (videos.length > 0) {
+                var v = videos[0];
+                var src = v.src || v.currentSrc || '';
+                if (!src && v.querySelector) {
+                  var source = v.querySelector('source');
+                  if (source) src = source.src || '';
+                }
+                console.log('[ReVid] Found video:', src);
+                return { found: true, duration: v.duration || 0, src: src };
               }
             } catch(e) {}
 
-            // Recursively check ALL elements for shadow roots (handles nested shadow DOMs)
+            // Queue all shadow roots for checking
             try {
               var all = root.querySelectorAll ? root.querySelectorAll('*') : [];
               for (var i = 0; i < all.length; i++) {
-                var el = all[i];
-                // Check this element's shadow root
-                if (el.shadowRoot) {
-                  var sv = findVideo(el.shadowRoot, visited);
-                  if (sv) return sv;
+                if (all[i].shadowRoot && !visited.has(all[i].shadowRoot)) {
+                  queue.push(all[i].shadowRoot);
                 }
               }
             } catch(e) {}
 
-            // Check iframes (same-origin only)
+            // Queue all iframes
             try {
               var iframes = root.querySelectorAll ? root.querySelectorAll('iframe') : [];
               for (var j = 0; j < iframes.length; j++) {
-                var iframeDoc = iframes[j].contentDocument || (iframes[j].contentWindow && iframes[j].contentWindow.document);
-                if (iframeDoc) {
-                  var iv = findVideo(iframeDoc, visited);
-                  if (iv) return iv;
-                }
+                try {
+                  var iframeDoc = iframes[j].contentDocument || (iframes[j].contentWindow && iframes[j].contentWindow.document);
+                  if (iframeDoc && !visited.has(iframeDoc)) {
+                    queue.push(iframeDoc);
+                  }
+                } catch(e) {}
               }
             } catch(e) {}
-
-            return null;
           }
 
-          var v = findVideo(document);
-          if (v) {
-            var src = v.src || v.currentSrc || '';
-            if (!src) {
-              var source = v.querySelector('source');
-              if (source) src = source.src || '';
-            }
-            return { found: true, duration: v.duration || 0, src: src };
-          }
           return { found: false };
         })();
       `;
