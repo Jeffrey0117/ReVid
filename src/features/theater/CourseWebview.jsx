@@ -79,53 +79,84 @@ export const CourseWebview = ({
       // Define focus mode functions (will be called when user toggles)
       const defineFocusFunctions = `
         (function() {
-          window.__revidEnterFocus = function() {
-            var video = document.querySelector('video');
-            if (!video) return false;
+          // Find video in nested shadow DOMs
+          function findVideoInShadow() {
+            var queue = [document];
+            var visited = new Set();
+            while (queue.length > 0) {
+              var root = queue.shift();
+              if (!root || visited.has(root)) continue;
+              visited.add(root);
+              try {
+                var videos = root.querySelectorAll ? root.querySelectorAll('video') : [];
+                if (videos.length > 0) return videos[0];
+                var all = root.querySelectorAll ? root.querySelectorAll('*') : [];
+                for (var i = 0; i < all.length; i++) {
+                  if (all[i].shadowRoot && !visited.has(all[i].shadowRoot)) {
+                    queue.push(all[i].shadowRoot);
+                  }
+                }
+              } catch(e) {}
+            }
+            return null;
+          }
 
-            // Store original styles
+          window.__revidEnterFocus = function() {
+            var video = findVideoInShadow();
+            if (!video) {
+              console.log('[ReVid] Focus: No video found');
+              return false;
+            }
+            console.log('[ReVid] Focus: Found video, applying focus mode');
+
+            // Find the custom video player container (hls-video, video-js, etc.)
+            var videoContainer = null;
+            var el = video;
+            while (el && el !== document.body) {
+              if (el.tagName && (el.tagName.includes('-') || el.classList.contains('video-player'))) {
+                videoContainer = el;
+              }
+              el = el.parentElement || el.host; // host for shadow DOM
+            }
+            if (!videoContainer) {
+              // Find through shadow host chain
+              var root = video.getRootNode();
+              while (root && root !== document) {
+                if (root.host) {
+                  videoContainer = root.host;
+                  root = root.host.getRootNode();
+                } else break;
+              }
+            }
+
+            var targetEl = videoContainer || video;
+            window.__revidFocusTarget = targetEl;
+
+            // Hide everything except the video container
             window.__revidOriginalStyles = [];
             var all = document.body.querySelectorAll('*');
             for (var i = 0; i < all.length; i++) {
-              var el = all[i];
-              if (el.tagName !== 'VIDEO' && !el.contains(video) && el !== video) {
-                window.__revidOriginalStyles.push({ el: el, display: el.style.display });
-                el.style.setProperty('display', 'none', 'important');
+              var item = all[i];
+              if (item !== targetEl && !item.contains(targetEl) && !targetEl.contains(item)) {
+                window.__revidOriginalStyles.push({ el: item, display: item.style.display });
+                item.style.setProperty('display', 'none', 'important');
               }
             }
 
-            // Also hide video ancestors' siblings
-            var parent = video.parentElement;
-            while (parent && parent !== document.body) {
-              var siblings = parent.parentElement ? parent.parentElement.children : [];
-              for (var j = 0; j < siblings.length; j++) {
-                if (siblings[j] !== parent && !siblings[j].contains(video)) {
-                  window.__revidOriginalStyles.push({ el: siblings[j], display: siblings[j].style.display });
-                  siblings[j].style.setProperty('display', 'none', 'important');
-                }
-              }
-              parent = parent.parentElement;
-            }
-
-            // Fullscreen video with absolute pixel values
+            // Fullscreen the video container
             var w = window.innerWidth;
             var h = window.innerHeight;
-            video.style.setProperty('position', 'fixed', 'important');
-            video.style.setProperty('top', '0px', 'important');
-            video.style.setProperty('left', '0px', 'important');
-            video.style.setProperty('width', w + 'px', 'important');
-            video.style.setProperty('height', h + 'px', 'important');
-            video.style.setProperty('max-width', 'none', 'important');
-            video.style.setProperty('max-height', 'none', 'important');
-            video.style.setProperty('min-width', '0', 'important');
-            video.style.setProperty('min-height', '0', 'important');
-            video.style.setProperty('z-index', '2147483647', 'important');
-            video.style.setProperty('object-fit', 'contain', 'important');
-            video.style.setProperty('background', '#000', 'important');
-            video.style.setProperty('margin', '0', 'important');
-            video.style.setProperty('padding', '0', 'important');
-            video.style.setProperty('border', 'none', 'important');
-            video.style.setProperty('transform', 'none', 'important');
+            targetEl.style.setProperty('position', 'fixed', 'important');
+            targetEl.style.setProperty('top', '0px', 'important');
+            targetEl.style.setProperty('left', '0px', 'important');
+            targetEl.style.setProperty('width', w + 'px', 'important');
+            targetEl.style.setProperty('height', h + 'px', 'important');
+            targetEl.style.setProperty('max-width', 'none', 'important');
+            targetEl.style.setProperty('max-height', 'none', 'important');
+            targetEl.style.setProperty('z-index', '2147483647', 'important');
+            targetEl.style.setProperty('background', '#000', 'important');
+            targetEl.style.setProperty('margin', '0', 'important');
+            targetEl.style.setProperty('padding', '0', 'important');
 
             // Style html and body
             document.documentElement.style.setProperty('background', '#000', 'important');
