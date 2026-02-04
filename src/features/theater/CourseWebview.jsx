@@ -46,6 +46,7 @@ export const CourseWebview = ({
   const [downloadProgress, setDownloadProgress] = useState(null); // null | { progress, status }
   const [needsLogin, setNeedsLogin] = useState(false); // Show login hint after timeout
   const [pollCount, setPollCount] = useState(0);
+  const [debugInfo, setDebugInfo] = useState(''); // Debug info display
   const initialLoadDoneRef = useRef(false); // Prevent reload loop from resetting overlay
   const lastUrlRef = useRef(url); // Track URL changes
   const seekedRef = useRef(false);
@@ -272,6 +273,15 @@ export const CourseWebview = ({
         setPollCount(localPollCount);
 
         webview.executeJavaScript(checkVideo).then((result) => {
+          // Debug: show result in UI
+          if (result) {
+            if (result.found) {
+              setDebugInfo('Found video: ' + (result.src || 'blob').substring(0, 50));
+            } else {
+              setDebugInfo('Poll #' + localPollCount + ' - Shadow roots: ' + (result.debug?.shadowRootsFound || 0));
+            }
+          }
+
           if (result && result.found) {
             foundVideo = true;
             setVideoFound(true);
@@ -797,6 +807,12 @@ export const CourseWebview = ({
             <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
               {t('loginHint')}
             </span>
+            {/* Debug info */}
+            {debugInfo && (
+              <span style={{ fontSize: 10, color: '#22c55e', marginLeft: 8, fontFamily: 'monospace' }}>
+                [{debugInfo}]
+              </span>
+            )}
           </div>
         )}
 
