@@ -189,21 +189,30 @@ export const CourseWebview = ({
               window.__revidOriginalStyles = null;
             }
 
-            // Restore video styles (use BFS to find video in Shadow DOM)
-            var video = findVideoInShadow();
-            if (video && window.__revidVideoOriginal) {
-              video.style.position = window.__revidVideoOriginal.position || '';
-              video.style.top = window.__revidVideoOriginal.top || '';
-              video.style.left = window.__revidVideoOriginal.left || '';
-              video.style.width = window.__revidVideoOriginal.width || '';
-              video.style.height = window.__revidVideoOriginal.height || '';
-              video.style.zIndex = window.__revidVideoOriginal.zIndex || '';
-              video.style.objectFit = window.__revidVideoOriginal.objectFit || '';
-              video.style.background = window.__revidVideoOriginal.background || '';
-              window.__revidVideoOriginal = null;
+            // Restore focus target styles
+            var targetEl = window.__revidFocusTarget;
+            if (targetEl) {
+              targetEl.style.position = '';
+              targetEl.style.top = '';
+              targetEl.style.left = '';
+              targetEl.style.width = '';
+              targetEl.style.height = '';
+              targetEl.style.maxWidth = '';
+              targetEl.style.maxHeight = '';
+              targetEl.style.zIndex = '';
+              targetEl.style.background = '';
+              targetEl.style.margin = '';
+              targetEl.style.padding = '';
+              window.__revidFocusTarget = null;
             }
 
+            // Restore document styles
+            document.documentElement.style.background = '';
+            document.documentElement.style.overflow = '';
+            document.body.style.background = '';
             document.body.style.overflow = '';
+            document.body.style.margin = '';
+            document.body.style.padding = '';
           };
         })();
       `;
