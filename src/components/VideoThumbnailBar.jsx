@@ -48,6 +48,62 @@ export const VideoThumbnailBar = ({
     useEffect(() => { widthRef.current = width; }, [width]);
     useEffect(() => { heightRef.current = height; }, [height]);
 
+    // Drag to scroll (carousel effect)
+    const [isDragScrolling, setIsDragScrolling] = useState(false);
+    const [dragScrollStart, setDragScrollStart] = useState({ x: 0, y: 0, scrollX: 0, scrollY: 0 });
+
+    const handleScrollDragStart = useCallback((e) => {
+        // Don't start drag scroll if clicking on a thumbnail
+        if (e.target.closest('[data-thumb]')) return;
+
+        const container = scrollContainerRef.current;
+        if (!container) return;
+
+        e.preventDefault();
+        setIsDragScrolling(true);
+        setDragScrollStart({
+            x: e.clientX,
+            y: e.clientY,
+            scrollX: container.scrollLeft,
+            scrollY: container.scrollTop
+        });
+    }, []);
+
+    useEffect(() => {
+        if (!isDragScrolling) return;
+
+        const handleMouseMove = (e) => {
+            const container = scrollContainerRef.current;
+            if (!container) return;
+
+            if (isHorizontal) {
+                const dx = dragScrollStart.x - e.clientX;
+                container.scrollLeft = dragScrollStart.scrollX + dx;
+            } else {
+                const dy = dragScrollStart.y - e.clientY;
+                container.scrollTop = dragScrollStart.scrollY + dy;
+            }
+        };
+
+        const handleMouseUp = () => {
+            setIsDragScrolling(false);
+        };
+
+        const handleBlur = () => {
+            setIsDragScrolling(false);
+        };
+
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        window.addEventListener('blur', handleBlur);
+
+        return () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            window.removeEventListener('blur', handleBlur);
+        };
+    }, [isDragScrolling, dragScrollStart, isHorizontal]);
+
     // Thumbnails
     const [thumbnails, setThumbnails] = useState({});
     const generatingRef = useRef(new Set());
@@ -67,7 +123,7 @@ export const VideoThumbnailBar = ({
     // Virtual scroll for vertical mode
     const [scrollPosition, setScrollPosition] = useState(0);
     const [containerSize, setContainerSize] = useState(0);
-    const ITEM_GAP = 12;
+    const ITEM_GAP = isHorizontal ? 24 : 12; // Larger gap for horizontal mode
     const ITEM_HEIGHT = thumbSize.height + 32 + ITEM_GAP;
     const OVERSCAN = 3;
 
@@ -273,13 +329,15 @@ export const VideoThumbnailBar = ({
     // Scroll container styles
     const scrollStyle = isHorizontal ? {
         flex: 1, display: 'flex', alignItems: 'center',
-        gap: ITEM_GAP, padding: '8px 12px',
+        gap: ITEM_GAP, padding: '8px 16px',
         overflowX: 'auto', overflowY: 'hidden',
-        scrollbarWidth: 'none', userSelect: 'none'
+        scrollbarWidth: 'none', userSelect: 'none',
+        cursor: isDragScrolling ? 'grabbing' : 'grab'
     } : {
         flex: 1, position: 'relative',
         overflowY: 'auto', overflowX: 'hidden',
-        userSelect: 'none', scrollbarWidth: 'none'
+        userSelect: 'none', scrollbarWidth: 'none',
+        cursor: isDragScrolling ? 'grabbing' : 'grab'
     };
 
     const renderThumbnail = (file, index) => {
@@ -291,6 +349,7 @@ export const VideoThumbnailBar = ({
             return (
                 <div
                     key={file}
+                    data-thumb
                     role="button"
                     tabIndex={0}
                     onClick={() => onSelect(index)}
@@ -330,6 +389,7 @@ export const VideoThumbnailBar = ({
             return (
                 <div
                     key={file}
+                    data-thumb
                     role="button"
                     tabIndex={0}
                     onClick={() => onSelect(index)}
@@ -381,7 +441,7 @@ export const VideoThumbnailBar = ({
                 onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }}
             />
 
-            <div ref={scrollContainerRef} onScroll={handleScroll} style={scrollStyle}>
+            <div ref={scrollContainerRef} onScroll={handleScroll} onMouseDown={handleScrollDragStart} style={scrollStyle}>
                 {isHorizontal ? (
                     files.map((file, index) => renderThumbnail(file, index))
                 ) : (
