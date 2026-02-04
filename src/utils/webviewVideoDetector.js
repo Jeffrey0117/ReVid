@@ -222,8 +222,8 @@ export const getVideoDetectorScript = () => `
         src: video.src || video.currentSrc || ''
       }, '*');
 
-      // Auto-enter focus mode to hide distractions
-      enterFocusMode(video);
+      // Don't auto-enter focus mode - let the host control this
+      // enterFocusMode(video);
     }
   }
 

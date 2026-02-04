@@ -296,11 +296,12 @@ export const CourseWebview = ({
 
             if (canUseNative) {
               setVideoSrc(result.src);
-            } else if (!focusAppliedRef.current) {
-              // Can't use native player, apply focus mode in webview (default behavior)
-              focusAppliedRef.current = true;
-              webview.executeJavaScript('window.__revidEnterFocus && window.__revidEnterFocus()').catch(() => {});
             }
+            // Focus mode disabled temporarily for debugging
+            // else if (!focusAppliedRef.current) {
+            //   focusAppliedRef.current = true;
+            //   webview.executeJavaScript('window.__revidEnterFocus && window.__revidEnterFocus()').catch(() => {});
+            // }
           }
         }).catch(() => {});
       };
