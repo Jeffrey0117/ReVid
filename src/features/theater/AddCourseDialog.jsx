@@ -55,6 +55,9 @@ export const AddCourseDialog = ({ isOpen, onClose, onAdd }) => {
   };
 
   const handlePaste = (e) => {
+    // Only auto-add if textarea is empty - otherwise let user edit
+    if (urlInput.trim()) return;
+
     const pastedText = e.clipboardData.getData('text');
     if (!pastedText) return;
 
