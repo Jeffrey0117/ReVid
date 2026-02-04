@@ -46,7 +46,15 @@ export const CourseWebview = ({
   const [downloadProgress, setDownloadProgress] = useState(null); // null | { progress, status }
   const [needsLogin, setNeedsLogin] = useState(false); // Show login hint after timeout
   const [pollCount, setPollCount] = useState(0);
+  const initialLoadDoneRef = useRef(false); // Prevent reload loop from resetting overlay
+  const lastUrlRef = useRef(url); // Track URL changes
   const seekedRef = useRef(false);
+
+  // Reset initial load flag when URL changes (new course selected)
+  if (url !== lastUrlRef.current) {
+    lastUrlRef.current = url;
+    initialLoadDoneRef.current = false;
+  }
   const focusAppliedRef = useRef(false);
   const focusStateIntervalRef = useRef(null);
   const thumbnailCapturedRef = useRef(false);
@@ -58,10 +66,14 @@ export const CourseWebview = ({
 
     const handleDomReady = () => {
       // Hide loading overlay after short delay regardless of video detection
-      setTimeout(() => {
-        setIsLoading(false);
-        setNeedsLogin(true); // Show hint, will be hidden if video found
-      }, 1500);
+      // Only do this once to prevent redirect loops from re-showing overlay
+      if (!initialLoadDoneRef.current) {
+        setTimeout(() => {
+          initialLoadDoneRef.current = true;
+          setIsLoading(false);
+          setNeedsLogin(true); // Show hint, will be hidden if video found
+        }, 1500);
+      }
 
       // Define focus mode functions (will be called when user toggles)
       const defineFocusFunctions = `
@@ -264,11 +276,14 @@ export const CourseWebview = ({
     };
 
     const handleLoadStart = () => {
-      setIsLoading(true);
+      // Don't reset loading state if we've already shown the page once
+      // (prevents loop from login redirects)
+      if (!initialLoadDoneRef.current) {
+        setIsLoading(true);
+      }
       setVideoFound(false);
       setVideoSrc(null);
       setDetectedVideoUrl(null);
-      setNeedsLogin(false);
       setPollCount(0);
       seekedRef.current = false;
       focusAppliedRef.current = false;
