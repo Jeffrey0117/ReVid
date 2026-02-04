@@ -44,6 +44,8 @@ export const CourseWebview = ({
   const [resumeToast, setResumeToast] = useState(null);
   const [focusVideoState, setFocusVideoState] = useState({ currentTime: 0, duration: 0, paused: true });
   const [downloadProgress, setDownloadProgress] = useState(null); // null | { progress, status }
+  const [needsLogin, setNeedsLogin] = useState(false); // Show login hint after timeout
+  const [pollCount, setPollCount] = useState(0);
   const seekedRef = useRef(false);
   const focusAppliedRef = useRef(false);
   const focusStateIntervalRef = useRef(null);
@@ -207,10 +209,17 @@ export const CourseWebview = ({
       `;
 
       // Poll for video
+      let localPollCount = 0;
+      let foundVideo = false;
       const pollVideo = () => {
+        localPollCount++;
+        setPollCount(localPollCount);
+
         webview.executeJavaScript(checkVideo).then((result) => {
           if (result && result.found) {
+            foundVideo = true;
             setVideoFound(true);
+            setNeedsLogin(false);
             onVideoDetected?.({ duration: result.duration, src: result.src });
 
             // Capture thumbnail if not already done
@@ -238,6 +247,12 @@ export const CourseWebview = ({
               focusAppliedRef.current = true;
               webview.executeJavaScript('window.__revidEnterFocus && window.__revidEnterFocus()').catch(() => {});
             }
+          } else {
+            // No video found - after 3 polls, show login hint
+            if (localPollCount >= 3 && !foundVideo) {
+              setNeedsLogin(true);
+              setIsLoading(false);
+            }
           }
         }).catch(() => {});
       };
@@ -255,6 +270,8 @@ export const CourseWebview = ({
       setVideoFound(false);
       setVideoSrc(null);
       setDetectedVideoUrl(null);
+      setNeedsLogin(false);
+      setPollCount(0);
       seekedRef.current = false;
       focusAppliedRef.current = false;
       thumbnailCapturedRef.current = false;
@@ -684,13 +701,35 @@ export const CourseWebview = ({
         />
 
 
-        {/* Loading overlay */}
-        {isLoading && (
+        {/* Loading overlay - only show briefly, then fade to hint */}
+        {isLoading && !needsLogin && (
           <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10">
             <div className="flex flex-col items-center gap-3">
               <div className="w-8 h-8 border-2 border-white/30 border-t-primary rounded-full animate-spin" />
               <span className="text-white/60 text-sm">{t('detectingVideo')}</span>
             </div>
+          </div>
+        )}
+
+        {/* Login hint - non-blocking banner at top */}
+        {needsLogin && !videoFound && (
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
+            padding: '8px 16px',
+            background: 'linear-gradient(to bottom, rgba(0,0,0,0.85), rgba(0,0,0,0))',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12
+          }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+            <span style={{ fontSize: 13, color: '#fff' }}>
+              {t('loginRequired')}
+            </span>
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+              {t('loginHint')}
+            </span>
           </div>
         )}
 
