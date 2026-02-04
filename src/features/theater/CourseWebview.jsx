@@ -48,6 +48,10 @@ export const CourseWebview = ({
   const [downloadProgress, setDownloadProgress] = useState(null); // null | { progress, status }
   const [needsLogin, setNeedsLogin] = useState(false); // Show login hint after timeout
   const [pollCount, setPollCount] = useState(0);
+  const [browseMode, setBrowseMode] = useState(false); // Toggle between browse/focus mode
+  const [currentUrl, setCurrentUrl] = useState(url); // Track webview's current URL
+  const [canGoBack, setCanGoBack] = useState(false);
+  const [canGoForward, setCanGoForward] = useState(false);
   const initialLoadDoneRef = useRef(false); // Prevent reload loop from resetting overlay
   const lastUrlRef = useRef(url); // Track URL changes
   const videoFoundRef = useRef(false); // Track if video found (for timeout check)
@@ -449,12 +453,23 @@ export const CourseWebview = ({
       }
     };
 
+    // Track URL changes for browse mode
+    const handleNavigate = (event) => {
+      setCurrentUrl(event.url);
+      setCanGoBack(webview.canGoBack());
+      setCanGoForward(webview.canGoForward());
+    };
+
     webview.addEventListener('dom-ready', handleDomReady);
     webview.addEventListener('did-start-loading', handleLoadStart);
+    webview.addEventListener('did-navigate', handleNavigate);
+    webview.addEventListener('did-navigate-in-page', handleNavigate);
 
     return () => {
       webview.removeEventListener('dom-ready', handleDomReady);
       webview.removeEventListener('did-start-loading', handleLoadStart);
+      webview.removeEventListener('did-navigate', handleNavigate);
+      webview.removeEventListener('did-navigate-in-page', handleNavigate);
       if (webview._revidPollInterval) {
         clearInterval(webview._revidPollInterval);
       }
@@ -582,7 +597,36 @@ export const CourseWebview = ({
     ).catch(() => {});
   }, [playbackRate, videoFound]);
 
+  // Toggle focus mode when browseMode changes
+  useEffect(() => {
+    const webview = webviewRef.current;
+    if (!webview || !videoFound) return;
 
+    if (browseMode) {
+      // Exit focus mode - show normal page
+      webview.executeJavaScript('window.__revidExitFocus && window.__revidExitFocus()').catch(() => {});
+      focusAppliedRef.current = false;
+    } else {
+      // Re-enter focus mode
+      if (!focusAppliedRef.current) {
+        focusAppliedRef.current = true;
+        webview.executeJavaScript('window.__revidEnterFocus && window.__revidEnterFocus()').catch(() => {});
+      }
+    }
+  }, [browseMode, videoFound]);
+
+  // Navigation functions
+  const goBack = useCallback(() => {
+    webviewRef.current?.goBack();
+  }, []);
+
+  const goForward = useCallback(() => {
+    webviewRef.current?.goForward();
+  }, []);
+
+  const refresh = useCallback(() => {
+    webviewRef.current?.reload();
+  }, []);
 
   // Poll video state for controls (always runs when video found in webview mode)
   useEffect(() => {
@@ -943,6 +987,86 @@ export const CourseWebview = ({
     >
       {/* Main content */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        {/* Browse mode toolbar */}
+        {browseMode && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '6px 12px',
+            background: isDark ? '#1a1a1a' : '#f5f5f5',
+            borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
+          }}>
+            {/* Navigation buttons */}
+            <button
+              onClick={goBack}
+              disabled={!canGoBack}
+              style={{
+                padding: 6, borderRadius: 6, cursor: canGoBack ? 'pointer' : 'default',
+                color: canGoBack ? (isDark ? '#fff' : '#1f2937') : (isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)'),
+                background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+              title={t('goBack')}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+            <button
+              onClick={goForward}
+              disabled={!canGoForward}
+              style={{
+                padding: 6, borderRadius: 6, cursor: canGoForward ? 'pointer' : 'default',
+                color: canGoForward ? (isDark ? '#fff' : '#1f2937') : (isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)'),
+                background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+              title={t('goForward')}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+            <button
+              onClick={refresh}
+              style={{
+                padding: 6, borderRadius: 6, cursor: 'pointer',
+                color: isDark ? '#fff' : '#1f2937',
+                background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+              title={t('refresh')}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="23 4 23 10 17 10" />
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+              </svg>
+            </button>
+
+            {/* URL display */}
+            <div style={{
+              flex: 1, padding: '6px 12px', borderRadius: 6,
+              background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+              fontSize: 12, color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {currentUrl}
+            </div>
+
+            {/* Exit browse mode */}
+            <button
+              onClick={() => setBrowseMode(false)}
+              style={{
+                padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
+                background: theme.accent, color: '#fff', fontSize: 12, fontWeight: 500,
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}
+              title={t('focusMode')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="5 3 19 12 5 21 5 3" />
+              </svg>
+              {t('focusMode')}
+            </button>
+          </div>
+        )}
+
         {/* Webview */}
         <webview
           ref={webviewRef}
@@ -1088,6 +1212,27 @@ export const CourseWebview = ({
                 </button>
               </>
             )}
+
+            {/* Browse mode button */}
+            <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.2)' }} />
+            <button
+              onClick={() => setBrowseMode(true)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                padding: '4px 8px', borderRadius: 4,
+                background: 'rgba(255,255,255,0.1)',
+                color: '#fff', fontSize: 11,
+                cursor: 'pointer',
+              }}
+              title={t('browseMode')}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="2" y1="12" x2="22" y2="12" />
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+              </svg>
+              {t('browseMode')}
+            </button>
           </div>
         )}
       </div>
