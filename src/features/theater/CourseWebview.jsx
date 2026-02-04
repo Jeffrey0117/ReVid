@@ -218,9 +218,12 @@ export const CourseWebview = ({
       `;
       webview.executeJavaScript(defineFocusFunctions).catch(() => {});
 
-      // Inject video detector script
-      const script = getVideoDetectorScript();
-      webview.executeJavaScript(script).catch(() => {});
+      // Only inject video detector script after page is interactive
+      // Delay injection to avoid interfering with page load
+      setTimeout(() => {
+        const script = getVideoDetectorScript();
+        webview.executeJavaScript(script).catch(() => {});
+      }, 2000);
 
       // Comprehensive video check - find video and get real src (not blob)
       const checkVideo = `
@@ -1086,7 +1089,7 @@ export const CourseWebview = ({
           partition={partition}
           style={{ flex: 1, width: '100%', minHeight: 0, pointerEvents: 'auto' }}
           allowpopups="true"
-          webpreferences="contextIsolation=no, nodeIntegration=no"
+          webpreferences="contextIsolation=false, nodeIntegration=false, javascript=yes"
         />
 
 
