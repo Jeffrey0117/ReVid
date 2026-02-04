@@ -48,12 +48,14 @@ export const CourseWebview = ({
   const [pollCount, setPollCount] = useState(0);
   const initialLoadDoneRef = useRef(false); // Prevent reload loop from resetting overlay
   const lastUrlRef = useRef(url); // Track URL changes
+  const videoFoundRef = useRef(false); // Track if video found (for timeout check)
   const seekedRef = useRef(false);
 
-  // Reset initial load flag when URL changes (new course selected)
+  // Reset flags when URL changes (new course selected)
   if (url !== lastUrlRef.current) {
     lastUrlRef.current = url;
     initialLoadDoneRef.current = false;
+    videoFoundRef.current = false;
   }
   const focusAppliedRef = useRef(false);
   const focusStateIntervalRef = useRef(null);
@@ -71,7 +73,10 @@ export const CourseWebview = ({
         setTimeout(() => {
           initialLoadDoneRef.current = true;
           setIsLoading(false);
-          setNeedsLogin(true); // Show hint, will be hidden if video found
+          // Only show login hint if video hasn't been found yet
+          if (!videoFoundRef.current) {
+            setNeedsLogin(true);
+          }
         }, 1500);
       }
 
@@ -340,6 +345,7 @@ export const CourseWebview = ({
         webview.executeJavaScript(checkVideo).then((result) => {
           if (result && result.found) {
             foundVideo = true;
+            videoFoundRef.current = true;
             setVideoFound(true);
             setNeedsLogin(false);
             onVideoDetected?.({ duration: result.duration, src: result.src });
