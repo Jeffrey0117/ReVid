@@ -54,23 +54,7 @@ export const AddCourseDialog = ({ isOpen, onClose, onAdd }) => {
     onClose?.();
   };
 
-  const handlePaste = (e) => {
-    // Only auto-add if textarea is empty - otherwise let user edit
-    if (urlInput.trim()) return;
-
-    const pastedText = e.clipboardData.getData('text');
-    if (!pastedText) return;
-
-    const urls = pastedText.split(/[\n,]/).map(u => u.trim()).filter(Boolean);
-    if (urls.length > 0 && urls.every(u => u.startsWith('http'))) {
-      e.preventDefault();
-      for (const url of urls) {
-        const detected = detectPlatform(url);
-        onAdd?.({ url, title: url, platform: detected.id });
-      }
-      onClose?.();
-    }
-  };
+  // No auto-add on paste - let user edit and click 新增
 
   if (!isOpen) return null;
 
@@ -126,7 +110,6 @@ export const AddCourseDialog = ({ isOpen, onClose, onAdd }) => {
           <textarea
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
-            onPaste={handlePaste}
             placeholder={t('pasteVideoUrlPlaceholder')}
             rows={4}
             autoFocus
