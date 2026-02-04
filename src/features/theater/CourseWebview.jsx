@@ -410,7 +410,11 @@ export const CourseWebview = ({
       if (!initialLoadDoneRef.current) {
         setIsLoading(true);
       }
-      setVideoFound(false);
+      // Don't reset videoFound if we already found the video
+      // (prevents internal page navigation from resetting detection)
+      if (!videoFoundRef.current) {
+        setVideoFound(false);
+      }
       setVideoSrc(null);
       setDetectedVideoUrl(null);
       setPollCount(0);
