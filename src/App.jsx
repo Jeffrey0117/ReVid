@@ -904,14 +904,13 @@ export default function App() {
                     flex: 1, overflow: 'hidden', display: 'flex',
                     flexDirection: viewMode === 'viewer' && sidebarPosition === 'bottom' ? 'column' : 'row'
                 }}>
-                    {/* Video Thumbnail Bar - single component handles both positions */}
-                    {viewMode === 'viewer' && files.length > 0 && (
+                    {/* Video Thumbnail Bar - LEFT position only */}
+                    {viewMode === 'viewer' && sidebarPosition === 'left' && files.length > 0 && (
                         <VideoThumbnailBar
                             files={files}
                             currentIndex={currentIndex}
                             onSelect={selectVideo}
-                            position={sidebarPosition}
-                            style={{ order: sidebarPosition === 'bottom' ? 2 : 0 }}
+                            position="left"
                         />
                     )}
 
@@ -930,8 +929,10 @@ export default function App() {
                         />
                     )}
 
+                    {/* Inner row: Main + InfoPanel */}
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'row', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
                     {/* Main Viewport */}
-                    <main style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative', overflow: 'hidden', order: 1 }}>
+                    <main style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
                         {viewMode === 'theater' ? (
                             <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
                                 {theater.activeCourse ? (
@@ -1256,6 +1257,17 @@ export default function App() {
                                     : null
                         }
                     />
+                    </div>
+
+                    {/* Video Thumbnail Bar - BOTTOM position only */}
+                    {viewMode === 'viewer' && sidebarPosition === 'bottom' && files.length > 0 && (
+                        <VideoThumbnailBar
+                            files={files}
+                            currentIndex={currentIndex}
+                            onSelect={selectVideo}
+                            position="bottom"
+                        />
+                    )}
                 </div>
 
             </div>
