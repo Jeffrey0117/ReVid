@@ -888,6 +888,11 @@ export const CourseWebview = ({
           </div>
         )}
 
+        {/* Debug: show videoFound state */}
+        <div style={{ position: 'absolute', bottom: 50, left: 8, zIndex: 30, fontSize: 10, color: videoFound ? '#22c55e' : '#ef4444', background: 'rgba(0,0,0,0.8)', padding: '2px 6px', borderRadius: 4 }}>
+          videoFound: {videoFound ? 'YES' : 'NO'}
+        </div>
+
         {/* Fixed bottom playback toolbar */}
         {videoFound && (
           <div
