@@ -46,7 +46,6 @@ export const CourseWebview = ({
   const [downloadProgress, setDownloadProgress] = useState(null); // null | { progress, status }
   const [needsLogin, setNeedsLogin] = useState(false); // Show login hint after timeout
   const [pollCount, setPollCount] = useState(0);
-  const [debugInfo, setDebugInfo] = useState(''); // Debug info display
   const initialLoadDoneRef = useRef(false); // Prevent reload loop from resetting overlay
   const lastUrlRef = useRef(url); // Track URL changes
   const seekedRef = useRef(false);
@@ -339,16 +338,6 @@ export const CourseWebview = ({
         setPollCount(localPollCount);
 
         webview.executeJavaScript(checkVideo).then((result) => {
-          // Debug: show result in UI
-          if (result) {
-            if (result.found) {
-              var srcDisplay = result.isBlob ? 'BLOB (no real URL)' : result.src.substring(0, 60);
-              setDebugInfo('FOUND: ' + srcDisplay);
-            } else {
-              setDebugInfo('Poll #' + localPollCount + ' - Shadow roots: ' + (result.debug?.shadowRootsFound || 0));
-            }
-          }
-
           if (result && result.found) {
             foundVideo = true;
             setVideoFound(true);
@@ -875,17 +864,6 @@ export const CourseWebview = ({
             <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
               {t('loginHint')}
             </span>
-          </div>
-        )}
-
-        {/* Debug info - always visible for debugging */}
-        {debugInfo && (
-          <div style={{
-            position: 'absolute', top: needsLogin && !videoFound ? 40 : 8, right: 8, zIndex: 20,
-            padding: '4px 8px', borderRadius: 4,
-            background: 'rgba(0,0,0,0.8)', fontSize: 10, color: '#22c55e', fontFamily: 'monospace'
-          }}>
-            {debugInfo}
           </div>
         )}
 
