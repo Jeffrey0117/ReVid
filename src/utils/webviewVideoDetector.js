@@ -20,9 +20,12 @@ export const getVideoDetectorScript = () => `
   let focusModeActive = false;
   let videoIframe = null; // Track if video is inside an iframe
 
-  // Collect all videos from document and same-origin iframes
-  function collectAllVideos(doc, results) {
+  // Collect all videos from document, iframes, and shadow DOMs
+  function collectAllVideos(doc, results, visitedRoots) {
     if (!doc) return;
+    if (!visitedRoots) visitedRoots = new Set();
+    if (visitedRoots.has(doc)) return;
+    visitedRoots.add(doc);
 
     try {
       // Get videos from this document
@@ -31,13 +34,21 @@ export const getVideoDetectorScript = () => `
         results.push({ video: v, doc: doc });
       }
 
+      // Check shadow DOMs
+      const allElements = doc.querySelectorAll('*');
+      for (const el of allElements) {
+        if (el.shadowRoot) {
+          collectAllVideos(el.shadowRoot, results, visitedRoots);
+        }
+      }
+
       // Check iframes (same-origin only)
       const iframes = doc.querySelectorAll('iframe');
       for (const iframe of iframes) {
         try {
           const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
           if (iframeDoc) {
-            collectAllVideos(iframeDoc, results);
+            collectAllVideos(iframeDoc, results, visitedRoots);
           }
         } catch (e) {
           // Cross-origin iframe, can't access

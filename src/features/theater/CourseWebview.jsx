@@ -171,13 +171,45 @@ export const CourseWebview = ({
       const script = getVideoDetectorScript();
       webview.executeJavaScript(script).catch(() => {});
 
-      // Simple video check - poll for video element and get src
+      // Comprehensive video check - poll for video in document, iframes, and shadow DOMs
       const checkVideo = `
         (function() {
-          var v = document.querySelector('video');
+          function findVideo(root, visited) {
+            if (!root || !visited) visited = new Set();
+            if (visited.has(root)) return null;
+            visited.add(root);
+
+            // Check direct video elements
+            var v = root.querySelector ? root.querySelector('video') : null;
+            if (v) return v;
+
+            // Check shadow DOMs
+            var all = root.querySelectorAll ? root.querySelectorAll('*') : [];
+            for (var i = 0; i < all.length; i++) {
+              if (all[i].shadowRoot) {
+                var sv = findVideo(all[i].shadowRoot, visited);
+                if (sv) return sv;
+              }
+            }
+
+            // Check iframes (same-origin only)
+            var iframes = root.querySelectorAll ? root.querySelectorAll('iframe') : [];
+            for (var j = 0; j < iframes.length; j++) {
+              try {
+                var iframeDoc = iframes[j].contentDocument || (iframes[j].contentWindow && iframes[j].contentWindow.document);
+                if (iframeDoc) {
+                  var iv = findVideo(iframeDoc, visited);
+                  if (iv) return iv;
+                }
+              } catch(e) {}
+            }
+
+            return null;
+          }
+
+          var v = findVideo(document);
           if (v) {
             var src = v.src || v.currentSrc || '';
-            // Also check for source elements
             if (!src) {
               var source = v.querySelector('source');
               if (source) src = source.src || '';
