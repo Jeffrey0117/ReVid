@@ -57,7 +57,11 @@ export const CourseWebview = ({
     if (!webview) return;
 
     const handleDomReady = () => {
-      setIsLoading(false);
+      // Hide loading overlay after short delay regardless of video detection
+      setTimeout(() => {
+        setIsLoading(false);
+        setNeedsLogin(true); // Show hint, will be hidden if video found
+      }, 1500);
 
       // Define focus mode functions (will be called when user toggles)
       const defineFocusFunctions = `
@@ -246,12 +250,6 @@ export const CourseWebview = ({
               // Can't use native player, apply focus mode in webview (default behavior)
               focusAppliedRef.current = true;
               webview.executeJavaScript('window.__revidEnterFocus && window.__revidEnterFocus()').catch(() => {});
-            }
-          } else {
-            // No video found - after 3 polls, show login hint
-            if (localPollCount >= 3 && !foundVideo) {
-              setNeedsLogin(true);
-              setIsLoading(false);
             }
           }
         }).catch(() => {});
