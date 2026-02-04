@@ -2,7 +2,6 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { getVideoDetectorScript } from '../../utils/webviewVideoDetector';
 import { useI18n } from '../../i18n.jsx';
 import { useTheme } from '../../theme.jsx';
-import { SpeedControl } from '../../components/SpeedControl.jsx';
 
 /**
  * CourseWebview — renders a <webview> for a course URL with video detection.
@@ -876,18 +875,6 @@ export const CourseWebview = ({
           </div>
         )}
 
-        {/* Top speed control bar - always show in webview mode */}
-        <div style={{
-          position: 'absolute', top: 8, right: 8, zIndex: 20,
-          display: 'flex', alignItems: 'center', gap: 8,
-        }}>
-          <SpeedControl
-            speed={playbackRate}
-            presets={[1, 1.25, 1.5, 2, 3]}
-            onSelect={onPlaybackRateChange}
-            compact
-          />
-        </div>
 
         {/* Resume toast */}
         {resumeToast && (

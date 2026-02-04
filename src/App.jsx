@@ -935,6 +935,37 @@ export default function App() {
                     <main style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
                         {viewMode === 'theater' ? (
                             <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                                {/* Theater top bar: speed control + title */}
+                                {theater.activeCourse && (
+                                    <div style={{
+                                        flexShrink: 0, height: 40,
+                                        display: 'flex', alignItems: 'center',
+                                        padding: '0 12px', gap: 12,
+                                        background: theme.bgTertiary,
+                                        borderBottom: `1px solid ${theme.border}`
+                                    }}>
+                                        <SpeedControl
+                                            speed={theaterSpeed}
+                                            presets={SPEED_PRESETS}
+                                            onSelect={selectTheaterSpeed}
+                                            compact
+                                        />
+                                        <span style={{ fontSize: 12, color: theme.textTertiary, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {theater.activeCourse.url}
+                                        </span>
+                                        <button
+                                            className="btn btn-ghost"
+                                            onClick={handleCloseCourse}
+                                            style={{ padding: 4, fontSize: 12 }}
+                                            title={t('close')}
+                                        >
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                )}
+
                                 {theater.activeCourse ? (
                                     theater.activeCourse.platform === 'youtube' ? (
                                         <YouTubePlayer
@@ -1159,36 +1190,6 @@ export default function App() {
                                     </div>
                                 )}
 
-                                {/* Theater bottom bar: speed control */}
-                                {theater.activeCourse && (
-                                    <div style={{
-                                        flexShrink: 0, height: 40,
-                                        display: 'flex', alignItems: 'center',
-                                        padding: '0 12px', gap: 12,
-                                        background: theme.bgTertiary,
-                                        borderTop: `1px solid ${theme.border}`
-                                    }}>
-                                        <SpeedControl
-                                            speed={theaterSpeed}
-                                            presets={SPEED_PRESETS}
-                                            onSelect={selectTheaterSpeed}
-                                            compact
-                                        />
-                                        <span style={{ fontSize: 12, color: theme.textTertiary, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                            {theater.activeCourse.title}
-                                        </span>
-                                        <button
-                                            className="btn btn-ghost"
-                                            onClick={handleCloseCourse}
-                                            style={{ padding: 4, fontSize: 12 }}
-                                            title={t('close')}
-                                        >
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                <path d="M18 6 6 18" /><path d="m6 6 12 12" />
-                                            </svg>
-                                        </button>
-                                    </div>
-                                )}
                             </div>
                         ) : files.length === 0 ? (
                             <div style={{
