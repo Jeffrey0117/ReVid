@@ -171,38 +171,47 @@ export const CourseWebview = ({
       const script = getVideoDetectorScript();
       webview.executeJavaScript(script).catch(() => {});
 
-      // Comprehensive video check - poll for video in document, iframes, and shadow DOMs
+      // Comprehensive video check - poll for video in document, iframes, and nested shadow DOMs
       const checkVideo = `
         (function() {
           function findVideo(root, visited) {
-            if (!root || !visited) visited = new Set();
+            if (!root) return null;
+            if (!visited) visited = new Set();
             if (visited.has(root)) return null;
             visited.add(root);
 
-            // Check direct video elements
-            var v = root.querySelector ? root.querySelector('video') : null;
-            if (v) return v;
-
-            // Check shadow DOMs
-            var all = root.querySelectorAll ? root.querySelectorAll('*') : [];
-            for (var i = 0; i < all.length; i++) {
-              if (all[i].shadowRoot) {
-                var sv = findVideo(all[i].shadowRoot, visited);
-                if (sv) return sv;
+            // Check direct video elements first
+            try {
+              var videos = root.querySelectorAll ? root.querySelectorAll('video') : [];
+              for (var i = 0; i < videos.length; i++) {
+                if (videos[i]) return videos[i];
               }
-            }
+            } catch(e) {}
+
+            // Recursively check ALL elements for shadow roots (handles nested shadow DOMs)
+            try {
+              var all = root.querySelectorAll ? root.querySelectorAll('*') : [];
+              for (var i = 0; i < all.length; i++) {
+                var el = all[i];
+                // Check this element's shadow root
+                if (el.shadowRoot) {
+                  var sv = findVideo(el.shadowRoot, visited);
+                  if (sv) return sv;
+                }
+              }
+            } catch(e) {}
 
             // Check iframes (same-origin only)
-            var iframes = root.querySelectorAll ? root.querySelectorAll('iframe') : [];
-            for (var j = 0; j < iframes.length; j++) {
-              try {
+            try {
+              var iframes = root.querySelectorAll ? root.querySelectorAll('iframe') : [];
+              for (var j = 0; j < iframes.length; j++) {
                 var iframeDoc = iframes[j].contentDocument || (iframes[j].contentWindow && iframes[j].contentWindow.document);
                 if (iframeDoc) {
                   var iv = findVideo(iframeDoc, visited);
                   if (iv) return iv;
                 }
-              } catch(e) {}
-            }
+              }
+            } catch(e) {}
 
             return null;
           }
