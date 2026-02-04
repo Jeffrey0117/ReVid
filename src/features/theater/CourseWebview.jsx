@@ -1084,7 +1084,7 @@ export const CourseWebview = ({
           ref={webviewRef}
           src={url}
           partition={partition}
-          style={{ flex: 1, width: '100%', minHeight: 0 }}
+          style={{ flex: 1, width: '100%', minHeight: 0, pointerEvents: 'auto' }}
           allowpopups="true"
         />
 
@@ -1104,6 +1104,7 @@ export const CourseWebview = ({
           <div style={{
             position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
             padding: '8px 16px',
+            pointerEvents: 'none',
             background: 'linear-gradient(to bottom, rgba(0,0,0,0.85), rgba(0,0,0,0))',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12
           }}>
