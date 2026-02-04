@@ -172,32 +172,62 @@ export const CourseWebview = ({
       const script = getVideoDetectorScript();
       webview.executeJavaScript(script).catch(() => {});
 
-      // Comprehensive video check - poll for video in document, iframes, and nested shadow DOMs
+      // Comprehensive video check - find video and get real src (not blob)
       const checkVideo = `
         (function() {
           var shadowRootsFound = 0;
           var queue = [document];
           var visited = new Set();
+          var foundVideo = null;
+          var realSrc = '';
 
+          // First pass: find custom video players with real src (hls-video, video-js, etc.)
+          try {
+            var customPlayers = document.querySelectorAll('hls-video, video-js, media-player, [data-video-src]');
+            for (var i = 0; i < customPlayers.length; i++) {
+              var src = customPlayers[i].getAttribute('src') || customPlayers[i].dataset.videoSrc || '';
+              if (src && !src.startsWith('blob:')) {
+                realSrc = src;
+                break;
+              }
+            }
+          } catch(e) {}
+
+          // BFS to find <video> element
           while (queue.length > 0) {
             var root = queue.shift();
             if (!root || visited.has(root)) continue;
             visited.add(root);
 
-            // Check for video elements directly
+            // Check for video elements
             try {
               var videos = root.querySelectorAll ? root.querySelectorAll('video') : [];
               if (videos.length > 0) {
-                var v = videos[0];
-                var src = v.src || v.currentSrc || '';
-                if (!src && v.querySelector) {
-                  var source = v.querySelector('source');
-                  if (source) src = source.src || '';
+                foundVideo = videos[0];
+                // Try to get non-blob src
+                var vSrc = foundVideo.src || foundVideo.currentSrc || '';
+                if (vSrc && !vSrc.startsWith('blob:')) {
+                  realSrc = vSrc;
                 }
-                console.log('[ReVid] Found video! src:', src, 'shadowRoots traversed:', shadowRootsFound);
-                return { found: true, duration: v.duration || 0, src: src };
+                if (!realSrc && foundVideo.querySelector) {
+                  var source = foundVideo.querySelector('source');
+                  if (source && source.src && !source.src.startsWith('blob:')) {
+                    realSrc = source.src;
+                  }
+                }
               }
-            } catch(e) { console.log('[ReVid] Error checking videos:', e); }
+            } catch(e) {}
+
+            // Also check custom elements in this root for src attribute
+            try {
+              var customs = root.querySelectorAll ? root.querySelectorAll('hls-video, video-js, media-player') : [];
+              for (var k = 0; k < customs.length; k++) {
+                var csrc = customs[k].getAttribute('src') || '';
+                if (csrc && !csrc.startsWith('blob:')) {
+                  realSrc = csrc;
+                }
+              }
+            } catch(e) {}
 
             // Queue all shadow roots
             try {
@@ -224,7 +254,12 @@ export const CourseWebview = ({
             } catch(e) {}
           }
 
-          console.log('[ReVid] No video found. Shadow roots checked:', shadowRootsFound);
+          if (foundVideo) {
+            // Use real src if found, otherwise use whatever we got (even blob)
+            var finalSrc = realSrc || foundVideo.src || foundVideo.currentSrc || '';
+            return { found: true, duration: foundVideo.duration || 0, src: finalSrc, isBlob: finalSrc.startsWith('blob:') };
+          }
+
           return { found: false, debug: { shadowRootsFound: shadowRootsFound } };
         })();
       `;
@@ -276,7 +311,8 @@ export const CourseWebview = ({
           // Debug: show result in UI
           if (result) {
             if (result.found) {
-              setDebugInfo('Found video: ' + (result.src || 'blob').substring(0, 50));
+              var srcDisplay = result.isBlob ? 'BLOB (no real URL)' : result.src.substring(0, 60);
+              setDebugInfo('FOUND: ' + srcDisplay);
             } else {
               setDebugInfo('Poll #' + localPollCount + ' - Shadow roots: ' + (result.debug?.shadowRootsFound || 0));
             }
@@ -807,12 +843,17 @@ export const CourseWebview = ({
             <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
               {t('loginHint')}
             </span>
-            {/* Debug info */}
-            {debugInfo && (
-              <span style={{ fontSize: 10, color: '#22c55e', marginLeft: 8, fontFamily: 'monospace' }}>
-                [{debugInfo}]
-              </span>
-            )}
+          </div>
+        )}
+
+        {/* Debug info - always visible for debugging */}
+        {debugInfo && (
+          <div style={{
+            position: 'absolute', top: needsLogin && !videoFound ? 40 : 8, right: 8, zIndex: 20,
+            padding: '4px 8px', borderRadius: 4,
+            background: 'rgba(0,0,0,0.8)', fontSize: 10, color: '#22c55e', fontFamily: 'monospace'
+          }}>
+            {debugInfo}
           </div>
         )}
 
