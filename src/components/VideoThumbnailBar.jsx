@@ -1,5 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from 'react';
 import { generateVideoThumbnail, getCachedThumbnail } from '../utils/videoThumbnails';
+import { useTheme } from '../theme.jsx';
 
 const getElectronAPI = () => window.electronAPI || null;
 
@@ -19,6 +20,7 @@ export const VideoThumbnailBar = ({
     position = 'left', // 'left' or 'bottom'
     style = {}
 }) => {
+    const { isDark } = useTheme();
     const isHorizontal = position === 'bottom';
     const scrollContainerRef = useRef(null);
 
@@ -296,17 +298,27 @@ export const VideoThumbnailBar = ({
         return filePath.split(/[\\/]/).pop() || filePath;
     }, []);
 
+    // Theme-aware colors
+    const bgColor = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)';
+    const borderColor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.08)';
+    const textMuted = isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)';
+    const textNormal = isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)';
+    const textBright = isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.7)';
+    const spinnerBorder = isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)';
+    const spinnerActive = isDark ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.6)';
+    const resizeHoverBg = isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)';
+
     // Container styles based on position
     const containerStyle = isHorizontal ? {
         height, flexShrink: 0, width: '100%',
-        background: 'rgba(255,255,255,0.03)',
-        borderTop: '1px solid rgba(255,255,255,0.05)',
+        background: bgColor,
+        borderTop: `1px solid ${borderColor}`,
         display: 'flex', flexDirection: 'column',
         position: 'relative', overflow: 'hidden'
     } : {
         width, flexShrink: 0, height: '100%',
-        background: 'rgba(255,255,255,0.03)',
-        borderRight: '1px solid rgba(255,255,255,0.05)',
+        background: bgColor,
+        borderRight: `1px solid ${borderColor}`,
         display: 'flex', flexDirection: 'column',
         position: 'relative', overflow: 'hidden'
     };
@@ -373,14 +385,14 @@ export const VideoThumbnailBar = ({
                             <img src={thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} draggable={false} />
                         ) : (
                             <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.2)' }}>
-                                <div style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'rgba(255,255,255,0.8)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                                <div style={{ width: 14, height: 14, border: `2px solid ${spinnerBorder}`, borderTopColor: spinnerActive, borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
                             </div>
                         )}
                         <div style={{ position: 'absolute', top: 3, left: 3, background: 'rgba(0,0,0,0.6)', padding: '1px 4px', borderRadius: 3, fontSize: 9, color: 'rgba(255,255,255,0.7)' }}>
                             {index + 1}
                         </div>
                     </div>
-                    <div style={{ marginTop: 2, fontSize: 9, fontWeight: 500, textAlign: 'center', width: thumbSize.width, padding: '0 2px', color: isActive ? '#3b82f6' : 'rgba(255,255,255,0.6)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div style={{ marginTop: 2, fontSize: 9, fontWeight: 500, textAlign: 'center', width: thumbSize.width, padding: '0 2px', color: isActive ? '#3b82f6' : textNormal, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {fileName}
                     </div>
                 </div>
@@ -406,7 +418,7 @@ export const VideoThumbnailBar = ({
                     onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
                     onMouseLeave={(e) => e.currentTarget.style.transform = ''}
                 >
-                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', textAlign: 'center', width: '100%', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div style={{ fontSize: 10, color: textMuted, textAlign: 'center', width: '100%', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {index + 1}
                     </div>
                     <div style={{
@@ -420,11 +432,11 @@ export const VideoThumbnailBar = ({
                             <img src={thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} draggable={false} />
                         ) : (
                             <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.2)' }}>
-                                <div style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'rgba(255,255,255,0.8)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                                <div style={{ width: 16, height: 16, border: `2px solid ${spinnerBorder}`, borderTopColor: spinnerActive, borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
                             </div>
                         )}
                     </div>
-                    <div style={{ marginTop: 4, fontSize: 10, fontWeight: 500, textAlign: 'center', width: '100%', padding: '0 4px', color: isActive ? '#3b82f6' : 'rgba(255,255,255,0.7)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div style={{ marginTop: 4, fontSize: 10, fontWeight: 500, textAlign: 'center', width: '100%', padding: '0 4px', color: isActive ? '#3b82f6' : textBright, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {fileName}
                     </div>
                 </div>
@@ -437,7 +449,7 @@ export const VideoThumbnailBar = ({
             <div
                 onMouseDown={handleResizeMouseDown}
                 style={resizeHandleStyle}
-                onMouseEnter={(e) => { if (!isResizing) e.currentTarget.style.background = 'rgba(255,255,255,0.3)'; }}
+                onMouseEnter={(e) => { if (!isResizing) e.currentTarget.style.background = resizeHoverBg; }}
                 onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }}
             />
 
