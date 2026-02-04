@@ -876,20 +876,18 @@ export const CourseWebview = ({
           </div>
         )}
 
-        {/* Top speed control bar - shows when video found */}
-        {videoFound && (
-          <div style={{
-            position: 'absolute', top: 8, right: 8, zIndex: 20,
-            display: 'flex', alignItems: 'center', gap: 8,
-          }}>
-            <SpeedControl
-              speed={playbackRate}
-              presets={[1, 1.25, 1.5, 2, 3]}
-              onSelect={onPlaybackRateChange}
-              compact
-            />
-          </div>
-        )}
+        {/* Top speed control bar - always show in webview mode */}
+        <div style={{
+          position: 'absolute', top: 8, right: 8, zIndex: 20,
+          display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <SpeedControl
+            speed={playbackRate}
+            presets={[1, 1.25, 1.5, 2, 3]}
+            onSelect={onPlaybackRateChange}
+            compact
+          />
+        </div>
 
         {/* Resume toast */}
         {resumeToast && (
