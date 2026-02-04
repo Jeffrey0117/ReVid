@@ -123,7 +123,7 @@ export const VideoThumbnailBar = ({
     // Virtual scroll for vertical mode
     const [scrollPosition, setScrollPosition] = useState(0);
     const [containerSize, setContainerSize] = useState(0);
-    const ITEM_GAP = isHorizontal ? 24 : 12; // Larger gap for horizontal mode
+    const ITEM_GAP = isHorizontal ? 36 : 12; // Larger gap for horizontal mode
     const ITEM_HEIGHT = thumbSize.height + 32 + ITEM_GAP;
     const OVERSCAN = 3;
 
