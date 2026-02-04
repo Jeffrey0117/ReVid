@@ -1,8 +1,6 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { extractYouTubeVideoId } from '../utils/youtubeUrl';
 import { validateRevidFile, revidToCourse } from '../utils/revidFile';
-
-const STORAGE_KEY = 'revid-web-theater';
 
 const generateId = () => `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
@@ -11,26 +9,8 @@ const getYouTubeThumbnail = (url) => {
   return videoId ? `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` : null;
 };
 
-const loadFromStorage = () => {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (!stored) return [];
-    return JSON.parse(stored);
-  } catch (e) {
-    return [];
-  }
-};
-
-let _initialFolders = null;
-const getInitialFolders = () => {
-  if (_initialFolders === null) {
-    _initialFolders = loadFromStorage();
-  }
-  return _initialFolders;
-};
-
 /**
- * Hook for managing virtual course theater with localStorage persistence.
+ * Hook for managing virtual course theater with file-based persistence.
  *
  * Data Model:
  *   Folder { id, name, platform, courses[], createdAt }
@@ -39,24 +19,52 @@ const getInitialFolders = () => {
  *            addedAt, deletedAt? }
  */
 export const useWebTheater = () => {
-  const [folders, setFolders] = useState(getInitialFolders);
-  const [selectedFolderId, setSelectedFolderId] = useState(() => {
-    const initial = getInitialFolders();
-    return initial.length > 0 ? initial[0].id : null;
-  });
+  const [folders, setFolders] = useState([]);
+  const [selectedFolderId, setSelectedFolderId] = useState(null);
   const [activeCourseId, setActiveCourseId] = useState(null);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const initialLoadDone = useRef(false);
 
-  // Debounced save to localStorage
+  // Load from file on mount
   useEffect(() => {
-    const timeoutId = setTimeout(() => {
+    if (initialLoadDone.current) return;
+    initialLoadDone.current = true;
+
+    const loadData = async () => {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(folders));
+        const api = window.electronAPI;
+        if (api?.loadTheaterData) {
+          const data = await api.loadTheaterData();
+          if (data && Array.isArray(data)) {
+            setFolders(data);
+            if (data.length > 0) {
+              setSelectedFolderId(data[0].id);
+            }
+          }
+        }
       } catch (e) {
-        // Storage error
+        console.error('[useWebTheater] Failed to load:', e);
       }
-    }, 300);
+      setIsLoaded(true);
+    };
+
+    loadData();
+  }, []);
+
+  // Debounced save to file
+  useEffect(() => {
+    if (!isLoaded) return; // Don't save before initial load
+
+    const timeoutId = setTimeout(() => {
+      const api = window.electronAPI;
+      if (api?.saveTheaterData) {
+        api.saveTheaterData(folders).catch(e => {
+          console.error('[useWebTheater] Failed to save:', e);
+        });
+      }
+    }, 500);
     return () => clearTimeout(timeoutId);
-  }, [folders]);
+  }, [folders, isLoaded]);
 
   // Selected folder (computed)
   const selectedFolder = useMemo(

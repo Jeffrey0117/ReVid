@@ -200,6 +200,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return () => ipcRenderer.removeListener('download-progress', handler);
     },
 
+    // --- Theater Data Persistence (file-based) ---
+
+    loadTheaterData: async () => {
+        return await ipcRenderer.invoke('load-theater-data');
+    },
+
+    saveTheaterData: async (data) => {
+        return await ipcRenderer.invoke('save-theater-data', data);
+    },
+
     // --- Theater Session API ---
 
     createPersistentSession: async (platform) => {

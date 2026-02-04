@@ -40,7 +40,39 @@ function createWindow() {
     }
 }
 
+// Get path for theater data file
+function getTheaterDataPath() {
+    const userDataPath = app.getPath('userData');
+    return path.join(userDataPath, 'theater-data.json');
+}
+
 function setupIpcHandlers() {
+    // Theater data persistence (file-based, not localStorage)
+    ipcMain.handle('load-theater-data', async () => {
+        try {
+            const dataPath = getTheaterDataPath();
+            if (fs.existsSync(dataPath)) {
+                const data = fs.readFileSync(dataPath, 'utf-8');
+                return JSON.parse(data);
+            }
+            return null;
+        } catch (e) {
+            console.error('[load-theater-data] Error:', e);
+            return null;
+        }
+    });
+
+    ipcMain.handle('save-theater-data', async (_event, data) => {
+        try {
+            const dataPath = getTheaterDataPath();
+            fs.writeFileSync(dataPath, JSON.stringify(data, null, 2), 'utf-8');
+            return { success: true };
+        } catch (e) {
+            console.error('[save-theater-data] Error:', e);
+            return { success: false, error: e.message };
+        }
+    });
+
     // Open file dialog for video
     ipcMain.handle('open-video', async () => {
         if (!mainWindow) return null;
