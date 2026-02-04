@@ -308,12 +308,25 @@ export const CourseWebview = ({
         }).catch(() => {});
       };
 
-      // Check immediately and every 2 seconds
+      // Aggressive polling: 500ms for first 10 seconds, then 2s
+      // This handles dynamically loaded video players
       pollVideo();
-      const pollInterval = setInterval(pollVideo, 2000);
+      let fastPollCount = 0;
+      const fastPoll = setInterval(() => {
+        fastPollCount++;
+        pollVideo();
+        // After 20 fast polls (10 seconds), switch to slow polling
+        if (fastPollCount >= 20 || foundVideo) {
+          clearInterval(fastPoll);
+          if (!foundVideo) {
+            // Continue with slower polling
+            webview._revidPollInterval = setInterval(pollVideo, 2000);
+          }
+        }
+      }, 500);
 
       // Store interval for cleanup
-      webview._revidPollInterval = pollInterval;
+      webview._revidPollInterval = fastPoll;
     };
 
     const handleLoadStart = () => {
