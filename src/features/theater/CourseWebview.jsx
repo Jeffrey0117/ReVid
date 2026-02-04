@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { getVideoDetectorScript } from '../../utils/webviewVideoDetector';
 import { useI18n } from '../../i18n.jsx';
 import { useTheme } from '../../theme.jsx';
+import { SpeedControl } from '../../components/SpeedControl.jsx';
 
 /**
  * CourseWebview — renders a <webview> for a course URL with video detection.
@@ -19,6 +20,7 @@ import { useTheme } from '../../theme.jsx';
  *   playlist       - array of courses in same folder for playlist display
  *   currentCourseId - current course id for playlist highlighting
  *   onPlaylistSelect - callback when user selects from playlist
+ *   onPlaybackRateChange - callback when speed is changed from toolbar
  */
 export const CourseWebview = ({
   url,
@@ -28,6 +30,7 @@ export const CourseWebview = ({
   onVideoDetected,
   onVideoState,
   onThumbnailCaptured,
+  onPlaybackRateChange,
   className = '',
   playlist = [],
   currentCourseId = null,
@@ -870,6 +873,21 @@ export const CourseWebview = ({
             <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
               {t('loginHint')}
             </span>
+          </div>
+        )}
+
+        {/* Top speed control bar - shows when video found */}
+        {videoFound && (
+          <div style={{
+            position: 'absolute', top: 8, right: 8, zIndex: 20,
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <SpeedControl
+              speed={playbackRate}
+              presets={[1, 1.25, 1.5, 2, 3]}
+              onSelect={onPlaybackRateChange}
+              compact
+            />
           </div>
         )}
 

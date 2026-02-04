@@ -970,6 +970,7 @@ export default function App() {
                                                     theater.updateCourseThumbnail(theater.selectedFolderId, theater.activeCourseId, thumbnail);
                                                 }
                                             }}
+                                            onPlaybackRateChange={selectTheaterSpeed}
                                             playlist={theater.activeCourses}
                                             currentCourseId={theater.activeCourseId}
                                             onPlaylistSelect={(courseId) => theater.openCourse(courseId)}
