@@ -215,12 +215,11 @@ export const getVideoDetectorScript = () => `
       if (reportInterval) clearInterval(reportInterval);
       reportInterval = setInterval(reportState, 1000);
 
-      // Notify host that video was found
-      window.postMessage({
-        type: 'revid-video-detected',
+      // Notify host that video was found (via console for webview capture)
+      console.log('__REVID_VIDEO_DETECTED__', JSON.stringify({
         duration: video.duration || 0,
         src: video.src || video.currentSrc || ''
-      }, '*');
+      }));
 
       // Don't auto-enter focus mode - let the host control this
       // enterFocusMode(video);

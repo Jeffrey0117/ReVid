@@ -440,6 +440,25 @@ export const CourseWebview = ({
     const webview = webviewRef.current;
     if (!webview) return;
 
+    // Capture console messages from webview (for cross-context communication)
+    const handleConsoleMessage = (event) => {
+      const message = event.message;
+      if (message && message.startsWith('__REVID_VIDEO_DETECTED__')) {
+        try {
+          const jsonStr = message.replace('__REVID_VIDEO_DETECTED__', '').trim();
+          const data = JSON.parse(jsonStr);
+          videoFoundRef.current = true;
+          setVideoFound(true);
+          setNeedsLogin(false);
+          onVideoDetected?.({ duration: data.duration, src: data.src });
+        } catch (e) {
+          // Parse error, ignore
+        }
+      }
+    };
+
+    webview.addEventListener('console-message', handleConsoleMessage);
+
     const handleMessage = (event) => {
       const { channel, args } = event;
       if (channel === 'console-message') return;
@@ -503,6 +522,7 @@ export const CourseWebview = ({
     window.addEventListener('message', handleWindowMessage);
 
     return () => {
+      webview.removeEventListener('console-message', handleConsoleMessage);
       webview.removeEventListener('ipc-message', handleIpcMessage);
       window.removeEventListener('message', handleWindowMessage);
     };
