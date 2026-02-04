@@ -337,19 +337,20 @@ export const CourseWebview = ({
               setDetectedVideoUrl(result.src);
             }
 
-            // If we got a valid video src (not blob:), switch to native player
+            // If we got a direct video file (mp4/webm), switch to native player
+            // Note: m3u8/HLS streams need special handling, keep in webview mode
             const canUseNative = result.src &&
               !result.src.startsWith('blob:') &&
-              (result.src.includes('.mp4') || result.src.includes('.m3u8') || result.src.includes('.webm'));
+              !result.src.includes('.m3u8') &&  // HLS needs HLS.js, keep in webview
+              (result.src.includes('.mp4') || result.src.includes('.webm'));
 
             if (canUseNative) {
               setVideoSrc(result.src);
+            } else if (!focusAppliedRef.current) {
+              // Apply focus mode to maximize video and hide distractions
+              focusAppliedRef.current = true;
+              webview.executeJavaScript('window.__revidEnterFocus && window.__revidEnterFocus()').catch(() => {});
             }
-            // Focus mode disabled temporarily for debugging
-            // else if (!focusAppliedRef.current) {
-            //   focusAppliedRef.current = true;
-            //   webview.executeJavaScript('window.__revidEnterFocus && window.__revidEnterFocus()').catch(() => {});
-            // }
           }
         }).catch(() => {});
       };
