@@ -174,7 +174,7 @@ export const CourseWebview = ({
       // Comprehensive video check - poll for video in document, iframes, and nested shadow DOMs
       const checkVideo = `
         (function() {
-          // Iterative approach to find video in nested shadow DOMs
+          var shadowRootsFound = 0;
           var queue = [document];
           var visited = new Set();
 
@@ -183,7 +183,7 @@ export const CourseWebview = ({
             if (!root || visited.has(root)) continue;
             visited.add(root);
 
-            // Check for video elements
+            // Check for video elements directly
             try {
               var videos = root.querySelectorAll ? root.querySelectorAll('video') : [];
               if (videos.length > 0) {
@@ -193,22 +193,23 @@ export const CourseWebview = ({
                   var source = v.querySelector('source');
                   if (source) src = source.src || '';
                 }
-                console.log('[ReVid] Found video:', src);
+                console.log('[ReVid] Found video! src:', src, 'shadowRoots traversed:', shadowRootsFound);
                 return { found: true, duration: v.duration || 0, src: src };
               }
-            } catch(e) {}
+            } catch(e) { console.log('[ReVid] Error checking videos:', e); }
 
-            // Queue all shadow roots for checking
+            // Queue all shadow roots
             try {
               var all = root.querySelectorAll ? root.querySelectorAll('*') : [];
               for (var i = 0; i < all.length; i++) {
                 if (all[i].shadowRoot && !visited.has(all[i].shadowRoot)) {
+                  shadowRootsFound++;
                   queue.push(all[i].shadowRoot);
                 }
               }
             } catch(e) {}
 
-            // Queue all iframes
+            // Queue iframes
             try {
               var iframes = root.querySelectorAll ? root.querySelectorAll('iframe') : [];
               for (var j = 0; j < iframes.length; j++) {
@@ -222,7 +223,8 @@ export const CourseWebview = ({
             } catch(e) {}
           }
 
-          return { found: false };
+          console.log('[ReVid] No video found. Shadow roots checked:', shadowRootsFound);
+          return { found: false, debug: { shadowRootsFound: shadowRootsFound } };
         })();
       `;
 
