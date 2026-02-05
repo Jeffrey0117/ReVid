@@ -1029,64 +1029,15 @@ export const CourseWebview = ({
     setVolumeLevel(vol); // Track locally for UI
     const webview = webviewRef.current;
     if (!webview) return;
-    // Use Web Audio API for volume boost (beyond 100%)
+
+    // Simple approach: use native volume for 0-1, show warning for boost
+    // Web Audio API has too many issues with webview context
     webview.executeJavaScript(`
       (function() {
         ${findVideoScript}
         var v = findVideo();
         if (!v) return;
-
-        var vol = ${vol};
-
-        // Check if we already have audio context set up for this video
-        if (window.__revidAudioVideo === v && window.__revidGainNode) {
-          // Already set up, just adjust gain
-          // For vol <= 1, we use gain as multiplier (so vol 0.5 = gain 0.5)
-          // For vol > 1, gain is the boost factor
-          window.__revidGainNode.gain.value = vol;
-          if (window.__revidAudioCtx.state === 'suspended') {
-            window.__revidAudioCtx.resume();
-          }
-          return;
-        }
-
-        // For volume > 1, need Web Audio API
-        if (vol > 1) {
-          try {
-            // Create audio context and gain node (only once per video)
-            if (!window.__revidAudioCtx) {
-              window.__revidAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            }
-            if (window.__revidAudioCtx.state === 'suspended') {
-              window.__revidAudioCtx.resume();
-            }
-
-            // Only create media source once per video element
-            if (window.__revidAudioVideo !== v) {
-              window.__revidGainNode = window.__revidAudioCtx.createGain();
-              window.__revidMediaSource = window.__revidAudioCtx.createMediaElementSource(v);
-              window.__revidMediaSource.connect(window.__revidGainNode);
-              window.__revidGainNode.connect(window.__revidAudioCtx.destination);
-              window.__revidAudioVideo = v;
-            }
-
-            window.__revidGainNode.gain.value = vol;
-            v.volume = 1; // Native volume at max when using gain
-          } catch(e) {
-            console.log('[ReVid] Audio boost error:', e);
-            // Fallback to native volume
-            v.volume = Math.min(vol, 1);
-          }
-        } else {
-          // Normal volume without boost
-          if (window.__revidGainNode && window.__revidAudioVideo === v) {
-            // Already using Web Audio API, use gain for all volume control
-            window.__revidGainNode.gain.value = vol;
-          } else {
-            // Not using Web Audio API yet, use native volume
-            v.volume = vol;
-          }
-        }
+        v.volume = Math.min(${vol}, 1);
       })();
     `).catch(() => {});
   }, []);
@@ -1554,24 +1505,16 @@ export const CourseWebview = ({
               <input
                 type="range"
                 min="0"
-                max="3"
+                max="1"
                 step="0.05"
                 value={volumeLevel}
                 onChange={(e) => focusSetVolume(parseFloat(e.target.value))}
                 style={{
-                  width: 80, height: 4, cursor: 'pointer',
-                  accentColor: volumeLevel > 1 ? '#f59e0b' : theme.accent,
+                  width: 70, height: 4, cursor: 'pointer',
+                  accentColor: theme.accent,
                 }}
                 title={`${Math.round(volumeLevel * 100)}%`}
               />
-              <span style={{
-                fontSize: 10,
-                color: volumeLevel > 1 ? '#f59e0b' : 'rgba(255,255,255,0.5)',
-                minWidth: 36,
-                fontWeight: volumeLevel > 1 ? 600 : 400
-              }}>
-                {Math.round(volumeLevel * 100)}%
-              </span>
             </div>
 
             {/* Download button - show when downloadable URL available */}
