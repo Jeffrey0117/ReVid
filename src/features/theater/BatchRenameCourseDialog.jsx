@@ -209,6 +209,7 @@ export const BatchRenameCourseDialog = ({ isOpen, onClose, courses, onRename }) 
               onChange={e => setPastedText(e.target.value)}
               placeholder={t('pasteNamesPlaceholder') || '第一集\n第二集\n第三集\n...'}
               rows={6}
+              autoFocus
               style={{
                 width: '100%',
                 padding: '10px 12px',
@@ -222,6 +223,7 @@ export const BatchRenameCourseDialog = ({ isOpen, onClose, courses, onRename }) 
                 fontFamily: 'inherit',
                 boxSizing: 'border-box'
               }}
+              className="paste-textarea"
             />
             <div style={{
               fontSize: 11, color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)',
