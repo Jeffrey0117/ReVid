@@ -2,3 +2,10 @@ node_modules/
 dist/
 .vite/
 *.log
+
+# Windows special files
+nul
+
+# Electron user data (if accidentally created locally)
+userData/
+Partitions/
