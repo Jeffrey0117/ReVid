@@ -97,9 +97,9 @@ export const BatchRenameCourseDialog = ({ isOpen, onClose, courses, onRename }) 
         style={{
           background: isDark ? '#1f1f1f' : '#fff',
           borderRadius: 16,
-          padding: 24,
-          width: 520,
-          maxWidth: '90vw',
+          padding: '24px 28px 28px 28px',
+          width: 500,
+          maxWidth: 'calc(90vw - 56px)',
           maxHeight: '80vh',
           display: 'flex',
           flexDirection: 'column',
@@ -306,7 +306,7 @@ export const BatchRenameCourseDialog = ({ isOpen, onClose, courses, onRename }) 
         </div>
 
         {/* Buttons */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexShrink: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexShrink: 0, paddingTop: 4 }}>
           <button
             onClick={onClose}
             style={{
