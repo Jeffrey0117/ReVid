@@ -1070,15 +1070,20 @@ export const CourseWebview = ({
               </svg>
             </button>
 
-            {/* URL display */}
-            <div style={{
-              flex: 1, padding: '6px 12px', borderRadius: 6,
-              background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-              fontSize: 12, color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)',
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            }}>
-              {currentUrl}
-            </div>
+            {/* URL display - input for selection/copy */}
+            <input
+              type="text"
+              value={currentUrl}
+              readOnly
+              onClick={(e) => e.target.select()}
+              style={{
+                flex: 1, padding: '6px 12px', borderRadius: 6,
+                background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                fontSize: 12, color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)',
+                border: 'none', outline: 'none',
+                overflow: 'hidden', textOverflow: 'ellipsis',
+              }}
+            />
 
             {/* Exit browse mode - only show when video found */}
             {videoFound && (
