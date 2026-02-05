@@ -91,6 +91,7 @@ export default function App() {
     const [showUploadSettings, setShowUploadSettings] = useState(false);
     const [showUploadDialog, setShowUploadDialog] = useState(false);
     const [showBatchRenameDialog, setShowBatchRenameDialog] = useState(false);
+    const [showCourseListPanel, setShowCourseListPanel] = useState(false);
     const [theaterSidebarVisible, setTheaterSidebarVisible] = useState(true);
     const [showInfoPanel, setShowInfoPanel] = useState(false);
 
@@ -1067,6 +1068,26 @@ export default function App() {
                                             </span>
                                             <div style={{ flex: 1 }} />
                                             <button
+                                                onClick={() => setShowCourseListPanel(true)}
+                                                style={{
+                                                    padding: '6px 12px', borderRadius: 6,
+                                                    background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+                                                    color: isDark ? '#fff' : '#1f2937',
+                                                    fontSize: 12, border: 'none', cursor: 'pointer',
+                                                    display: 'flex', alignItems: 'center', gap: 6
+                                                }}
+                                            >
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <line x1="8" y1="6" x2="21" y2="6" />
+                                                    <line x1="8" y1="12" x2="21" y2="12" />
+                                                    <line x1="8" y1="18" x2="21" y2="18" />
+                                                    <line x1="3" y1="6" x2="3.01" y2="6" />
+                                                    <line x1="3" y1="12" x2="3.01" y2="12" />
+                                                    <line x1="3" y1="18" x2="3.01" y2="18" />
+                                                </svg>
+                                                {t('courseList') || '課程列表'}
+                                            </button>
+                                            <button
                                                 onClick={() => setShowBatchRenameDialog(true)}
                                                 style={{
                                                     padding: '6px 12px', borderRadius: 6,
@@ -1467,6 +1488,160 @@ export default function App() {
                     theater.renameCourse(theater.selectedFolderId, courseId, newTitle);
                 }}
             />
+
+            {/* Course List Panel (sliding from right) */}
+            {showCourseListPanel && createPortal(
+                <>
+                    {/* Backdrop */}
+                    <div
+                        style={{
+                            position: 'fixed', inset: 0, zIndex: 999,
+                            background: 'rgba(0,0,0,0.3)',
+                            backdropFilter: 'blur(2px)'
+                        }}
+                        onClick={() => setShowCourseListPanel(false)}
+                    />
+                    {/* Panel */}
+                    <div
+                        style={{
+                            position: 'fixed', top: 0, right: 0, bottom: 0,
+                            width: 360, maxWidth: '85vw',
+                            zIndex: 1000,
+                            background: isDark ? '#1a1a1a' : '#fff',
+                            boxShadow: '-4px 0 24px rgba(0,0,0,0.2)',
+                            display: 'flex', flexDirection: 'column',
+                            animation: 'slideInRight 0.2s ease-out'
+                        }}
+                    >
+                        {/* Header */}
+                        <div style={{
+                            padding: '16px 20px',
+                            borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
+                            display: 'flex', alignItems: 'center', gap: 12
+                        }}>
+                            <div style={{ flex: 1 }}>
+                                <div style={{
+                                    fontSize: 15, fontWeight: 600,
+                                    color: isDark ? '#fff' : '#1f2937'
+                                }}>
+                                    {theater.selectedFolder?.name || t('courseList') || '課程列表'}
+                                </div>
+                                <div style={{
+                                    fontSize: 12, color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
+                                    marginTop: 2
+                                }}>
+                                    {theater.activeCourses.length} {t('items') || '個項目'}
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowCourseListPanel(false)}
+                                style={{
+                                    padding: 8, borderRadius: 8, border: 'none',
+                                    background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                                    color: isDark ? '#fff' : '#1f2937',
+                                    cursor: 'pointer', display: 'flex'
+                                }}
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <line x1="18" y1="6" x2="6" y2="18" />
+                                    <line x1="6" y1="6" x2="18" y2="18" />
+                                </svg>
+                            </button>
+                        </div>
+                        {/* Course List */}
+                        <div style={{ flex: 1, overflowY: 'auto' }}>
+                            {theater.activeCourses.map((course, idx) => {
+                                const progress = course.progress?.duration > 0
+                                    ? Math.round((course.progress.lastPosition / course.progress.duration) * 100)
+                                    : 0;
+                                return (
+                                    <div
+                                        key={course.id}
+                                        onClick={() => {
+                                            theater.openCourse(course.id);
+                                            setShowCourseListPanel(false);
+                                        }}
+                                        style={{
+                                            padding: '12px 20px',
+                                            borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}`,
+                                            cursor: 'pointer',
+                                            display: 'flex', alignItems: 'center', gap: 12,
+                                            background: theater.activeCourseId === course.id
+                                                ? (isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.1)')
+                                                : 'transparent',
+                                            transition: 'background 0.15s'
+                                        }}
+                                        onMouseEnter={e => {
+                                            if (theater.activeCourseId !== course.id) {
+                                                e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)';
+                                            }
+                                        }}
+                                        onMouseLeave={e => {
+                                            if (theater.activeCourseId !== course.id) {
+                                                e.currentTarget.style.background = 'transparent';
+                                            }
+                                        }}
+                                    >
+                                        {/* Index */}
+                                        <span style={{
+                                            fontSize: 12, fontWeight: 500,
+                                            color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)',
+                                            minWidth: 24
+                                        }}>
+                                            {idx + 1}
+                                        </span>
+                                        {/* Title and progress */}
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{
+                                                fontSize: 13, fontWeight: 500,
+                                                color: theater.activeCourseId === course.id
+                                                    ? theme.accent
+                                                    : (isDark ? '#fff' : '#1f2937'),
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap'
+                                            }}>
+                                                {course.title}
+                                            </div>
+                                            {progress > 0 && (
+                                                <div style={{
+                                                    marginTop: 4, height: 3, borderRadius: 2,
+                                                    background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+                                                    overflow: 'hidden'
+                                                }}>
+                                                    <div style={{
+                                                        height: '100%', borderRadius: 2,
+                                                        background: progress >= 90 ? '#22c55e' : theme.accent,
+                                                        width: `${progress}%`
+                                                    }} />
+                                                </div>
+                                            )}
+                                        </div>
+                                        {/* Progress percent */}
+                                        {progress > 0 && (
+                                            <span style={{
+                                                fontSize: 11,
+                                                color: progress >= 90
+                                                    ? '#22c55e'
+                                                    : (isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)')
+                                            }}>
+                                                {progress}%
+                                            </span>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                    <style>{`
+                        @keyframes slideInRight {
+                            from { transform: translateX(100%); }
+                            to { transform: translateX(0); }
+                        }
+                    `}</style>
+                </>,
+                document.body
+            )}
 
             {/* Export dialog (theater) */}
             <ExportDialog
