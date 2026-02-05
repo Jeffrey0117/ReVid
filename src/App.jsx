@@ -1120,23 +1120,32 @@ export default function App() {
                                                 >
                                                     {/* Thumbnail */}
                                                     <div style={{
-                                                        width: '100%', aspectRatio: '16/9',
+                                                        width: '100%',
+                                                        paddingBottom: '56.25%', /* 16:9 aspect ratio */
                                                         background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
                                                         position: 'relative'
                                                     }}>
                                                         {course.thumbnail ? (
                                                             <img
                                                                 src={course.thumbnail}
                                                                 alt=""
-                                                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                                style={{
+                                                                    position: 'absolute', top: 0, left: 0,
+                                                                    width: '100%', height: '100%', objectFit: 'cover'
+                                                                }}
                                                                 onError={(e) => { e.currentTarget.style.display = 'none'; }}
                                                             />
                                                         ) : (
-                                                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)'} strokeWidth="1.5">
-                                                                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                                                                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                                                            </svg>
+                                                            <div style={{
+                                                                position: 'absolute', top: 0, left: 0,
+                                                                width: '100%', height: '100%',
+                                                                display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                                            }}>
+                                                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)'} strokeWidth="1.5">
+                                                                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                                                                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                                                                </svg>
+                                                            </div>
                                                         )}
                                                         {/* Progress bar overlay */}
                                                         {progress > 0 && (
