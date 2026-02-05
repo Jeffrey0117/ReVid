@@ -90,6 +90,17 @@ export default function App() {
     const [showUploadDialog, setShowUploadDialog] = useState(false);
     const [theaterSidebarVisible, setTheaterSidebarVisible] = useState(true);
     const [showInfoPanel, setShowInfoPanel] = useState(false);
+
+    // Auto-hide info panel when no content to show
+    useEffect(() => {
+        const hasContent = viewMode === 'theater'
+            ? !!theater.activeCourse
+            : !!currentVideo;
+        if (!hasContent && showInfoPanel) {
+            setShowInfoPanel(false);
+        }
+    }, [viewMode, theater.activeCourse, currentVideo, showInfoPanel]);
+
     const theaterVideoStateRef = useRef(null);
     const [renamingCourseId, setRenamingCourseId] = useState(null);
     const [courseContextMenu, setCourseContextMenu] = useState(null); // { courseId, x, y }
