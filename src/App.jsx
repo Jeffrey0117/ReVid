@@ -24,6 +24,7 @@ import { TheaterSidebar } from './features/theater/TheaterSidebar';
 import { CourseWebview } from './features/theater/CourseWebview';
 import { YouTubePlayer } from './features/theater/YouTubePlayer';
 import { AddCourseDialog } from './features/theater/AddCourseDialog';
+import { BatchRenameCourseDialog } from './features/theater/BatchRenameCourseDialog';
 import { ExportDialog } from './features/theater/ExportDialog';
 import { UploadSettings } from './features/theater/UploadSettings';
 import { UploadDialog } from './features/theater/UploadDialog';
@@ -89,6 +90,7 @@ export default function App() {
     const [showExportDialog, setShowExportDialog] = useState(false);
     const [showUploadSettings, setShowUploadSettings] = useState(false);
     const [showUploadDialog, setShowUploadDialog] = useState(false);
+    const [showBatchRenameDialog, setShowBatchRenameDialog] = useState(false);
     const [theaterSidebarVisible, setTheaterSidebarVisible] = useState(true);
     const [showInfoPanel, setShowInfoPanel] = useState(false);
 
@@ -1050,14 +1052,43 @@ export default function App() {
                                         />
                                     )
                                 ) : theater.selectedFolder && theater.activeCourses.length > 0 ? (
-                                    /* Course thumbnail grid */
-                                    <div style={{
-                                        width: '100%', height: '100%',
-                                        overflowY: 'auto', padding: 16,
-                                        display: 'grid',
-                                        gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-                                        gap: 12, alignContent: 'start'
-                                    }}>
+                                    /* Course thumbnail grid with toolbar */
+                                    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                                        {/* Toolbar */}
+                                        <div style={{
+                                            padding: '8px 16px',
+                                            borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`,
+                                            display: 'flex', alignItems: 'center', gap: 8
+                                        }}>
+                                            <span style={{
+                                                fontSize: 12, color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)'
+                                            }}>
+                                                {theater.activeCourses.length} {t('items') || '個項目'}
+                                            </span>
+                                            <div style={{ flex: 1 }} />
+                                            <button
+                                                onClick={() => setShowBatchRenameDialog(true)}
+                                                style={{
+                                                    padding: '6px 12px', borderRadius: 6,
+                                                    background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+                                                    color: isDark ? '#fff' : '#1f2937',
+                                                    fontSize: 12, border: 'none', cursor: 'pointer',
+                                                    display: 'flex', alignItems: 'center', gap: 6
+                                                }}
+                                            >
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                                                </svg>
+                                                {t('batchRename') || '批次命名'}
+                                            </button>
+                                        </div>
+                                        {/* Grid */}
+                                        <div style={{
+                                            flex: 1, overflowY: 'auto', padding: 16,
+                                            display: 'grid',
+                                            gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+                                            gap: 12, alignContent: 'start'
+                                        }}>
                                         {theater.activeCourses.map(course => {
                                             const progress = course.progress?.duration > 0
                                                 ? Math.round((course.progress.lastPosition / course.progress.duration) * 100)
@@ -1170,6 +1201,7 @@ export default function App() {
                                                 </div>
                                             );
                                         })}
+                                        </div>
                                     </div>
                                 ) : theater.selectedFolder ? (
                                     /* Empty folder - show input to add URLs */
@@ -1409,6 +1441,16 @@ export default function App() {
                 isOpen={showAddCourseDialog}
                 onClose={() => setShowAddCourseDialog(false)}
                 onAdd={handleAddCourse}
+            />
+
+            {/* Batch Rename dialog (theater) */}
+            <BatchRenameCourseDialog
+                isOpen={showBatchRenameDialog}
+                onClose={() => setShowBatchRenameDialog(false)}
+                courses={theater.activeCourses}
+                onRename={(courseId, newTitle) => {
+                    theater.renameCourse(theater.selectedFolderId, courseId, newTitle);
+                }}
             />
 
             {/* Export dialog (theater) */}
