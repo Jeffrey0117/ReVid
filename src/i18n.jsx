@@ -53,6 +53,7 @@ const translations = {
     unknown: 'Unknown',
     noVideoSelected: 'Select a video to view details',
     toggleInfo: 'Toggle Info Panel',
+    noContentForInfo: 'Please select an item first',
     // Screenshot dialog
     captureEvery: 'Capture every (seconds)',
     format: 'Format',
@@ -272,7 +273,8 @@ const translations = {
     modifiedDate: '\u4fee\u6539\u65e5\u671f',
     unknown: '\u672a\u77e5',
     noVideoSelected: '\u9078\u64c7\u5f71\u7247\u4ee5\u67e5\u770b\u8a73\u7d30\u8cc7\u8a0a',
-    toggleInfo: '\u5207\u63db\u8cc7\u8a0a\u9762\u677f',
+    toggleInfo: '切換資訊面板',
+    noContentForInfo: '請先選擇一個項目',
     captureEvery: '\u6bcf\u5e7e\u79d2\u64f7\u53d6',
     format: '\u683c\u5f0f',
     outputFolder: '\u8f38\u51fa\u8cc7\u6599\u593e',

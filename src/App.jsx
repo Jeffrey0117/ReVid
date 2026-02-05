@@ -77,6 +77,7 @@ export default function App() {
     const [showSettingsMenu, setShowSettingsMenu] = useState(false);
     const [showAbout, setShowAbout] = useState(false);
     const [toast, setToast] = useState(null);
+    const [alertModal, setAlertModal] = useState(null); // { message }
     const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
 
     const { isPinned, togglePin, pinnedCount } = usePins();
@@ -715,8 +716,7 @@ export default function App() {
                                 ? !!theater.activeCourse
                                 : !!currentVideo;
                             if (!hasContent && !showInfoPanel) {
-                                setToast(t('noContentForInfo') || '請先選擇一個項目');
-                                setTimeout(() => setToast(null), 2000);
+                                setAlertModal({ message: t('noContentForInfo') });
                                 return;
                             }
                             setShowInfoPanel(prev => !prev);
@@ -1587,6 +1587,54 @@ export default function App() {
                     color: '#fff', fontSize: 14, zIndex: 999
                 }}>
                     {toast}
+                </div>
+            )}
+
+            {/* Alert Modal */}
+            {alertModal && (
+                <div style={{
+                    position: 'fixed', inset: 0, zIndex: 1000,
+                    background: 'rgba(0,0,0,0.5)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    backdropFilter: 'blur(4px)'
+                }}
+                onClick={() => setAlertModal(null)}
+                >
+                    <div
+                        style={{
+                            background: isDark ? '#1f1f1f' : '#fff',
+                            borderRadius: 12,
+                            padding: '24px 32px',
+                            minWidth: 280,
+                            boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                            textAlign: 'center'
+                        }}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div style={{
+                            fontSize: 15,
+                            color: isDark ? '#fff' : '#1f2937',
+                            marginBottom: 20,
+                            lineHeight: 1.5
+                        }}>
+                            {alertModal.message}
+                        </div>
+                        <button
+                            onClick={() => setAlertModal(null)}
+                            style={{
+                                padding: '8px 24px',
+                                borderRadius: 8,
+                                background: theme.accent,
+                                color: '#fff',
+                                fontSize: 14,
+                                fontWeight: 500,
+                                border: 'none',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            {t('confirm')}
+                        </button>
+                    </div>
                 </div>
             )}
         </div>
