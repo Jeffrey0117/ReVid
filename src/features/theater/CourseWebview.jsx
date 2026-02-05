@@ -47,6 +47,7 @@ export const CourseWebview = ({
   const [detectedVideoUrl, setDetectedVideoUrl] = useState(null); // For download (even if not using native player)
   const [resumeToast, setResumeToast] = useState(null);
   const [focusVideoState, setFocusVideoState] = useState({ currentTime: 0, duration: 0, paused: true, volume: 1 });
+  const [volumeLevel, setVolumeLevel] = useState(1); // Track volume including boost (0-3)
   const [downloadProgress, setDownloadProgress] = useState(null); // null | { progress, status }
   const [needsLogin, setNeedsLogin] = useState(false); // Show login hint after timeout
   const [pollCount, setPollCount] = useState(0);
@@ -1025,13 +1026,38 @@ export const CourseWebview = ({
   }, []);
 
   const focusSetVolume = useCallback((vol) => {
+    setVolumeLevel(vol); // Track locally for UI
     const webview = webviewRef.current;
     if (!webview) return;
+    // Use Web Audio API for volume boost (beyond 100%)
     webview.executeJavaScript(`
       (function() {
         ${findVideoScript}
         var v = findVideo();
-        if (v) v.volume = ${vol};
+        if (!v) return;
+
+        var vol = ${vol};
+
+        // For volume > 1, use Web Audio API gain node
+        if (vol > 1) {
+          v.volume = 1; // Max out native volume
+
+          // Create or reuse audio context and gain node
+          if (!window.__revidAudioCtx) {
+            window.__revidAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            window.__revidGainNode = window.__revidAudioCtx.createGain();
+            window.__revidMediaSource = window.__revidAudioCtx.createMediaElementSource(v);
+            window.__revidMediaSource.connect(window.__revidGainNode);
+            window.__revidGainNode.connect(window.__revidAudioCtx.destination);
+          }
+          window.__revidGainNode.gain.value = vol;
+        } else {
+          // Normal volume (0-1)
+          v.volume = vol;
+          if (window.__revidGainNode) {
+            window.__revidGainNode.gain.value = 1;
+          }
+        }
       })();
     `).catch(() => {});
   }, []);
@@ -1467,20 +1493,27 @@ export const CourseWebview = ({
             <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.2)' }} />
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <button
-                onClick={() => focusSetVolume(focusVideoState.volume > 0 ? 0 : 1)}
+                onClick={() => focusSetVolume(volumeLevel > 0 ? 0 : 1)}
                 style={{
                   padding: 4, borderRadius: 4, cursor: 'pointer',
                   color: '#fff', background: 'transparent',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}
-                title={focusVideoState.volume > 0 ? 'Mute' : 'Unmute'}
+                title={volumeLevel > 0 ? 'Mute' : 'Unmute'}
               >
-                {focusVideoState.volume > 0 ? (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-                  </svg>
+                {volumeLevel > 0 ? (
+                  volumeLevel > 1 ? (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                      <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                    </svg>
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                    </svg>
+                  )
                 ) : (
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
@@ -1492,16 +1525,24 @@ export const CourseWebview = ({
               <input
                 type="range"
                 min="0"
-                max="1"
+                max="3"
                 step="0.05"
-                value={focusVideoState.volume}
+                value={volumeLevel}
                 onChange={(e) => focusSetVolume(parseFloat(e.target.value))}
                 style={{
-                  width: 60, height: 4, cursor: 'pointer',
-                  accentColor: theme.accent,
+                  width: 80, height: 4, cursor: 'pointer',
+                  accentColor: volumeLevel > 1 ? '#f59e0b' : theme.accent,
                 }}
-                title={`${Math.round(focusVideoState.volume * 100)}%`}
+                title={`${Math.round(volumeLevel * 100)}%`}
               />
+              <span style={{
+                fontSize: 10,
+                color: volumeLevel > 1 ? '#f59e0b' : 'rgba(255,255,255,0.5)',
+                minWidth: 36,
+                fontWeight: volumeLevel > 1 ? 600 : 400
+              }}>
+                {Math.round(volumeLevel * 100)}%
+              </span>
             </div>
 
             {/* Download button - show when downloadable URL available */}
