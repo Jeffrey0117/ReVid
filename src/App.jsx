@@ -710,7 +710,16 @@ export default function App() {
 
                     {/* Info Panel Toggle */}
                     <button
-                        onClick={() => setShowInfoPanel(prev => !prev)}
+                        onClick={() => {
+                            const hasContent = viewMode === 'theater'
+                                ? !!theater.activeCourse
+                                : !!currentVideo;
+                            if (!hasContent && !showInfoPanel) {
+                                alert(t('noContentForInfo') || '請先選擇一個項目');
+                                return;
+                            }
+                            setShowInfoPanel(prev => !prev);
+                        }}
                         title={t('toggleInfo')}
                         style={{
                             width: 36, height: 36, padding: 0, borderRadius: 8,
