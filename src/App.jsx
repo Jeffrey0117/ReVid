@@ -1121,23 +1121,22 @@ export default function App() {
                                                     {/* Thumbnail */}
                                                     <div style={{
                                                         width: '100%',
-                                                        paddingBottom: '56.25%', /* 16:9 aspect ratio */
+                                                        aspectRatio: '16 / 9',
                                                         background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-                                                        position: 'relative'
+                                                        position: 'relative',
+                                                        overflow: 'hidden'
                                                     }}>
                                                         {course.thumbnail ? (
                                                             <img
                                                                 src={course.thumbnail}
                                                                 alt=""
                                                                 style={{
-                                                                    position: 'absolute', top: 0, left: 0,
                                                                     width: '100%', height: '100%', objectFit: 'cover'
                                                                 }}
                                                                 onError={(e) => { e.currentTarget.style.display = 'none'; }}
                                                             />
                                                         ) : (
                                                             <div style={{
-                                                                position: 'absolute', top: 0, left: 0,
                                                                 width: '100%', height: '100%',
                                                                 display: 'flex', alignItems: 'center', justifyContent: 'center'
                                                             }}>
@@ -1151,7 +1150,7 @@ export default function App() {
                                                         {progress > 0 && (
                                                             <div style={{
                                                                 position: 'absolute', bottom: 0, left: 0, right: 0,
-                                                                height: 3, background: 'rgba(0,0,0,0.3)'
+                                                                height: 4, background: 'rgba(0,0,0,0.4)'
                                                             }}>
                                                                 <div style={{
                                                                     height: '100%', background: theme.accent,
