@@ -1038,24 +1038,53 @@ export const CourseWebview = ({
 
         var vol = ${vol};
 
-        // For volume > 1, use Web Audio API gain node
-        if (vol > 1) {
-          v.volume = 1; // Max out native volume
-
-          // Create or reuse audio context and gain node
-          if (!window.__revidAudioCtx) {
-            window.__revidAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            window.__revidGainNode = window.__revidAudioCtx.createGain();
-            window.__revidMediaSource = window.__revidAudioCtx.createMediaElementSource(v);
-            window.__revidMediaSource.connect(window.__revidGainNode);
-            window.__revidGainNode.connect(window.__revidAudioCtx.destination);
-          }
+        // Check if we already have audio context set up for this video
+        if (window.__revidAudioVideo === v && window.__revidGainNode) {
+          // Already set up, just adjust gain
+          // For vol <= 1, we use gain as multiplier (so vol 0.5 = gain 0.5)
+          // For vol > 1, gain is the boost factor
           window.__revidGainNode.gain.value = vol;
+          if (window.__revidAudioCtx.state === 'suspended') {
+            window.__revidAudioCtx.resume();
+          }
+          return;
+        }
+
+        // For volume > 1, need Web Audio API
+        if (vol > 1) {
+          try {
+            // Create audio context and gain node (only once per video)
+            if (!window.__revidAudioCtx) {
+              window.__revidAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (window.__revidAudioCtx.state === 'suspended') {
+              window.__revidAudioCtx.resume();
+            }
+
+            // Only create media source once per video element
+            if (window.__revidAudioVideo !== v) {
+              window.__revidGainNode = window.__revidAudioCtx.createGain();
+              window.__revidMediaSource = window.__revidAudioCtx.createMediaElementSource(v);
+              window.__revidMediaSource.connect(window.__revidGainNode);
+              window.__revidGainNode.connect(window.__revidAudioCtx.destination);
+              window.__revidAudioVideo = v;
+            }
+
+            window.__revidGainNode.gain.value = vol;
+            v.volume = 1; // Native volume at max when using gain
+          } catch(e) {
+            console.log('[ReVid] Audio boost error:', e);
+            // Fallback to native volume
+            v.volume = Math.min(vol, 1);
+          }
         } else {
-          // Normal volume (0-1)
-          v.volume = vol;
-          if (window.__revidGainNode) {
-            window.__revidGainNode.gain.value = 1;
+          // Normal volume without boost
+          if (window.__revidGainNode && window.__revidAudioVideo === v) {
+            // Already using Web Audio API, use gain for all volume control
+            window.__revidGainNode.gain.value = vol;
+          } else {
+            // Not using Web Audio API yet, use native volume
+            v.volume = vol;
           }
         }
       })();
