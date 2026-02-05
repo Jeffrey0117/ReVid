@@ -97,13 +97,14 @@ export const BatchRenameCourseDialog = ({ isOpen, onClose, courses, onRename }) 
         style={{
           background: isDark ? '#1f1f1f' : '#fff',
           borderRadius: 16,
-          padding: '24px 28px 28px 28px',
-          width: 500,
-          maxWidth: 'calc(90vw - 56px)',
-          maxHeight: '80vh',
+          padding: 24,
+          width: 520,
+          maxWidth: '90vw',
+          maxHeight: '85vh',
           display: 'flex',
           flexDirection: 'column',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.3)'
+          boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+          overflow: 'hidden'
         }}
         onClick={e => e.stopPropagation()}
       >
@@ -238,12 +239,13 @@ export const BatchRenameCourseDialog = ({ isOpen, onClose, courses, onRename }) 
 
         {/* Preview list */}
         <div style={{
-          flex: 1,
+          flex: '1 1 auto',
           overflowY: 'auto',
           marginBottom: 16,
           border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
           borderRadius: 8,
-          minHeight: 150
+          minHeight: 100,
+          maxHeight: 200
         }}>
           <div style={{
             padding: '8px 12px',
