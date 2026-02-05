@@ -12,7 +12,8 @@ import { useTheme } from '../../theme.jsx';
  *   platform       - platform id for session partitioning
  *   playbackRate   - current playback speed
  *   startAt        - seconds to resume from (auto-seek on video detect)
- *   onVideoDetected - callback({ duration, src })
+ *   clickPath      - array of click actions to replay on load
+ *   onVideoDetected - callback({ duration, src, pageUrl, clickPath })
  *   onVideoState   - callback({ currentTime, duration, paused, playbackRate })
  *   onThumbnailCaptured - callback(thumbnailDataUrl) when thumbnail is captured
  *   className      - additional CSS classes
@@ -26,6 +27,7 @@ export const CourseWebview = ({
   platform = 'custom',
   playbackRate = 1,
   startAt = 0,
+  clickPath = [],
   onVideoDetected,
   onVideoState,
   onThumbnailCaptured,
@@ -48,6 +50,7 @@ export const CourseWebview = ({
   const [downloadProgress, setDownloadProgress] = useState(null); // null | { progress, status }
   const [needsLogin, setNeedsLogin] = useState(false); // Show login hint after timeout
   const [pollCount, setPollCount] = useState(0);
+  const [replayProgress, setReplayProgress] = useState(null); // { current, total } or null
   // Remember user's preferred mode (localStorage persists across sessions)
   const [browseMode, setBrowseMode] = useState(() => {
     try {
@@ -64,12 +67,18 @@ export const CourseWebview = ({
   const lastUrlRef = useRef(url); // Track URL changes
   const videoFoundRef = useRef(false); // Track if video found (for timeout check)
   const seekedRef = useRef(false);
+  const recordedClicksRef = useRef([]); // Track clicks for this session
+  const clickPathReplayedRef = useRef(false); // Prevent replaying multiple times
+  const clickPathRef = useRef(clickPath); // Keep clickPath in ref for use in effect
+  clickPathRef.current = clickPath; // Always update to latest
 
   // Reset flags when URL changes (new course selected)
   if (url !== lastUrlRef.current) {
     lastUrlRef.current = url;
     initialLoadDoneRef.current = false;
     videoFoundRef.current = false;
+    recordedClicksRef.current = [];
+    clickPathReplayedRef.current = false;
   }
   const focusAppliedRef = useRef(false);
   const focusStateIntervalRef = useRef(null);
@@ -81,17 +90,22 @@ export const CourseWebview = ({
     if (!webview) return;
 
     const handleDomReady = () => {
-      // Hide loading overlay after short delay regardless of video detection
-      // Only do this once to prevent redirect loops from re-showing overlay
-      if (!initialLoadDoneRef.current) {
+      // If we have a click path to replay, keep loading overlay until video found
+      // Otherwise, hide after timeout and show login hint if needed
+      const hasClickPath = clickPathRef.current && clickPathRef.current.length > 0;
+
+      if (!initialLoadDoneRef.current && !hasClickPath) {
         setTimeout(() => {
           initialLoadDoneRef.current = true;
-          setIsLoading(false);
-          // Only show login hint if video hasn't been found yet
+          // Only hide loading if video not found yet
           if (!videoFoundRef.current) {
+            setIsLoading(false);
             setNeedsLogin(true);
           }
         }, 1500);
+      } else if (hasClickPath) {
+        // Mark initial load done but keep loading state until video found
+        initialLoadDoneRef.current = true;
       }
 
       // Define focus mode functions (will be called when user toggles)
@@ -225,6 +239,156 @@ export const CourseWebview = ({
         })();
       `;
       webview.executeJavaScript(defineFocusFunctions).catch(() => {});
+
+      // Inject click tracking script
+      const clickTrackingScript = `
+        (function() {
+          if (window.__revidClickTracking) {
+            console.log('[ReVid] Click tracking already active, clicks so far:', window.__revidRecordedClicks?.length || 0);
+            return;
+          }
+          window.__revidClickTracking = true;
+          window.__revidRecordedClicks = [];
+          console.log('[ReVid] Click tracking initialized');
+
+          // Generate a unique selector for an element
+          function getSelector(el) {
+            if (!el || el === document.body || el === document.documentElement) return null;
+
+            // Try ID first
+            if (el.id) return '#' + CSS.escape(el.id);
+
+            // Try data attributes
+            if (el.dataset.testid) return '[data-testid="' + el.dataset.testid + '"]';
+            if (el.dataset.id) return '[data-id="' + el.dataset.id + '"]';
+
+            // Build selector with tag, classes, and text
+            var selector = el.tagName.toLowerCase();
+            if (el.className && typeof el.className === 'string') {
+              var classes = el.className.trim().split(/\\s+/).filter(function(c) {
+                return c && !c.match(/^(hover|active|focus|selected|ng-|_)/);
+              }).slice(0, 3);
+              if (classes.length > 0) {
+                selector += '.' + classes.map(function(c) { return CSS.escape(c); }).join('.');
+              }
+            }
+
+            // Add text content hint for buttons/links
+            var text = (el.textContent || '').trim().substring(0, 50);
+            if (text && (el.tagName === 'BUTTON' || el.tagName === 'A' || el.getAttribute('role') === 'button')) {
+              return { selector: selector, text: text };
+            }
+
+            // Add nth-child for uniqueness
+            var parent = el.parentElement;
+            if (parent) {
+              var siblings = Array.from(parent.children).filter(function(c) {
+                return c.tagName === el.tagName;
+              });
+              if (siblings.length > 1) {
+                var index = siblings.indexOf(el) + 1;
+                selector += ':nth-of-type(' + index + ')';
+              }
+            }
+
+            return { selector: selector, parentSelector: getSelector(parent) };
+          }
+
+          document.addEventListener('click', function(e) {
+            // Skip if video already found
+            if (window.__revidVideoFound) return;
+
+            var target = e.target;
+            // Skip clicks on video elements
+            if (target.tagName === 'VIDEO') return;
+
+            var info = getSelector(target);
+            if (info) {
+              var clickData = {
+                selector: typeof info === 'string' ? info : info.selector,
+                text: info.text || null,
+                parentSelector: info.parentSelector || null,
+                timestamp: Date.now()
+              };
+              window.__revidRecordedClicks.push(clickData);
+              console.log('[ReVid] Click recorded:', clickData.selector, clickData.text || '', '| Total:', window.__revidRecordedClicks.length);
+            }
+          }, true);
+        })();
+      `;
+      webview.executeJavaScript(clickTrackingScript).catch(() => {});
+
+      // Replay saved click path if exists
+      const savedClickPath = clickPathRef.current;
+      console.log('[ReVid] Checking for click path to replay:', savedClickPath, 'already replayed:', clickPathReplayedRef.current);
+      if (savedClickPath && savedClickPath.length > 0 && !clickPathReplayedRef.current) {
+        clickPathReplayedRef.current = true;
+        console.log('[ReVid] Will replay', savedClickPath.length, 'clicks after page loads');
+
+        const replayClicks = async () => {
+          const wv = webviewRef.current;
+          if (!wv) {
+            setReplayProgress(null);
+            return;
+          }
+
+          const total = savedClickPath.length;
+          setReplayProgress({ current: 0, total });
+
+          for (let i = 0; i < total; i++) {
+            // Stop if video found
+            if (videoFoundRef.current) {
+              setReplayProgress(null);
+              return;
+            }
+
+            setReplayProgress({ current: i + 1, total });
+            const click = savedClickPath[i];
+            const replayScript = `
+              (function() {
+                function findElement(selector, text, parentSelector) {
+                  var candidates = document.querySelectorAll(selector);
+                  if (candidates.length === 1) return candidates[0];
+                  if (text && candidates.length > 1) {
+                    for (var i = 0; i < candidates.length; i++) {
+                      if (candidates[i].textContent.trim().includes(text)) return candidates[i];
+                    }
+                  }
+                  if (parentSelector) {
+                    var parent = document.querySelector(parentSelector);
+                    if (parent) {
+                      var child = parent.querySelector(selector);
+                      if (child) return child;
+                    }
+                  }
+                  if (text) {
+                    var all = document.querySelectorAll('button, a, [role="button"], [onclick]');
+                    for (var j = 0; j < all.length; j++) {
+                      if (all[j].textContent.trim().includes(text)) return all[j];
+                    }
+                  }
+                  return candidates[0] || null;
+                }
+                var el = findElement(${JSON.stringify(click.selector)}, ${JSON.stringify(click.text)}, ${JSON.stringify(click.parentSelector)});
+                if (el) { el.click(); return true; }
+                return false;
+              })();
+            `;
+
+            try {
+              if (!webviewRef.current) break;
+              await webviewRef.current.executeJavaScript(replayScript);
+              await new Promise(resolve => setTimeout(resolve, 1500));
+            } catch (e) {
+              console.log('[ReVid] Click replay error:', e);
+            }
+          }
+          setReplayProgress(null);
+        };
+
+        // Start replay after page settles
+        setTimeout(replayClicks, 2000);
+      }
 
       // Only inject video detector script after page is interactive
       // Delay injection to avoid interfering with page load
@@ -392,12 +556,44 @@ export const CourseWebview = ({
 
         webview.executeJavaScript(checkVideo).then((result) => {
           if (result && result.found) {
+            console.log('[ReVid] pollVideo found video!', result);
             foundVideo = true;
             videoFoundRef.current = true;
             setVideoFound(true);
+            setIsLoading(false); // Hide loading overlay
             setNeedsLogin(false);
+            setReplayProgress(null); // Hide auto-nav overlay
             setBrowseMode(false); // Auto-switch to focus mode when video found
-            onVideoDetected?.({ duration: result.duration, src: result.src });
+
+            // Get current URL from webview for course URL update
+            const currentWebviewUrl = webview.getURL?.() || url;
+            console.log('[ReVid] currentWebviewUrl:', currentWebviewUrl);
+
+            // Mark video found and get recorded clicks from webview
+            webview.executeJavaScript(`
+              (function() {
+                window.__revidVideoFound = true;
+                var clicks = window.__revidRecordedClicks || [];
+                console.log('[ReVid-webview] Returning clicks:', clicks.length);
+                return JSON.parse(JSON.stringify(clicks));
+              })();
+            `).then((clicks) => {
+              console.log('[ReVid] Video found! Recorded clicks:', clicks);
+              onVideoDetected?.({
+                duration: result.duration,
+                src: result.src,
+                pageUrl: currentWebviewUrl,
+                clickPath: clicks && clicks.length > 0 ? clicks : null
+              });
+            }).catch((err) => {
+              console.log('[ReVid] Failed to get clicks:', err);
+              onVideoDetected?.({
+                duration: result.duration,
+                src: result.src,
+                pageUrl: currentWebviewUrl,
+                clickPath: null
+              });
+            });
 
             // Capture thumbnail if not already done
             if (!thumbnailCapturedRef.current && onThumbnailCaptured) {
@@ -511,8 +707,44 @@ export const CourseWebview = ({
           const data = JSON.parse(jsonStr);
           videoFoundRef.current = true;
           setVideoFound(true);
+          setIsLoading(false); // Hide loading overlay
           setNeedsLogin(false);
-          onVideoDetected?.({ duration: data.duration, src: data.src });
+          setReplayProgress(null); // Hide auto-nav overlay
+
+          // Get clicks and call onVideoDetected
+          const currentWebviewUrl = webview.getURL?.() || url;
+          webview.executeJavaScript(`
+            (function() {
+              window.__revidVideoFound = true;
+              return window.__revidRecordedClicks || [];
+            })();
+          `).then((clicks) => {
+            onVideoDetected?.({
+              duration: data.duration,
+              src: data.src,
+              pageUrl: currentWebviewUrl,
+              clickPath: clicks && clicks.length > 0 ? clicks : null
+            });
+          }).catch(() => {
+            onVideoDetected?.({
+              duration: data.duration,
+              src: data.src,
+              pageUrl: currentWebviewUrl,
+              clickPath: null
+            });
+          });
+        } catch (e) {
+          // Parse error, ignore
+        }
+      }
+
+      // Capture click events
+      if (message && message.startsWith('__REVID_CLICK__')) {
+        try {
+          const jsonStr = message.replace('__REVID_CLICK__', '').trim();
+          const clickData = JSON.parse(jsonStr);
+          recordedClicksRef.current.push(clickData);
+          console.log('[ReVid] Recorded click:', clickData);
         } catch (e) {
           // Parse error, ignore
         }
@@ -535,10 +767,34 @@ export const CourseWebview = ({
 
       if (data.type === 'revid-video-detected') {
         setVideoFound(true);
-        onVideoDetected?.({
-          duration: data.duration,
-          src: data.src
-        });
+        setIsLoading(false); // Hide loading overlay
+        setReplayProgress(null); // Hide auto-nav overlay
+
+        // Get clicks and call onVideoDetected
+        const webview = webviewRef.current;
+        const currentWebviewUrl = webview?.getURL?.() || url;
+        if (webview) {
+          webview.executeJavaScript(`
+            (function() {
+              window.__revidVideoFound = true;
+              return window.__revidRecordedClicks || [];
+            })();
+          `).then((clicks) => {
+            onVideoDetected?.({
+              duration: data.duration,
+              src: data.src,
+              pageUrl: currentWebviewUrl,
+              clickPath: clicks && clicks.length > 0 ? clicks : null
+            });
+          }).catch(() => {
+            onVideoDetected?.({
+              duration: data.duration,
+              src: data.src,
+              pageUrl: currentWebviewUrl,
+              clickPath: null
+            });
+          });
+        }
 
         // Auto-seek to last position
         if (startAt > 0 && !seekedRef.current) {
@@ -945,67 +1201,6 @@ export const CourseWebview = ({
           )}
         </div>
 
-        {/* Playlist sidebar */}
-        {playlist.length > 0 && (
-          <div style={{
-            width: 240, flexShrink: 0,
-            background: isDark ? '#111' : '#f5f5f5',
-            borderLeft: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
-            overflowY: 'auto', display: 'flex', flexDirection: 'column'
-          }}>
-            <div style={{
-              padding: '10px 12px',
-              fontSize: 12, fontWeight: 600,
-              color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
-              borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`
-            }}>
-              {t('playlist')} ({playlist.length})
-            </div>
-            <div style={{ flex: 1, overflowY: 'auto' }}>
-              {playlist.map((course, index) => {
-                const isActive = course.id === currentCourseId;
-                const progress = course.progress?.duration > 0
-                  ? Math.round((course.progress.lastPosition / course.progress.duration) * 100)
-                  : 0;
-                return (
-                  <div
-                    key={course.id}
-                    onClick={() => onPlaylistSelect?.(course.id)}
-                    style={{
-                      padding: '8px 12px', cursor: 'pointer',
-                      background: isActive ? (isDark ? 'rgba(59,130,246,0.2)' : 'rgba(91,142,201,0.15)') : 'transparent',
-                      borderLeft: isActive ? `3px solid ${theme.accent}` : '3px solid transparent',
-                      transition: 'background 0.15s'
-                    }}
-                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'; }}
-                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 11, color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)', minWidth: 20 }}>
-                        {index + 1}
-                      </span>
-                      <span style={{
-                        fontSize: 12, flex: 1,
-                        color: isActive ? theme.accent : (isDark ? '#fff' : '#1f2937'),
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-                      }}>
-                        {course.title}
-                      </span>
-                    </div>
-                    {progress > 0 && (
-                      <div style={{
-                        marginTop: 4, marginLeft: 28, height: 2, borderRadius: 1,
-                        background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
-                      }}>
-                        <div style={{ height: '100%', borderRadius: 1, background: theme.accent, width: `${progress}%` }} />
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
       </div>
     );
   }
@@ -1118,7 +1313,7 @@ export const CourseWebview = ({
 
         {/* Loading overlay - only show briefly, then fade to hint */}
         {isLoading && !needsLogin && (
-          <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10">
+          <div className="absolute inset-0 bg-black flex items-center justify-center z-10">
             <div className="flex flex-col items-center gap-3">
               <div className="w-8 h-8 border-2 border-white/30 border-t-primary rounded-full animate-spin" />
               <span className="text-white/60 text-sm">{t('detectingVideo')}</span>
@@ -1149,6 +1344,34 @@ export const CourseWebview = ({
           </div>
         )}
 
+
+        {/* Auto-navigation overlay */}
+        {replayProgress && (
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 30,
+            background: '#000',
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', gap: 16
+          }}>
+            <div style={{ fontSize: 14, color: '#fff', fontWeight: 500 }}>
+              {t('autoNavigating') || '自動導航中...'}
+            </div>
+            <div style={{
+              width: 200, height: 4, borderRadius: 2,
+              background: 'rgba(255,255,255,0.2)'
+            }}>
+              <div style={{
+                height: '100%', borderRadius: 2,
+                background: theme.accent,
+                width: `${(replayProgress.current / replayProgress.total) * 100}%`,
+                transition: 'width 0.3s ease'
+              }} />
+            </div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>
+              {replayProgress.current} / {replayProgress.total}
+            </div>
+          </div>
+        )}
 
         {/* Resume toast */}
         {resumeToast && (

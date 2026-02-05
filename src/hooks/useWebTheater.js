@@ -191,6 +191,24 @@ export const useWebTheater = () => {
     }));
   }, []);
 
+  // Update course URL and click path (when user navigates to video page)
+  const updateCourseUrl = useCallback((folderId, courseId, newUrl, clickPath = null) => {
+    setFolders(prev => prev.map(f => {
+      if (f.id !== folderId) return f;
+      return {
+        ...f,
+        courses: f.courses.map(c => {
+          if (c.id !== courseId) return c;
+          const updated = { ...c, url: newUrl };
+          if (clickPath !== null) {
+            updated.clickPath = clickPath;
+          }
+          return updated;
+        })
+      };
+    }));
+  }, []);
+
   const updateProgress = useCallback((folderId, courseId, progress) => {
     setFolders(prev => prev.map(f => {
       if (f.id !== folderId) return f;
@@ -310,6 +328,7 @@ export const useWebTheater = () => {
     addCourse,
     removeCourse,
     renameCourse,
+    updateCourseUrl,
     updateProgress,
     updateCourseThumbnail,
     openCourse,
@@ -321,7 +340,7 @@ export const useWebTheater = () => {
     folders, selectedFolder, selectedFolderId,
     activeCourses, activeCourse, activeCourseId,
     selectFolder, createFolder, renameFolder, deleteFolder,
-    addCourse, removeCourse, renameCourse, updateProgress,
+    addCourse, removeCourse, renameCourse, updateCourseUrl, updateProgress,
     updateCourseThumbnail, openCourse, closeCourse,
     importRevidFile, importRevidFiles, importJsonBackup,
   ]);

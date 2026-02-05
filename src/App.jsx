@@ -988,10 +988,30 @@ export default function App() {
                                             platform={theater.activeCourse.platform}
                                             playbackRate={theaterSpeed}
                                             startAt={theater.activeCourse.progress?.lastPosition || 0}
+                                            clickPath={theater.activeCourse.clickPath || []}
                                             onVideoDetected={(info) => {
+                                                console.log('[App] onVideoDetected:', {
+                                                    pageUrl: info.pageUrl,
+                                                    currentUrl: theater.activeCourse?.url,
+                                                    clickPath: info.clickPath,
+                                                    existingClickPath: theater.activeCourse?.clickPath
+                                                });
                                                 theater.updateProgress(theater.selectedFolderId, theater.activeCourseId, {
                                                     duration: info.duration
                                                 });
+                                                // Update course URL and click path (so next time it opens directly to video)
+                                                const urlChanged = info.pageUrl && info.pageUrl !== theater.activeCourse?.url;
+                                                const hasNewClickPath = info.clickPath && info.clickPath.length > 0;
+
+                                                if (urlChanged || hasNewClickPath) {
+                                                    console.log('[App] Saving clickPath:', info.clickPath);
+                                                    theater.updateCourseUrl(
+                                                        theater.selectedFolderId,
+                                                        theater.activeCourseId,
+                                                        info.pageUrl || theater.activeCourse.url,
+                                                        info.clickPath || null
+                                                    );
+                                                }
                                             }}
                                             onVideoState={(state) => {
                                                 theaterVideoStateRef.current = state;
