@@ -1086,8 +1086,9 @@ export default function App() {
                                         <div style={{
                                             flex: 1, overflowY: 'auto', padding: 16,
                                             display: 'grid',
-                                            gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-                                            gap: 12, alignContent: 'start'
+                                            gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+                                            gridAutoRows: 'min-content',
+                                            gap: 16, alignContent: 'start'
                                         }}>
                                         {theater.activeCourses.map(course => {
                                             const progress = course.progress?.duration > 0
@@ -1118,13 +1119,18 @@ export default function App() {
                                                         e.currentTarget.style.boxShadow = 'none';
                                                     }}
                                                 >
-                                                    {/* Thumbnail */}
+                                                    {/* Thumbnail - use padding trick for reliable aspect ratio */}
                                                     <div style={{
                                                         width: '100%',
-                                                        aspectRatio: '16 / 9',
-                                                        background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
                                                         position: 'relative',
+                                                        paddingTop: '56.25%', /* 9/16 = 0.5625 = 56.25% for 16:9 */
+                                                        background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
                                                         overflow: 'hidden'
+                                                    }}>
+                                                    <div style={{
+                                                        position: 'absolute',
+                                                        top: 0, left: 0, right: 0, bottom: 0,
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'center'
                                                     }}>
                                                         {course.thumbnail ? (
                                                             <img
@@ -1158,6 +1164,7 @@ export default function App() {
                                                                 }} />
                                                             </div>
                                                         )}
+                                                    </div>
                                                     </div>
                                                     {/* Title */}
                                                     <div style={{ padding: '8px 10px' }}>
