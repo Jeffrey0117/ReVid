@@ -90,22 +90,16 @@ export const CourseWebview = ({
     if (!webview) return;
 
     const handleDomReady = () => {
-      // If we have a click path to replay, keep loading overlay until video found
-      // Otherwise, hide after timeout and show login hint if needed
-      const hasClickPath = clickPathRef.current && clickPathRef.current.length > 0;
-
-      if (!initialLoadDoneRef.current && !hasClickPath) {
+      // Keep loading overlay until video found - better UX
+      // Only mark initial load done, don't hide loading
+      if (!initialLoadDoneRef.current) {
+        initialLoadDoneRef.current = true;
+        // Show login hint after delay if video not found, but keep loading overlay
         setTimeout(() => {
-          initialLoadDoneRef.current = true;
-          // Only hide loading if video not found yet
           if (!videoFoundRef.current) {
-            setIsLoading(false);
             setNeedsLogin(true);
           }
-        }, 1500);
-      } else if (hasClickPath) {
-        // Mark initial load done but keep loading state until video found
-        initialLoadDoneRef.current = true;
+        }, 5000); // Longer timeout before showing login hint
       }
 
       // Define focus mode functions (will be called when user toggles)
@@ -1311,12 +1305,28 @@ export const CourseWebview = ({
         />
 
 
-        {/* Loading overlay - only show briefly, then fade to hint */}
-        {isLoading && !needsLogin && (
+        {/* Loading overlay - show until video found */}
+        {isLoading && (
           <div className="absolute inset-0 bg-black flex items-center justify-center z-10">
-            <div className="flex flex-col items-center gap-3">
+            <div className="flex flex-col items-center gap-4">
               <div className="w-8 h-8 border-2 border-white/30 border-t-primary rounded-full animate-spin" />
               <span className="text-white/60 text-sm">{t('detectingVideo')}</span>
+              {needsLogin && (
+                <button
+                  onClick={() => {
+                    setIsLoading(false);
+                    toggleBrowseMode(true);
+                  }}
+                  style={{
+                    marginTop: 8,
+                    padding: '8px 16px', borderRadius: 6,
+                    background: theme.accent, color: '#fff',
+                    fontSize: 13, fontWeight: 500, cursor: 'pointer',
+                  }}
+                >
+                  {t('enterBrowseMode') || '進入瀏覽模式'}
+                </button>
+              )}
             </div>
           </div>
         )}
