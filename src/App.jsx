@@ -715,7 +715,8 @@ export default function App() {
                                 ? !!theater.activeCourse
                                 : !!currentVideo;
                             if (!hasContent && !showInfoPanel) {
-                                alert(t('noContentForInfo') || '請先選擇一個項目');
+                                setToast(t('noContentForInfo') || '請先選擇一個項目');
+                                setTimeout(() => setToast(null), 2000);
                                 return;
                             }
                             setShowInfoPanel(prev => !prev);
