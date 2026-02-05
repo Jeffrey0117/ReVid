@@ -46,7 +46,7 @@ export const CourseWebview = ({
   const [videoSrc, setVideoSrc] = useState(null); // If set, use native player
   const [detectedVideoUrl, setDetectedVideoUrl] = useState(null); // For download (even if not using native player)
   const [resumeToast, setResumeToast] = useState(null);
-  const [focusVideoState, setFocusVideoState] = useState({ currentTime: 0, duration: 0, paused: true });
+  const [focusVideoState, setFocusVideoState] = useState({ currentTime: 0, duration: 0, paused: true, volume: 1 });
   const [downloadProgress, setDownloadProgress] = useState(null); // null | { progress, status }
   const [needsLogin, setNeedsLogin] = useState(false); // Show login hint after timeout
   const [pollCount, setPollCount] = useState(0);
@@ -936,7 +936,7 @@ export const CourseWebview = ({
               var videos = root.querySelectorAll ? root.querySelectorAll('video') : [];
               if (videos.length > 0) {
                 var v = videos[0];
-                return { currentTime: v.currentTime, duration: v.duration || 0, paused: v.paused };
+                return { currentTime: v.currentTime, duration: v.duration || 0, paused: v.paused, volume: v.volume };
               }
               var all = root.querySelectorAll ? root.querySelectorAll('*') : [];
               for (var i = 0; i < all.length; i++) {
@@ -1020,6 +1020,18 @@ export const CourseWebview = ({
         ${findVideoScript}
         var v = findVideo();
         if (v) v.currentTime = Math.max(0, Math.min(v.duration || 0, v.currentTime + ${delta}));
+      })();
+    `).catch(() => {});
+  }, []);
+
+  const focusSetVolume = useCallback((vol) => {
+    const webview = webviewRef.current;
+    if (!webview) return;
+    webview.executeJavaScript(`
+      (function() {
+        ${findVideoScript}
+        var v = findVideo();
+        if (v) v.volume = ${vol};
       })();
     `).catch(() => {});
   }, []);
@@ -1450,6 +1462,47 @@ export const CourseWebview = ({
             <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', minWidth: 36 }}>
               {Math.floor((focusVideoState.duration || 0) / 60)}:{String(Math.floor((focusVideoState.duration || 0) % 60)).padStart(2, '0')}
             </span>
+
+            {/* Volume control */}
+            <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.2)' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <button
+                onClick={() => focusSetVolume(focusVideoState.volume > 0 ? 0 : 1)}
+                style={{
+                  padding: 4, borderRadius: 4, cursor: 'pointer',
+                  color: '#fff', background: 'transparent',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+                title={focusVideoState.volume > 0 ? 'Mute' : 'Unmute'}
+              >
+                {focusVideoState.volume > 0 ? (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                  </svg>
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                    <line x1="23" y1="9" x2="17" y2="15" />
+                    <line x1="17" y1="9" x2="23" y2="15" />
+                  </svg>
+                )}
+              </button>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={focusVideoState.volume}
+                onChange={(e) => focusSetVolume(parseFloat(e.target.value))}
+                style={{
+                  width: 60, height: 4, cursor: 'pointer',
+                  accentColor: theme.accent,
+                }}
+                title={`${Math.round(focusVideoState.volume * 100)}%`}
+              />
+            </div>
 
             {/* Download button - show when downloadable URL available */}
             {detectedVideoUrl && (
