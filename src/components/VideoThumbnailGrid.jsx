@@ -149,8 +149,8 @@ export const VideoThumbnailGrid = ({
     }}>
       <div style={{
         display: 'grid',
-        gap: 16,
-        padding: 8,
+        gap: 20,
+        padding: 12,
         gridTemplateColumns: `repeat(auto-fill, minmax(${thumbSize}px, 1fr))`
       }}>
         {files.map((file, index) => {
