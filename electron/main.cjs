@@ -2,7 +2,32 @@ const { app, BrowserWindow, Menu, ipcMain, dialog, protocol } = require('electro
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
-const ffmpegPath = require('ffmpeg-static');
+// ffmpeg-static resolves to a path inside app.asar when packaged, but a binary can't be
+// spawned from inside the asar archive. asarUnpack ships it to app.asar.unpacked, so
+// rewrite the path for the packaged app — otherwise every ffmpeg op silently fails.
+const ffmpegStatic = require('ffmpeg-static');
+const ffmpegPath = app.isPackaged
+    ? ffmpegStatic.replace('app.asar', 'app.asar.unpacked')
+    : ffmpegStatic;
+
+// Auto-update (packaged builds only): check GitHub Releases on launch, download in the
+// background, install on next quit. Install once per machine, then updates land for free.
+function setupAutoUpdater() {
+    if (!app.isPackaged) return;
+    let autoUpdater;
+    try {
+        ({ autoUpdater } = require('electron-updater'));
+    } catch (e) {
+        console.error('[updater] electron-updater unavailable:', e.message);
+        return;
+    }
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.on('error', (err) => console.error('[updater] error:', err?.message || err));
+    autoUpdater.on('update-available', (info) => console.log('[updater] update available:', info?.version));
+    autoUpdater.on('update-downloaded', (info) => console.log('[updater] downloaded; install on quit:', info?.version));
+    autoUpdater.checkForUpdates().catch((e) => console.error('[updater] check failed:', e?.message || e));
+}
 
 // Register local-video:// protocol for range-request support
 protocol.registerSchemesAsPrivileged([
@@ -1183,6 +1208,7 @@ app.whenReady().then(() => {
 
     setupIpcHandlers();
     createWindow();
+    setupAutoUpdater();
 
     // Check for .revid file in argv after window loads
     mainWindow.webContents.once('did-finish-load', () => {

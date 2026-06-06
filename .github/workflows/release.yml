@@ -1,0 +1,38 @@
+name: Release
+
+# Push a version tag (e.g. v0.2.0) to build the Windows installer in the cloud
+# and publish it to GitHub Releases. ReVid's electron-updater reads the resulting
+# latest.yml and auto-updates every installed machine.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build renderer
+        run: npm run build
+
+      # Build + publish in one electron-builder pass so the installer and its
+      # latest.yml update manifest stay in sync.
+      - name: Build & publish installer
+        run: npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
