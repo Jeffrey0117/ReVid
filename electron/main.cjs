@@ -1105,6 +1105,70 @@ function setupIpcHandlers() {
         }
     });
 
+    // Upload a file to the user's pokkit account (login-gated). Streams from disk like
+    // upload-video-file (no memory blowup for big videos), authenticates with the LetMeUse
+    // Bearer token, then builds the public pokkit URL from the returned entry id.
+    ipcMain.handle('upload-to-pokkit', async (_event, { filePath, token }) => {
+        if (!token) return { success: false, error: 'not logged in' };
+        try {
+            const https = require('https');
+            const POKKIT_BASE = 'https://pokkit.isnowfriend.com';
+            const fileSize = fs.statSync(filePath).size;
+            const fileName = path.basename(filePath);
+            const boundary = `----ReVidPokkit${Date.now()}`;
+            const headerPart = Buffer.from(
+                `--${boundary}\r\n` +
+                `Content-Disposition: form-data; name="file"; filename="${fileName}"\r\n` +
+                `Content-Type: video/mp4\r\n\r\n`
+            );
+            const footerPart = Buffer.from(`\r\n--${boundary}--\r\n`);
+            const totalSize = headerPart.length + fileSize + footerPart.length;
+
+            return new Promise((resolve) => {
+                const req = https.request(`${POKKIT_BASE}/upload`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+                        'Content-Length': totalSize,
+                        'Authorization': `Bearer ${token}`,
+                    },
+                    timeout: 600000,
+                }, (res) => {
+                    const chunks = [];
+                    res.on('data', (c) => chunks.push(c));
+                    res.on('end', () => {
+                        const body = Buffer.concat(chunks).toString('utf-8');
+                        if (res.statusCode === 401) return resolve({ success: false, error: 'unauthorized' });
+                        if (res.statusCode >= 400) return resolve({ success: false, error: `HTTP ${res.statusCode}: ${body.slice(0, 120)}` });
+                        try {
+                            const json = JSON.parse(body);
+                            if (!json.id) return resolve({ success: false, error: 'no id in upload response' });
+                            resolve({ success: true, data: { url: `${POKKIT_BASE}/photos/${json.id}/video.mp4`, id: json.id } });
+                        } catch (e) {
+                            resolve({ success: false, error: `Invalid response: ${e.message}` });
+                        }
+                    });
+                });
+                req.on('error', (e) => resolve({ success: false, error: e.message }));
+                req.on('timeout', () => { req.destroy(); resolve({ success: false, error: 'Upload timeout' }); });
+                req.write(headerPart);
+                const rs = fs.createReadStream(filePath);
+                let uploaded = 0;
+                rs.on('data', (chunk) => {
+                    req.write(chunk);
+                    uploaded += chunk.length;
+                    if (mainWindow && !mainWindow.isDestroyed()) {
+                        mainWindow.webContents.send('upload-progress', { filePath, pct: Math.round((uploaded / fileSize) * 100) });
+                    }
+                });
+                rs.on('end', () => { req.write(footerPart); req.end(); });
+                rs.on('error', (e) => { req.destroy(); resolve({ success: false, error: e.message }); });
+            });
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    });
+
     ipcMain.handle('select-video-for-upload', async () => {
         if (!mainWindow) return { success: false, error: 'No window' };
         const result = await dialog.showOpenDialog(mainWindow, {

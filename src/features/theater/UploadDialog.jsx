@@ -4,6 +4,7 @@ import { useTheme } from '../../theme.jsx';
 import { useI18n } from '../../i18n.jsx';
 import { createRevidFile, generateRevidFileName } from '../../utils/revidFile';
 import { loadUploadConfig } from './UploadSettings.jsx';
+import { useLetMeUse } from '../../hooks/useLetMeUse';
 
 const getElectronAPI = () => window.electronAPI || null;
 
@@ -14,6 +15,7 @@ const getElectronAPI = () => window.electronAPI || null;
 export const UploadDialog = ({ isOpen, onClose, selectedFolderId, onAddCourse }) => {
   const { t } = useI18n();
   const { theme, isDark } = useTheme();
+  const { isAuthenticated: loggedIn, token, login, user } = useLetMeUse();
 
   const [files, setFiles] = useState([]);
   const [saveRevid, setSaveRevid] = useState(true);
@@ -40,8 +42,10 @@ export const UploadDialog = ({ isOpen, onClose, selectedFolderId, onAddCourse })
     const api = getElectronAPI();
     if (!api) return;
 
+    // Logged into pokkit → upload there (login-gated, handles video). Otherwise fall back
+    // to the user-configured endpoint.
     const config = loadUploadConfig();
-    if (!config?.apiUrl) return;
+    if (!loggedIn && !config?.apiUrl) return;
 
     uploadingRef.current = true;
 
@@ -54,11 +58,14 @@ export const UploadDialog = ({ isOpen, onClose, selectedFolderId, onAddCourse })
       ));
 
       try {
-        const result = await api.uploadVideoFile(file.path, config, (pct) => {
+        const onPct = (pct) => {
           setFiles(prev => prev.map((f, idx) =>
             idx === i ? { ...f, progress: pct } : f
           ));
-        });
+        };
+        const result = loggedIn
+          ? await api.uploadToPokkit(file.path, token, onPct)
+          : await api.uploadVideoFile(file.path, config, onPct);
 
         if (result?.success && result.data?.url) {
           setFiles(prev => prev.map((f, idx) =>
@@ -181,8 +188,33 @@ export const UploadDialog = ({ isOpen, onClose, selectedFolderId, onAddCourse })
           </button>
         </div>
 
-        {/* No config warning */}
-        {!hasConfig && (
+        {/* Pokkit login status — logged in → uploads go to your pokkit account */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '10px 14px', borderRadius: 8, marginBottom: 12,
+          background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+          fontSize: 13, color: isDark ? '#fff' : '#1f2937',
+        }}>
+          <span>
+            {loggedIn
+              ? `↑ pokkit · ${user?.name || user?.email || (t('loggedIn') || '已登入')}`
+              : (t('loginForPokkit') || '登入後上傳到 pokkit（影片）')}
+          </span>
+          {!loggedIn && (
+            <button
+              onClick={login}
+              style={{
+                padding: '4px 12px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                background: theme.accent || '#3b82f6', color: '#fff', fontSize: 13,
+              }}
+            >
+              {t('login') || '登入'}
+            </button>
+          )}
+        </div>
+
+        {/* No config warning (only when not logged in and no custom endpoint) */}
+        {!loggedIn && !hasConfig && (
           <div style={{
             padding: '10px 14px', borderRadius: 8, marginBottom: 12,
             background: isDark ? 'rgba(251,191,36,0.1)' : 'rgba(217,119,6,0.1)',
@@ -344,7 +376,7 @@ export const UploadDialog = ({ isOpen, onClose, selectedFolderId, onAddCourse })
           )}
           <button
             onClick={handleUpload}
-            disabled={!hasFiles || !hasPending || isUploading || !hasConfig}
+            disabled={!hasFiles || !hasPending || isUploading || (!loggedIn && !hasConfig)}
             style={{
               padding: '8px 16px', fontSize: 14, fontWeight: 500,
               borderRadius: 8, transition: 'background 0.15s',

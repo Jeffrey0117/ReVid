@@ -270,6 +270,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
     },
 
+    // Upload to the user's pokkit account (login-gated via LetMeUse Bearer token).
+    uploadToPokkit: async (filePath, token, onProgress) => {
+        const handler = (_event, data) => {
+            if (data.filePath === filePath && onProgress) onProgress(data.pct);
+        };
+        ipcRenderer.on('upload-progress', handler);
+        try {
+            return await ipcRenderer.invoke('upload-to-pokkit', { filePath, token });
+        } finally {
+            ipcRenderer.removeListener('upload-progress', handler);
+        }
+    },
+
     selectVideoForUpload: async () => {
         return await ipcRenderer.invoke('select-video-for-upload');
     },
