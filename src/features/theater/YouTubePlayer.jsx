@@ -5,6 +5,12 @@ import { useI18n } from '../../i18n.jsx';
 
 const CONTAINER_ID = 'revid-yt-player';
 
+const musicBtn = {
+  width: 48, height: 48, borderRadius: '50%', border: 'none', cursor: 'pointer',
+  background: 'rgba(255,255,255,0.12)', color: '#fff',
+  display: 'flex', alignItems: 'center', justifyContent: 'center'
+};
+
 /**
  * YouTubePlayer - renders a YouTube IFrame player for a course URL.
  *
@@ -22,7 +28,14 @@ export const YouTubePlayer = ({
   startAt = 0,
   onVideoDetected,
   onVideoState,
-  className = ''
+  onEnded,
+  onNext,
+  onPrev,
+  className = '',
+  musicMode = false,
+  cover = null,
+  title = '',
+  trackLabel = ''
 }) => {
   const { t } = useI18n();
 
@@ -31,14 +44,17 @@ export const YouTubePlayer = ({
   const {
     status,
     isRateClamped,
-    errorCode
+    errorCode,
+    paused,
+    togglePlay
   } = useYouTubePlayer({
     containerId: CONTAINER_ID,
     videoId,
     playbackRate,
     startAt,
     onVideoDetected,
-    onVideoState
+    onVideoState,
+    onEnded
   });
 
   // Invalid URL - no video ID found
@@ -89,6 +105,60 @@ export const YouTubePlayer = ({
               {errorCode != null && (
                 <span className="text-white/30 text-xs">Code: {errorCode}</span>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Music-album overlay — one cover over the (still-playing) video,
+            current song title and prev / play-pause / next controls. */}
+        {musicMode && status !== 'error' && (
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 20,
+            background: 'radial-gradient(circle at 50% 35%, #2a2a32 0%, #0a0a0c 70%)',
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', gap: 22, padding: 24
+          }}>
+            <div style={{
+              width: 'min(46vh, 340px)', aspectRatio: '1 / 1',
+              borderRadius: 16, overflow: 'hidden', background: '#1a1a1a',
+              boxShadow: '0 16px 48px rgba(0,0,0,0.6)'
+            }}>
+              {cover ? (
+                <img src={cover} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="1.5">
+                    <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
+                  </svg>
+                </div>
+              )}
+            </div>
+
+            <div style={{ textAlign: 'center', maxWidth: 'min(80%, 480px)' }}>
+              <div style={{
+                color: '#fff', fontSize: 18, fontWeight: 600, lineHeight: 1.3,
+                overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box',
+                WebkitLineClamp: 2, WebkitBoxOrient: 'vertical'
+              }}>{title || t('ytLoading')}</div>
+              {trackLabel && (
+                <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, marginTop: 6 }}>{trackLabel}</div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
+              <button onClick={onPrev} title="Prev" style={musicBtn}>
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" /></svg>
+              </button>
+              <button onClick={togglePlay} title="Play/Pause" style={{ ...musicBtn, width: 64, height: 64, background: '#fff', color: '#111' }}>
+                {paused ? (
+                  <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                ) : (
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zm8 0h4v14h-4z" /></svg>
+                )}
+              </button>
+              <button onClick={onNext} title="Next" style={musicBtn}>
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zm-2.5 6L5 6v12z" /></svg>
+              </button>
             </div>
           </div>
         )}

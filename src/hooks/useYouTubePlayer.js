@@ -56,13 +56,18 @@ export const useYouTubePlayer = ({
   startAt = 0,
   onVideoDetected,
   onVideoState,
-  onError
+  onError,
+  onEnded
 }) => {
   const playerRef = useRef(null);
   const intervalRef = useRef(null);
+  const endedFiredRef = useRef(false);
+  const onEndedRef = useRef(onEnded);
+  onEndedRef.current = onEnded;
   const [status, setStatus] = useState('loading'); // loading | ready | error
   const [effectiveRate, setEffectiveRate] = useState(playbackRate);
   const [errorCode, setErrorCode] = useState(null);
+  const [paused, setPaused] = useState(false);
 
   // Clamp rate to YouTube's maximum
   const clampedRate = Math.min(playbackRate, YT_MAX_RATE);
@@ -116,12 +121,23 @@ export const useYouTubePlayer = ({
                   const rate = event.target.getPlaybackRate() || 1;
 
                   // YT.PlayerState: -1 unstarted, 0 ended, 1 playing, 2 paused, 3 buffering, 5 cued
-                  const paused = state !== 1;
+                  const isPaused = state !== 1;
+                  setPaused(isPaused);
+
+                  // Fire onEnded once when the track finishes (for auto-advance).
+                  if (state === 0) {
+                    if (!endedFiredRef.current) {
+                      endedFiredRef.current = true;
+                      onEndedRef.current?.();
+                    }
+                  } else if (state === 1) {
+                    endedFiredRef.current = false;
+                  }
 
                   onVideoState?.({
                     currentTime,
                     duration: dur,
-                    paused,
+                    paused: isPaused,
                     playbackRate: rate
                   });
                 } catch {
@@ -195,11 +211,31 @@ export const useYouTubePlayer = ({
     }
   }, [status]);
 
+  // --- Play / pause (for the music-mode controls) ---
+  const play = useCallback(() => {
+    try { playerRef.current?.playVideo(); } catch { /* not ready */ }
+  }, []);
+  const pause = useCallback(() => {
+    try { playerRef.current?.pauseVideo(); } catch { /* not ready */ }
+  }, []);
+  const togglePlay = useCallback(() => {
+    const player = playerRef.current;
+    if (!player) return;
+    try {
+      if (player.getPlayerState?.() === 1) player.pauseVideo();
+      else player.playVideo();
+    } catch { /* not ready */ }
+  }, []);
+
   return {
     status,
     effectiveRate,
     isRateClamped,
     errorCode,
-    seekTo
+    paused,
+    seekTo,
+    play,
+    pause,
+    togglePlay
   };
 };

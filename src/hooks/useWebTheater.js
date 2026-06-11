@@ -105,6 +105,19 @@ export const useWebTheater = () => {
     ));
   }, []);
 
+  // Music-album mode: play the folder like an album (one cover, auto-advance).
+  const toggleMusicMode = useCallback((folderId) => {
+    setFolders(prev => prev.map(f =>
+      f.id === folderId ? { ...f, musicMode: !f.musicMode } : f
+    ));
+  }, []);
+
+  const setFolderCover = useCallback((folderId, cover) => {
+    setFolders(prev => prev.map(f =>
+      f.id === folderId ? { ...f, cover } : f
+    ));
+  }, []);
+
   const deleteFolder = useCallback((folderId) => {
     setFolders(prev => prev.filter(f => f.id !== folderId));
     if (selectedFolderId === folderId) {
@@ -325,6 +338,8 @@ export const useWebTheater = () => {
     createFolder,
     renameFolder,
     deleteFolder,
+    toggleMusicMode,
+    setFolderCover,
     addCourse,
     removeCourse,
     renameCourse,
@@ -340,6 +355,7 @@ export const useWebTheater = () => {
     folders, selectedFolder, selectedFolderId,
     activeCourses, activeCourse, activeCourseId,
     selectFolder, createFolder, renameFolder, deleteFolder,
+    toggleMusicMode, setFolderCover,
     addCourse, removeCourse, renameCourse, updateCourseUrl, updateProgress,
     updateCourseThumbnail, openCourse, closeCourse,
     importRevidFile, importRevidFiles, importJsonBackup,

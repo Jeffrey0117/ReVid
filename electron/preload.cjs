@@ -314,5 +314,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // listeners, so a launch file can be delivered immediately.
     notifyReady: () => ipcRenderer.send('renderer-ready'),
 
+    // Fetch a YouTube video's real title (music-album song names).
+    fetchYouTubeTitle: (url) => ipcRenderer.invoke('fetch-youtube-title', url),
+
     isElectron: true
 });

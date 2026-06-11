@@ -162,6 +162,33 @@ export default function App() {
         setTimeout(() => setToast(null), 2000);
     }, [theater.selectedFolderId, theater.createFolder, theater.addCourse, theater.updateCourseThumbnail, t]);
 
+    // Fetch the real YouTube title for the current track if it has none, so the
+    // music-album view shows song names instead of URLs.
+    useEffect(() => {
+        const c = theater.activeCourse;
+        if (!c || c.platform !== 'youtube' || c.title) return;
+        const api = getElectronAPI();
+        if (!api?.fetchYouTubeTitle) return;
+        let cancelled = false;
+        api.fetchYouTubeTitle(c.url).then((r) => {
+            if (!cancelled && r?.success && r.title) {
+                theater.renameCourse(theater.selectedFolderId, c.id, r.title);
+            }
+        }).catch(() => {});
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [theater.activeCourseId]);
+
+    // Play the previous / next track in the current folder (wraps around).
+    const playAdjacentCourse = useCallback((dir) => {
+        const list = theater.activeCourses;
+        if (!list || !list.length) return;
+        const idx = list.findIndex((c) => c.id === theater.activeCourseId);
+        if (idx < 0) return;
+        const nextIdx = (idx + dir + list.length) % list.length;
+        theater.openCourse(list[nextIdx].id);
+    }, [theater.activeCourses, theater.activeCourseId, theater.openCourse]);
+
     // Save progress and close course
     const handleCloseCourse = useCallback(() => {
         const state = theaterVideoStateRef.current;
@@ -531,6 +558,25 @@ export default function App() {
                                     <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
                                 </svg>
                                 {t('addCourseUrl')}
+                            </button>
+                            {/* Music-album mode toggle */}
+                            <button
+                                onClick={() => theater.toggleMusicMode(theater.selectedFolderId)}
+                                title={t('musicMode')}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: 6,
+                                    padding: '6px 12px', borderRadius: 8,
+                                    fontSize: 12, fontWeight: 500, border: 'none', cursor: 'pointer',
+                                    background: theater.selectedFolder?.musicMode
+                                        ? theme.accent
+                                        : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'),
+                                    color: theater.selectedFolder?.musicMode ? '#fff' : (isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)')
+                                }}
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
+                                </svg>
+                                {t('musicMode')}
                             </button>
                         </>
                     )}
@@ -1065,6 +1111,13 @@ export default function App() {
                                                 theaterVideoStateRef.current = state;
                                             }}
                                             className="flex-1 min-h-0"
+                                            musicMode={!!theater.selectedFolder?.musicMode}
+                                            cover={theater.selectedFolder?.cover || theater.activeCourse.thumbnail || null}
+                                            title={theater.activeCourse.title || ''}
+                                            trackLabel={`${theater.activeCourses.findIndex(c => c.id === theater.activeCourseId) + 1} / ${theater.activeCourses.length}`}
+                                            onEnded={theater.selectedFolder?.musicMode ? () => playAdjacentCourse(1) : undefined}
+                                            onNext={() => playAdjacentCourse(1)}
+                                            onPrev={() => playAdjacentCourse(-1)}
                                         />
                                     ) : (
                                         <CourseWebview
@@ -1853,6 +1906,26 @@ export default function App() {
                                 <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
                             </svg>
                             {t('rename')}
+                        </button>
+                        <button
+                            onClick={() => {
+                                const c = theater.activeCourses.find(x => x.id === courseContextMenu.courseId);
+                                if (c?.thumbnail) theater.setFolderCover(theater.selectedFolderId, c.thumbnail);
+                                setCourseContextMenu(null);
+                            }}
+                            style={{
+                                width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                                padding: '8px 12px', fontSize: 13,
+                                color: theme.textSecondary, background: 'transparent',
+                                border: 'none', cursor: 'pointer', textAlign: 'left'
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.background = theme.hoverBg}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+                            </svg>
+                            {t('setAsCover')}
                         </button>
                         <button
                             onClick={() => {

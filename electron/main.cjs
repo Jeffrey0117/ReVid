@@ -185,6 +185,28 @@ function setupIpcHandlers() {
         }
     });
 
+    // Fetch a YouTube video's real title via oEmbed (for music-album song names).
+    ipcMain.handle('fetch-youtube-title', async (_event, url) => {
+        if (!url) return { success: false };
+        try {
+            const https = require('https');
+            const api = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
+            const body = await new Promise((resolve, reject) => {
+                const req = https.get(api, { timeout: 8000, headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
+                    if (res.statusCode !== 200) { res.resume(); reject(new Error('HTTP ' + res.statusCode)); return; }
+                    const chunks = [];
+                    res.on('data', (c) => chunks.push(c));
+                    res.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+                });
+                req.on('error', reject);
+                req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+            });
+            return { success: true, title: JSON.parse(body).title || '' };
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    });
+
     // Theater data persistence (file-based, not localStorage)
     ipcMain.handle('load-theater-data', async () => {
         try {

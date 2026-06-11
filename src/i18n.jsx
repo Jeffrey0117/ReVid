@@ -240,6 +240,8 @@ const translations = {
     ctxLoop: 'Loop',
     ctxPictureInPicture: 'Picture-in-Picture',
     urlsAdded: 'link(s) added',
+    musicMode: 'Music Mode',
+    setAsCover: 'Set as Album Cover',
   },
   'zh-TW': {
     openFolder: '開啟資料夾',
@@ -467,6 +469,8 @@ const translations = {
     ctxLoop: '\u5faa\u74b0\u64ad\u653e',
     ctxPictureInPicture: '\u5b50\u6bcd\u756b\u9762',
     urlsAdded: '\u500b\u9023\u7d50\u5df2\u65b0\u589e',
+    musicMode: '\u97f3\u6a02\u6a21\u5f0f',
+    setAsCover: '\u8a2d\u70ba\u5c08\u8f2f\u5c01\u9762',
   }
 };
 
