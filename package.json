@@ -1,6 +1,6 @@
 {
   "name": "revid",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "ReVid - Video viewer and spatial crop tool",
   "author": "Jeffrey0117",
   "main": "electron/main.cjs",
@@ -9,6 +9,7 @@
     "build": "vite build",
     "electron:dev": "concurrently -k \"cross-env BROWSER=none npm run dev\" \"wait-on http://localhost:3001 && node electron/start.cjs\"",
     "electron:build": "vite build && electron-builder",
+    "release": "vite build && electron-builder --publish always",
     "preview": "vite preview"
   },
   "dependencies": {
