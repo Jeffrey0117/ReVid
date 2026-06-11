@@ -320,5 +320,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Shrink the whole window to a floating music mini-panel (or restore it).
     setMusicMini: (enter) => ipcRenderer.invoke('set-music-mini', enter),
 
+    // Custom title-bar window controls (frameless window).
+    minimizeWindow: () => ipcRenderer.send('window-minimize'),
+    maximizeWindow: () => ipcRenderer.send('window-maximize'),
+    closeWindow: () => ipcRenderer.send('window-close'),
+
     isElectron: true
 });

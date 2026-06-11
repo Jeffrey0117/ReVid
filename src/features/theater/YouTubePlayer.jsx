@@ -7,7 +7,8 @@ const COVER_STEPS = ['maxresdefault', 'sddefault', 'hqdefault', 'mqdefault'];
 const iconBtn = {
   width: 32, height: 32, borderRadius: 8, border: 'none', cursor: 'pointer',
   background: 'rgba(255,255,255,0.12)', color: '#fff',
-  display: 'flex', alignItems: 'center', justifyContent: 'center'
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  WebkitAppRegion: 'no-drag'
 };
 
 const CONTAINER_ID = 'revid-yt-player';
@@ -15,7 +16,8 @@ const CONTAINER_ID = 'revid-yt-player';
 const musicBtn = {
   width: 48, height: 48, borderRadius: '50%', border: 'none', cursor: 'pointer',
   background: 'rgba(255,255,255,0.12)', color: '#fff',
-  display: 'flex', alignItems: 'center', justifyContent: 'center'
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  WebkitAppRegion: 'no-drag'
 };
 
 /**
@@ -150,7 +152,8 @@ export const YouTubePlayer = ({
           /* ---- Minimized: flat wide bar (browse while it plays) ---- */
           <div style={{
             position: 'absolute', inset: 0, zIndex: 20, background: '#16161a',
-            display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px'
+            display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
+            WebkitAppRegion: 'drag'
           }}>
             <div style={{ width: 78, height: 78, borderRadius: 8, overflow: 'hidden', flexShrink: 0, background: '#000' }}>
               {coverSrc && <img src={coverSrc} onError={onCoverError} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
@@ -158,7 +161,7 @@ export const YouTubePlayer = ({
             <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
               <div style={{ color: '#fff', fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title || t('ytLoading')}</div>
               <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>{trackLabel}</div>
-              <div onClick={seekFromEvent} style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.18)', cursor: 'pointer', position: 'relative' }}>
+              <div onClick={seekFromEvent} style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.18)', cursor: 'pointer', position: 'relative', WebkitAppRegion: 'no-drag' }}>
                 <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, background: '#fff', borderRadius: 2 }} />
               </div>
             </div>

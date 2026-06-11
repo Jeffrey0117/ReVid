@@ -131,6 +131,7 @@ function createWindow() {
         minHeight: 480,
         title: 'ReVid',
         show: false,
+        frame: false,
         backgroundColor: '#000000',
         icon: path.join(__dirname, '../revid.png'),
         webPreferences: {
@@ -728,6 +729,15 @@ function setupIpcHandlers() {
             miniPlayerWindow.webContents.send('mini-player-update', data);
         }
     });
+
+    // --- Custom title-bar window controls (frameless window) ---
+    ipcMain.on('window-minimize', () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.minimize(); });
+    ipcMain.on('window-maximize', () => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        if (mainWindow.isMaximized()) mainWindow.unmaximize();
+        else mainWindow.maximize();
+    });
+    ipcMain.on('window-close', () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close(); });
 
     // --- Music mini-panel: shrink the whole window to a floating player ---
     ipcMain.handle('set-music-mini', (_event, enter) => {

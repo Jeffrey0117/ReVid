@@ -461,6 +461,12 @@ export default function App() {
         return sidebarPosition === 'left' ? t('switchToBottom') : t('switchToLeft');
     }, [sidebarPosition, t]);
 
+    const winBtn = {
+        width: 46, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        border: 'none', background: 'transparent', color: theme.textSecondary, cursor: 'pointer',
+        WebkitAppRegion: 'no-drag'
+    };
+
     return (
         <div
             data-theme={isDark ? 'dark' : 'light'}
@@ -471,6 +477,41 @@ export default function App() {
                 overflow: 'hidden', userSelect: 'none'
             }}
         >
+            {/* Custom title bar (frameless window). Hidden in the music mini-panel. */}
+            <div
+                onDoubleClick={() => getElectronAPI()?.maximizeWindow?.()}
+                style={{
+                    flexShrink: 0, height: 32,
+                    display: musicMinimized ? 'none' : 'flex',
+                    alignItems: 'center', justifyContent: 'space-between',
+                    background: theme.bgTertiary,
+                    borderBottom: `1px solid ${theme.border}`,
+                    WebkitAppRegion: 'drag', paddingLeft: 10
+                }}
+            >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, fontWeight: 500, color: theme.textSecondary }}>
+                    <img src="/logo.png" alt="" style={{ width: 15, height: 15, borderRadius: 3 }} />
+                    <span>ReVid</span>
+                </div>
+                <div style={{ display: 'flex', height: '100%', WebkitAppRegion: 'no-drag' }}>
+                    <button onClick={() => getElectronAPI()?.minimizeWindow?.()} title="Minimize" style={winBtn}
+                        onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <svg width="11" height="11" viewBox="0 0 12 12"><rect x="1" y="5.5" width="10" height="1" fill="currentColor" /></svg>
+                    </button>
+                    <button onClick={() => getElectronAPI()?.maximizeWindow?.()} title="Maximize" style={winBtn}
+                        onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.1"><rect x="1.5" y="1.5" width="9" height="9" /></svg>
+                    </button>
+                    <button onClick={() => getElectronAPI()?.closeWindow?.()} title="Close" style={winBtn}
+                        onMouseEnter={e => { e.currentTarget.style.background = '#e81123'; e.currentTarget.style.color = '#fff'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = theme.textSecondary; }}>
+                        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2"><path d="M1 1l10 10M11 1L1 11" /></svg>
+                    </button>
+                </div>
+            </div>
+
             {/* Toolbar (hidden when the window is shrunk to the music mini-panel) */}
             <div style={{
                 flexShrink: 0, height: 52,
