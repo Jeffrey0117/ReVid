@@ -742,7 +742,7 @@ function setupIpcHandlers() {
     // --- Music mini-panel: shrink the whole window to a floating player ---
     ipcMain.handle('set-music-mini', (_event, enter) => {
         if (!mainWindow || mainWindow.isDestroyed()) return { success: false };
-        const MINI_W = 440, MINI_H = 168;
+        const MINI_W = 420, MINI_H = 112;
         if (enter) {
             if (!savedMusicBounds) savedMusicBounds = mainWindow.getBounds();
             if (mainWindow.isMaximized()) mainWindow.unmaximize();

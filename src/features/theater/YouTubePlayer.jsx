@@ -81,6 +81,8 @@ export const YouTubePlayer = ({
     return `${m}:${String(sec).padStart(2, '0')}`;
   };
 
+  const [hovered, setHovered] = useState(false);
+
   // Resolve the cover once per video (step down only on real 404s) so the
   // 1s state updates don't re-trigger maxres → flicker.
   const [coverIdx, setCoverIdx] = useState(0);
@@ -149,39 +151,64 @@ export const YouTubePlayer = ({
 
         {/* Music-album overlay over the (still-playing) video. */}
         {musicMode && status !== 'error' && (minimized ? (
-          /* ---- Minimized: flat wide bar (browse while it plays) ---- */
-          <div style={{
-            position: 'absolute', inset: 0, zIndex: 20, background: '#16161a',
-            display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
-            WebkitAppRegion: 'drag'
-          }}>
-            <div style={{ width: 78, height: 78, borderRadius: 8, overflow: 'hidden', flexShrink: 0, background: '#000' }}>
+          /* ---- Minimized: clean glance view; controls fade in on hover ---- */
+          <div
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => setHovered(false)}
+            style={{
+              position: 'absolute', inset: 0, zIndex: 20, background: '#17171b',
+              display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
+              WebkitAppRegion: 'drag'
+            }}
+          >
+            <div style={{ width: 74, height: 74, borderRadius: 8, overflow: 'hidden', flexShrink: 0, background: '#000', boxShadow: '0 2px 10px rgba(0,0,0,0.4)' }}>
               {coverSrc && <img src={coverSrc} onError={onCoverError} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
             </div>
-            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <div style={{ color: '#fff', fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title || t('ytLoading')}</div>
-              <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>{trackLabel}</div>
-              <div onClick={seekFromEvent} style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.18)', cursor: 'pointer', position: 'relative', WebkitAppRegion: 'no-drag' }}>
-                <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, background: '#fff', borderRadius: 2 }} />
+
+            {/* Info — always visible (the whole point when parked aside) */}
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ color: '#fff', fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title || t('ytLoading')}</div>
+              <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>{trackLabel}</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(currentTime)} / {fmt(duration)}</span>
+              </div>
+              <div onClick={seekFromEvent} style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.16)', cursor: 'pointer', position: 'relative', WebkitAppRegion: 'no-drag' }}>
+                <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, background: '#1db954', borderRadius: 2 }} />
               </div>
             </div>
-            <button onClick={onPrev} title="Prev" style={{ ...musicBtn, width: 30, height: 30 }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" /></svg>
-            </button>
-            <button onClick={togglePlay} title="Play/Pause" style={{ ...musicBtn, width: 38, height: 38, background: '#fff', color: '#111' }}>
-              {paused
-                ? <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
-                : <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zm8 0h4v14h-4z" /></svg>}
-            </button>
-            <button onClick={onNext} title="Next" style={{ ...musicBtn, width: 30, height: 30 }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zm-2.5 6L5 6v12z" /></svg>
-            </button>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <button onClick={onToggleMinimize} title="Expand" style={{ ...iconBtn, width: 24, height: 24 }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="m18 15-6-6-6 6" /></svg>
+
+            {/* Transport controls — overlaid on the right, only on hover */}
+            <div style={{
+              position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
+              display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 40,
+              background: 'linear-gradient(90deg, transparent, #17171b 36%)',
+              opacity: hovered ? 1 : 0, transition: 'opacity .15s',
+              pointerEvents: hovered ? 'auto' : 'none', WebkitAppRegion: 'no-drag'
+            }}>
+              <button onClick={onPrev} title="Prev" style={{ ...musicBtn, width: 30, height: 30, background: 'transparent' }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" /></svg>
               </button>
-              <button onClick={onClose} title="Close" style={{ ...iconBtn, width: 24, height: 24 }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+              <button onClick={togglePlay} title="Play/Pause" style={{ ...musicBtn, width: 40, height: 40, background: '#fff', color: '#111' }}>
+                {paused
+                  ? <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                  : <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zm8 0h4v14h-4z" /></svg>}
+              </button>
+              <button onClick={onNext} title="Next" style={{ ...musicBtn, width: 30, height: 30, background: 'transparent' }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zm-2.5 6L5 6v12z" /></svg>
+              </button>
+            </div>
+
+            {/* Expand / close — small, top-right, only on hover */}
+            <div style={{
+              position: 'absolute', top: 6, right: 8, display: 'flex', gap: 2,
+              opacity: hovered ? 1 : 0, transition: 'opacity .15s',
+              pointerEvents: hovered ? 'auto' : 'none', WebkitAppRegion: 'no-drag'
+            }}>
+              <button onClick={onToggleMinimize} title="Expand" style={{ ...iconBtn, width: 22, height: 22, background: 'rgba(255,255,255,0.08)' }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="m18 15-6-6-6 6" /></svg>
+              </button>
+              <button onClick={onClose} title="Close" style={{ ...iconBtn, width: 22, height: 22, background: 'rgba(255,255,255,0.08)' }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
               </button>
             </div>
           </div>
