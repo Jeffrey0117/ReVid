@@ -56,7 +56,10 @@ export default function App() {
     } = useVideoFileSystem();
 
     const [viewMode, setViewMode] = useState(() =>
-        localStorage.getItem('revid-view-mode') || 'grid'
+        // Launched to open a video? Boot straight into the player, no grid flash.
+        getElectronAPI()?.initialOpenFile
+            ? 'viewer'
+            : localStorage.getItem('revid-view-mode') || 'grid'
     );
     const [sidebarPosition, setSidebarPosition] = useState(() => {
         const saved = localStorage.getItem('revid-sidebar-position');
@@ -236,7 +239,13 @@ export default function App() {
         }
     }, [isAlwaysOnTop]);
 
-    useEffect(() => { localStorage.setItem('revid-view-mode', viewMode); }, [viewMode]);
+    // Don't persist the view mode during an "Open with" session — it was forced
+    // to 'viewer' and shouldn't clobber the user's real default.
+    const launchedWithFileRef = useRef(!!getElectronAPI()?.initialOpenFile);
+    useEffect(() => {
+        if (launchedWithFileRef.current) return;
+        localStorage.setItem('revid-view-mode', viewMode);
+    }, [viewMode]);
     useEffect(() => { localStorage.setItem('revid-sidebar-position', sidebarPosition); }, [sidebarPosition]);
     useEffect(() => { localStorage.setItem('revid-grid-size', gridSize); }, [gridSize]);
 

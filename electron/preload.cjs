@@ -3,7 +3,18 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
+// Video path the app was launched to open ("Open with ReVid"), injected by the
+// main process via webPreferences.additionalArguments. Available synchronously
+// at first render so the renderer can boot straight into the player.
+const INITIAL_OPEN_FILE = (() => {
+    const prefix = '--revid-open=';
+    const arg = process.argv.find((a) => a.startsWith(prefix));
+    return arg ? arg.slice(prefix.length) : null;
+})();
+
 contextBridge.exposeInMainWorld('electronAPI', {
+    initialOpenFile: INITIAL_OPEN_FILE,
+
     openVideo: () => ipcRenderer.invoke('open-video'),
 
     selectDirectory: () => ipcRenderer.invoke('select-directory'),

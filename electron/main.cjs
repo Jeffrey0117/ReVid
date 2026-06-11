@@ -110,6 +110,13 @@ const saveWindowState = () => {
 
 function createWindow() {
     const saved = loadWindowState();
+
+    // If launched to open a video ("Open with ReVid"), hand the path to the
+    // renderer up-front via preload argv so it boots straight into the player —
+    // no flash of the grid UI before the video appears.
+    const launchFile = app._pendingOpenFile || findOpenableFileInArgs(process.argv);
+    const launchVideo = (launchFile && isVideoFile(launchFile)) ? launchFile : null;
+
     mainWindow = new BrowserWindow({
         width: saved?.width || 1280,
         height: saved?.height || 820,
@@ -118,10 +125,12 @@ function createWindow() {
         minWidth: 640,
         minHeight: 480,
         title: 'ReVid',
+        show: false,
         backgroundColor: '#000000',
         icon: path.join(__dirname, '../revid.png'),
         webPreferences: {
             preload: path.join(__dirname, 'preload.cjs'),
+            additionalArguments: launchVideo ? [`--revid-open=${launchVideo}`] : [],
             nodeIntegration: false,
             contextIsolation: true,
             sandbox: false,
@@ -129,6 +138,9 @@ function createWindow() {
             webviewTag: true
         }
     });
+
+    // The renderer opens it from argv, so don't also push it over IPC.
+    if (launchVideo) initialFileHandled = true;
 
     if (saved?.isMaximized) mainWindow.maximize();
 
@@ -139,6 +151,15 @@ function createWindow() {
     if (isDev) {
         mainWindow.webContents.openDevTools();
     }
+
+    // Show only once the first frame is painted — avoids the black window →
+    // UI-repaint flash users see on cold start.
+    mainWindow.once('ready-to-show', () => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
+    });
+    setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) mainWindow.show();
+    }, 2000);
 
     mainWindow.on('close', saveWindowState);
 }

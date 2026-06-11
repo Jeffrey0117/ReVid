@@ -62,6 +62,8 @@ export const useVideoFileSystem = () => {
 
   const loadFolderRef = useRef(loadFolder);
   loadFolderRef.current = loadFolder;
+  const openVideoFileRef = useRef(openVideoFile);
+  openVideoFileRef.current = openVideoFile;
 
   useEffect(() => {
     let attempts = 0;
@@ -70,6 +72,12 @@ export const useVideoFileSystem = () => {
     const tryLoad = () => {
       const electronAPI = getElectronAPI();
       if (electronAPI) {
+        // Launched via "Open with ReVid": jump straight to that file's folder
+        // and select it, skipping the last-folder/Desktop load.
+        if (electronAPI.initialOpenFile) {
+          openVideoFileRef.current(electronAPI.initialOpenFile);
+          return;
+        }
         try {
           const lastFolder = localStorage.getItem(LAST_FOLDER_KEY);
           if (lastFolder) {
