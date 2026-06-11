@@ -1,6 +1,6 @@
 {
   "name": "revid",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "ReVid - Video viewer and spatial crop tool",
   "author": "Jeffrey0117",
   "main": "electron/main.cjs",
