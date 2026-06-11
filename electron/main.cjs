@@ -1355,22 +1355,22 @@ app.whenReady().then(async () => {
         }
 
         try {
+            const { Readable } = require('stream');
             const stat = fs.statSync(filePath);
             const fileSize = stat.size;
             const rangeHeader = request.headers.get('range');
 
+            // Stream from disk instead of buffering the whole file/range into
+            // memory — a multi-GB video would otherwise spike RAM on each request.
             if (rangeHeader) {
                 const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
                 if (match) {
                     const start = parseInt(match[1], 10);
                     const end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
                     const chunkSize = end - start + 1;
-                    const fd = fs.openSync(filePath, 'r');
-                    const buf = Buffer.alloc(chunkSize);
-                    fs.readSync(fd, buf, 0, chunkSize, start);
-                    fs.closeSync(fd);
+                    const stream = fs.createReadStream(filePath, { start, end });
 
-                    return new Response(buf, {
+                    return new Response(Readable.toWeb(stream), {
                         status: 206,
                         headers: {
                             'Content-Range': `bytes ${start}-${end}/${fileSize}`,
@@ -1382,7 +1382,7 @@ app.whenReady().then(async () => {
                 }
             }
 
-            return new Response(fs.readFileSync(filePath), {
+            return new Response(Readable.toWeb(fs.createReadStream(filePath)), {
                 status: 200,
                 headers: {
                     'Content-Length': String(fileSize),
