@@ -18,7 +18,7 @@ import { useRef, useEffect, useCallback, useState } from 'react';
  */
 
 const YT_MAX_RATE = 2;
-const REPORT_INTERVAL_MS = 1000;
+const REPORT_INTERVAL_MS = 500;
 
 // Module-level promise so the script is only loaded once across all instances.
 let apiLoadPromise = null;
@@ -229,6 +229,7 @@ export const useYouTubePlayer = ({
     if (!player || status !== 'ready') return;
     try {
       player.seekTo(seconds, true);
+      setCurrentTime(seconds); // optimistic — bar jumps instantly instead of waiting for the next tick
     } catch {
       // Ignore
     }
