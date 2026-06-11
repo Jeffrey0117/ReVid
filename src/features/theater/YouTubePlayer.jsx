@@ -1,7 +1,32 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { extractYouTubeVideoId } from '../../utils/youtubeUrl';
 import { useYouTubePlayer } from '../../hooks/useYouTubePlayer';
 import { useI18n } from '../../i18n.jsx';
+
+// Song title that scrolls (marquee) only when it's too long to fit.
+const TitleMarquee = ({ text, style }) => {
+  const ref = useRef(null);
+  const [shift, setShift] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !el.parentElement) return;
+    const over = el.scrollWidth - el.parentElement.clientWidth;
+    setShift(over > 6 ? over + 12 : 0);
+  }, [text]);
+  return (
+    <div style={{ overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '100%' }}>
+      <span
+        ref={ref}
+        style={{
+          display: 'inline-block', ...style,
+          ...(shift
+            ? { '--marquee-shift': `-${shift}px`, animation: 'revid-marquee 9s ease-in-out infinite' }
+            : {})
+        }}
+      >{text}</span>
+    </div>
+  );
+};
 
 const COVER_STEPS = ['maxresdefault', 'sddefault', 'hqdefault', 'mqdefault'];
 const iconBtn = {
@@ -151,65 +176,69 @@ export const YouTubePlayer = ({
 
         {/* Music-album overlay over the (still-playing) video. */}
         {musicMode && status !== 'error' && (minimized ? (
-          /* ---- Minimized: clean glance view; controls fade in on hover ---- */
+          /* ---- Minimized: glance view. Cover = play/pause; next/prev on hover ---- */
           <div
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}
             style={{
               position: 'absolute', inset: 0, zIndex: 20, background: '#17171b',
-              display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
+              display: 'flex', alignItems: 'center', gap: 12, padding: '0 14px',
               WebkitAppRegion: 'drag'
             }}
           >
-            <div style={{ width: 74, height: 74, borderRadius: 8, overflow: 'hidden', flexShrink: 0, background: '#000', boxShadow: '0 2px 10px rgba(0,0,0,0.4)' }}>
+            {/* Cover IS the play/pause button */}
+            <div
+              onClick={togglePlay}
+              title={paused ? 'Play' : 'Pause'}
+              style={{ width: 62, height: 62, borderRadius: 8, overflow: 'hidden', flexShrink: 0, background: '#000', cursor: 'pointer', position: 'relative', WebkitAppRegion: 'no-drag', boxShadow: '0 2px 10px rgba(0,0,0,0.4)' }}
+            >
               {coverSrc && <img src={coverSrc} onError={onCoverError} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
             </div>
 
-            {/* Info — always visible (the whole point when parked aside) */}
-            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div style={{ color: '#fff', fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title || t('ytLoading')}</div>
+            {/* Info — title (marquee) + track / time. Reserved right zone keeps
+                the next/prev controls from ever covering the title. */}
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <TitleMarquee text={title || t('ytLoading')} style={{ color: '#fff', fontSize: 14, fontWeight: 600 }} />
               <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span>{trackLabel}</span>
                 <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(currentTime)} / {fmt(duration)}</span>
               </div>
-              <div onClick={seekFromEvent} style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.16)', cursor: 'pointer', position: 'relative', WebkitAppRegion: 'no-drag' }}>
-                <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, background: '#1db954', borderRadius: 2 }} />
-              </div>
             </div>
 
-            {/* Transport controls — overlaid on the right, only on hover */}
+            {/* Next/Prev — reserved zone on the right, fade in on hover */}
             <div style={{
-              position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
-              display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 40,
-              background: 'linear-gradient(90deg, transparent, #17171b 36%)',
+              flexShrink: 0, width: 70, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6,
               opacity: hovered ? 1 : 0, transition: 'opacity .15s',
               pointerEvents: hovered ? 'auto' : 'none', WebkitAppRegion: 'no-drag'
             }}>
-              <button onClick={onPrev} title="Prev" style={{ ...musicBtn, width: 30, height: 30, background: 'transparent' }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" /></svg>
+              <button onClick={onPrev} title="Prev" style={{ ...musicBtn, width: 30, height: 30, background: 'rgba(255,255,255,0.1)' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" /></svg>
               </button>
-              <button onClick={togglePlay} title="Play/Pause" style={{ ...musicBtn, width: 40, height: 40, background: '#fff', color: '#111' }}>
-                {paused
-                  ? <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
-                  : <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zm8 0h4v14h-4z" /></svg>}
-              </button>
-              <button onClick={onNext} title="Next" style={{ ...musicBtn, width: 30, height: 30, background: 'transparent' }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zm-2.5 6L5 6v12z" /></svg>
+              <button onClick={onNext} title="Next" style={{ ...musicBtn, width: 30, height: 30, background: 'rgba(255,255,255,0.1)' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zm-2.5 6L5 6v12z" /></svg>
               </button>
             </div>
 
-            {/* Expand / close — small, top-right, only on hover */}
+            {/* Expand / close — tiny, top-right, only on hover */}
             <div style={{
-              position: 'absolute', top: 6, right: 8, display: 'flex', gap: 2,
+              position: 'absolute', top: 5, right: 6, display: 'flex', gap: 2,
               opacity: hovered ? 1 : 0, transition: 'opacity .15s',
               pointerEvents: hovered ? 'auto' : 'none', WebkitAppRegion: 'no-drag'
             }}>
-              <button onClick={onToggleMinimize} title="Expand" style={{ ...iconBtn, width: 22, height: 22, background: 'rgba(255,255,255,0.08)' }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="m18 15-6-6-6 6" /></svg>
+              <button onClick={onToggleMinimize} title="Expand" style={{ ...iconBtn, width: 20, height: 20, background: 'rgba(255,255,255,0.1)' }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="m18 15-6-6-6 6" /></svg>
               </button>
-              <button onClick={onClose} title="Close" style={{ ...iconBtn, width: 22, height: 22, background: 'rgba(255,255,255,0.08)' }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+              <button onClick={onClose} title="Close" style={{ ...iconBtn, width: 20, height: 20, background: 'rgba(255,255,255,0.1)' }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
               </button>
+            </div>
+
+            {/* Progress — thin line along the very bottom edge */}
+            <div
+              onClick={seekFromEvent}
+              style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 4, cursor: 'pointer', WebkitAppRegion: 'no-drag', background: 'rgba(255,255,255,0.1)' }}
+            >
+              <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, background: '#1db954' }} />
             </div>
           </div>
         ) : (

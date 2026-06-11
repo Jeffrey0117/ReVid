@@ -60,6 +60,12 @@ button {
     to { transform: rotate(360deg); }
 }
 
+/* Marquee for long song titles in the music mini-panel */
+@keyframes revid-marquee {
+    0%, 12% { transform: translateX(0); }
+    88%, 100% { transform: translateX(var(--marquee-shift, 0)); }
+}
+
 /* Hide scrollbar for sidebar */
 ::-webkit-scrollbar { width: 0; height: 0; }
 
