@@ -58,6 +58,19 @@
         "description": "ReVid Collection File",
         "role": "Viewer",
         "icon": "revid.png"
+      },
+      {
+        "ext": [
+          "mp4",
+          "webm",
+          "mov",
+          "avi",
+          "mkv"
+        ],
+        "name": "Video",
+        "description": "Video File",
+        "role": "Viewer",
+        "icon": "revid.png"
       }
     ],
     "win": {

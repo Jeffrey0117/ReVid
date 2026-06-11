@@ -293,5 +293,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.on('open-revid-file', (_event, payload) => callback(payload));
     },
 
+    // Fired when a plain video file is opened via the OS ("Open with ReVid" /
+    // double-click), so the renderer can play that exact file.
+    onOpenVideoFile: (callback) => {
+        ipcRenderer.on('open-video-file', (_event, payload) => callback(payload));
+    },
+
     isElectron: true
 });

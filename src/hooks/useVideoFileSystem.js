@@ -33,6 +33,33 @@ export const useVideoFileSystem = () => {
     }
   }, []);
 
+  // Open a single video file (e.g. from OS "Open with"): load its containing
+  // folder so next/prev works, then select that exact file rather than the first.
+  const openVideoFile = useCallback((filePath) => {
+    const electronAPI = getElectronAPI();
+    if (!electronAPI || !filePath) return;
+
+    try {
+      const folderPath = electronAPI.path.dirname(filePath);
+      const videoFiles = electronAPI.getFilesInDirectory(folderPath, VIDEO_EXTENSIONS);
+
+      if (videoFiles.length > 0) {
+        // Match by basename — getFilesInDirectory rebuilds paths via path.join,
+        // so separators/casing may differ from the raw argv path on Windows.
+        const target = electronAPI.path.basename(filePath);
+        const idx = videoFiles.findIndex(
+          (f) => electronAPI.path.basename(f) === target
+        );
+        setFiles(videoFiles);
+        setCurrentIndex(idx >= 0 ? idx : 0);
+        setCurrentPath(folderPath);
+        localStorage.setItem(LAST_FOLDER_KEY, folderPath);
+      }
+    } catch (err) {
+      // ignore — leave current state untouched
+    }
+  }, []);
+
   const loadFolderRef = useRef(loadFolder);
   loadFolderRef.current = loadFolder;
 
@@ -97,6 +124,7 @@ export const useVideoFileSystem = () => {
     currentIndex,
     currentVideo,
     loadFolder,
+    openVideoFile,
     selectVideo,
     nextVideo,
     prevVideo,

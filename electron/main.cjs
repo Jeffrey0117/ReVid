@@ -1184,8 +1184,15 @@ function setupIpcHandlers() {
     });
 }
 
-// --- .revid file association ---
-// Handle file open from command line (Windows: double-click .revid)
+// --- File association / "Open with" support ---
+// Video extensions ReVid can play directly. Keep in sync with the renderer
+// (useVideoFileSystem) and getFilesInDirectory in preload.cjs.
+const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mov', '.avi', '.mkv'];
+
+const isVideoFile = (filePath) =>
+    !!filePath && VIDEO_EXTENSIONS.includes(path.extname(filePath).toLowerCase());
+
+// Push a .revid collection to the renderer (theater import).
 const handleRevidFileOpen = (filePath) => {
     if (!filePath || !filePath.endsWith('.revid')) return;
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -1197,26 +1204,69 @@ const handleRevidFileOpen = (filePath) => {
     }
 };
 
-// Windows: check process.argv for .revid file
-const checkArgvForRevid = () => {
-    const args = process.argv.slice(1);
-    for (const arg of args) {
-        if (arg.endsWith('.revid') && fs.existsSync(arg)) {
-            // Delay to ensure window is ready
-            setTimeout(() => handleRevidFileOpen(arg), 500);
-            break;
-        }
+// Push a plain video file to the renderer so it plays that exact file
+// (and loads its folder for next/prev), instead of falling back to the
+// last-used folder / Desktop.
+const handleVideoFileOpen = (filePath) => {
+    if (!isVideoFile(filePath)) return;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('open-video-file', { filePath });
     }
 };
 
-// macOS: open-file event
+// Route an opened file to the right handler by extension.
+const handleFileOpen = (filePath) => {
+    if (!filePath) return;
+    if (filePath.endsWith('.revid')) handleRevidFileOpen(filePath);
+    else if (isVideoFile(filePath)) handleVideoFileOpen(filePath);
+};
+
+// Find the first openable file (video or .revid) in a process argv array.
+// Skips Electron/Chromium flags (anything starting with "-") and the exe path.
+const findOpenableFileInArgs = (argv) => {
+    for (const arg of argv.slice(1)) {
+        if (!arg || arg.startsWith('-')) continue;
+        if ((arg.endsWith('.revid') || isVideoFile(arg)) && fs.existsSync(arg)) {
+            return arg;
+        }
+    }
+    return null;
+};
+
+// Windows/Linux: open the file passed on the command line at launch.
+const checkArgvForFile = () => {
+    const target = findOpenableFileInArgs(process.argv);
+    if (target) {
+        // Delay so the renderer has finished its initial mount/IPC wiring.
+        setTimeout(() => handleFileOpen(target), 500);
+    }
+};
+
+// Single-instance lock: when a file is "opened with" ReVid while it is already
+// running, Windows/Linux launch a second process. Forward that file to the
+// existing window and focus it instead of spawning a duplicate app.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+    app.quit();
+} else {
+    app.on('second-instance', (_event, argv) => {
+        if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.focus();
+        }
+        const target = findOpenableFileInArgs(argv);
+        if (target) handleFileOpen(target);
+    });
+}
+
+// macOS: open-file event (covers both initial launch and already-running app)
 app.on('open-file', (event, filePath) => {
     event.preventDefault();
-    if (mainWindow) {
-        handleRevidFileOpen(filePath);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        handleFileOpen(filePath);
     } else {
-        // Store for when window is ready
-        app._pendingRevidFile = filePath;
+        // Store for when the window is ready
+        app._pendingOpenFile = filePath;
     }
 });
 
@@ -1274,13 +1324,13 @@ app.whenReady().then(() => {
     createWindow();
     setupAutoUpdater();
 
-    // Check for .revid file in argv after window loads
+    // After the window loads, open any file passed on the command line (Windows/
+    // Linux) or queued from a macOS open-file event before the window existed.
     mainWindow.webContents.once('did-finish-load', () => {
-        checkArgvForRevid();
-        // macOS: handle pending file
-        if (app._pendingRevidFile) {
-            handleRevidFileOpen(app._pendingRevidFile);
-            app._pendingRevidFile = null;
+        checkArgvForFile();
+        if (app._pendingOpenFile) {
+            handleFileOpen(app._pendingOpenFile);
+            app._pendingOpenFile = null;
         }
     });
 

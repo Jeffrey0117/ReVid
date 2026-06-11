@@ -48,6 +48,7 @@ export default function App() {
         currentIndex,
         currentVideo,
         loadFolder,
+        openVideoFile,
         selectVideo,
         nextVideo,
         prevVideo,
@@ -205,6 +206,19 @@ export default function App() {
             }
         });
     }, [theater]);
+
+    // Handle a plain video file opened externally ("Open with ReVid" / double-click):
+    // play that exact file in viewer mode instead of the last-used folder / Desktop.
+    useEffect(() => {
+        const api = getElectronAPI();
+        if (!api?.onOpenVideoFile) return;
+
+        api.onOpenVideoFile(({ filePath }) => {
+            if (!filePath) return;
+            openVideoFile(filePath);
+            setViewMode('viewer');
+        });
+    }, [openVideoFile]);
 
     const toggleAlwaysOnTop = useCallback(async () => {
         const api = getElectronAPI();
