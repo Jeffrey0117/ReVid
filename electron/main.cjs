@@ -746,15 +746,19 @@ function setupIpcHandlers() {
         if (enter) {
             if (!savedMusicBounds) savedMusicBounds = mainWindow.getBounds();
             if (mainWindow.isMaximized()) mainWindow.unmaximize();
-            mainWindow.setMinimumSize(300, 120);
+            mainWindow.setMinimumSize(300, 80);
             mainWindow.setAlwaysOnTop(true);
             mainWindow.setSize(MINI_W, MINI_H);
+            // Fixed-size panel: removes the window's edge resize zones so the
+            // bottom progress bar is clickable (clicks there were resizing).
+            mainWindow.setResizable(false);
             try {
                 const { screen } = require('electron');
                 const wa = screen.getPrimaryDisplay().workArea;
                 mainWindow.setPosition(wa.x + wa.width - MINI_W - 20, wa.y + wa.height - MINI_H - 20);
             } catch {}
         } else {
+            mainWindow.setResizable(true);
             mainWindow.setAlwaysOnTop(false);
             mainWindow.setMinimumSize(640, 480);
             if (savedMusicBounds) {

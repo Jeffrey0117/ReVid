@@ -233,12 +233,15 @@ export const YouTubePlayer = ({
               </button>
             </div>
 
-            {/* Progress — thin line along the very bottom edge */}
+            {/* Progress — thin line along the bottom edge with a taller
+                (transparent) hit area so it's easy to click to seek. */}
             <div
               onClick={seekFromEvent}
-              style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 4, cursor: 'pointer', WebkitAppRegion: 'no-drag', background: 'rgba(255,255,255,0.1)' }}
+              style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 13, cursor: 'pointer', WebkitAppRegion: 'no-drag', display: 'flex', alignItems: 'flex-end' }}
             >
-              <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, background: '#1db954' }} />
+              <div style={{ position: 'relative', width: '100%', height: hovered ? 6 : 4, background: 'rgba(255,255,255,0.14)', transition: 'height .12s' }}>
+                <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, background: '#1db954' }} />
+              </div>
             </div>
           </div>
         ) : (
