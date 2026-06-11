@@ -152,6 +152,12 @@ function createWindow() {
         mainWindow.webContents.openDevTools();
     }
 
+    // Never let the app's top frame navigate away from itself — e.g. when a URL
+    // is dragged into the window, keep the app loaded instead of browsing to it.
+    mainWindow.webContents.on('will-navigate', (e, navUrl) => {
+        if (rendererBaseUrl && !navUrl.startsWith(rendererBaseUrl)) e.preventDefault();
+    });
+
     // Show only once the first frame is painted — avoids the black window →
     // UI-repaint flash users see on cold start.
     mainWindow.once('ready-to-show', () => {

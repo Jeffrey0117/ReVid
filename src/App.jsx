@@ -98,6 +98,7 @@ export default function App() {
     const [showCourseListPanel, setShowCourseListPanel] = useState(false);
     const [theaterSidebarVisible, setTheaterSidebarVisible] = useState(true);
     const [showInfoPanel, setShowInfoPanel] = useState(false);
+    const [dragOverGrid, setDragOverGrid] = useState(false);
 
     // Auto-hide info panel when no content to show
     useEffect(() => {
@@ -131,6 +132,35 @@ export default function App() {
             }
         }
     }, [theater.selectedFolderId, theater.addCourse, theater.openCourse, theater.updateCourseThumbnail]);
+
+    // Drag a URL (or several) onto the course grid to add them quickly, without
+    // opening the Add dialog. Dropped courses are added but not auto-opened, so
+    // you can drop a batch.
+    const handleDropUrls = useCallback((e) => {
+        e.preventDefault();
+        setDragOverGrid(false);
+        const dt = e.dataTransfer;
+        const raw = (dt?.getData('text/uri-list') || dt?.getData('text/plain') || '').trim();
+        const urls = raw.split(/\s+/).map((s) => s.trim()).filter((u) => /^https?:\/\//i.test(u));
+        if (!urls.length) return;
+
+        let folderId = theater.selectedFolderId;
+        if (!folderId) folderId = theater.createFolder('YouTube')?.id;
+        if (!folderId) return;
+
+        const api = getElectronAPI();
+        urls.forEach((url) => {
+            const platform = detectPlatform(url).id;
+            const course = theater.addCourse(folderId, { url, title: '', platform });
+            if (platform !== 'youtube' && api?.fetchThumbnail && course?.id) {
+                api.fetchThumbnail(url, course.id).then((r) => {
+                    if (r?.success && r.thumbnailPath) theater.updateCourseThumbnail(folderId, course.id, r.thumbnailPath);
+                }).catch(() => {});
+            }
+        });
+        setToast(`${urls.length} ${t('urlsAdded')}`);
+        setTimeout(() => setToast(null), 2000);
+    }, [theater.selectedFolderId, theater.createFolder, theater.addCourse, theater.updateCourseThumbnail, t]);
 
     // Save progress and close course
     const handleCloseCourse = useCallback(() => {
@@ -1133,13 +1163,20 @@ export default function App() {
                                                 {t('batchRename') || '批次命名'}
                                             </button>
                                         </div>
-                                        {/* Grid */}
-                                        <div style={{
+                                        {/* Grid (drop a URL here to add quickly) */}
+                                        <div
+                                            onDragOver={(e) => { e.preventDefault(); if (!dragOverGrid) setDragOverGrid(true); }}
+                                            onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOverGrid(false); }}
+                                            onDrop={handleDropUrls}
+                                            style={{
                                             flex: 1, overflowY: 'auto', padding: 16,
                                             display: 'grid',
                                             gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
                                             gridAutoRows: 'min-content',
-                                            gap: 16, alignContent: 'start'
+                                            gap: 16, alignContent: 'start',
+                                            outline: dragOverGrid ? '2px dashed #6366f1' : 'none',
+                                            outlineOffset: -8,
+                                            background: dragOverGrid ? 'rgba(99,102,241,0.06)' : undefined
                                         }}>
                                         {theater.activeCourses.map(course => {
                                             const progress = course.progress?.duration > 0

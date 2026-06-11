@@ -239,6 +239,7 @@ const translations = {
     ctxVolumeBoost: 'Volume Boost',
     ctxLoop: 'Loop',
     ctxPictureInPicture: 'Picture-in-Picture',
+    urlsAdded: 'link(s) added',
   },
   'zh-TW': {
     openFolder: '開啟資料夾',
@@ -465,6 +466,7 @@ const translations = {
     ctxVolumeBoost: '\u97f3\u91cf\u589e\u5f37',
     ctxLoop: '\u5faa\u74b0\u64ad\u653e',
     ctxPictureInPicture: '\u5b50\u6bcd\u756b\u9762',
+    urlsAdded: '\u500b\u9023\u7d50\u5df2\u65b0\u589e',
   }
 };
 
