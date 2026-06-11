@@ -244,6 +244,7 @@ const translations = {
     setAsCover: 'Set as Album Cover',
     listView: 'List',
     gridView: 'Grid',
+    musicModeEmpty: 'Music mode on — add some songs first',
   },
   'zh-TW': {
     openFolder: '開啟資料夾',
@@ -475,6 +476,7 @@ const translations = {
     setAsCover: '\u8a2d\u70ba\u5c08\u8f2f\u5c01\u9762',
     listView: '\u5217\u8868',
     gridView: '\u7db2\u683c',
+    musicModeEmpty: '\u5df2\u958b\u555f\u97f3\u6a02\u6a21\u5f0f \u2014 \u8acb\u5148\u65b0\u589e\u6b4c\u66f2',
   }
 };
 

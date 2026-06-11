@@ -178,6 +178,24 @@ export default function App() {
         return p.lastPosition;
     }, [theater.activeCourse, theater.selectedFolder]);
 
+    // Toggle a folder's music mode. Turning it on starts the album right away
+    // (plays the first track) so the button always does something visible;
+    // an empty folder just hints to add songs.
+    const handleToggleMusicMode = useCallback(() => {
+        const folder = theater.selectedFolder;
+        if (!folder) return;
+        const turningOn = !folder.musicMode;
+        theater.toggleMusicMode(folder.id);
+        if (turningOn) {
+            if (theater.activeCourses.length === 0) {
+                setToast(t('musicModeEmpty'));
+                setTimeout(() => setToast(null), 2500);
+            } else if (!theater.activeCourse) {
+                theater.openCourse(theater.activeCourses[0].id);
+            }
+        }
+    }, [theater, t]);
+
     // Toggle the floating music mini-panel: shrink the whole window to just the
     // player (always-on-top, bottom-right) and hide the rest of the UI.
     const toggleMusicMini = useCallback(() => {
@@ -615,7 +633,7 @@ export default function App() {
                             </button>
                             {/* Music-album mode toggle */}
                             <button
-                                onClick={() => theater.toggleMusicMode(theater.selectedFolderId)}
+                                onClick={handleToggleMusicMode}
                                 title={t('musicMode')}
                                 style={{
                                     display: 'flex', alignItems: 'center', gap: 6,
