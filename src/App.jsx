@@ -100,6 +100,8 @@ export default function App() {
     const [showInfoPanel, setShowInfoPanel] = useState(false);
     const [dragOverGrid, setDragOverGrid] = useState(false);
     const [musicMinimized, setMusicMinimized] = useState(false);
+    const [theaterView, setTheaterView] = useState(() => localStorage.getItem('revid-theater-view') || 'grid');
+    const [dragCourseId, setDragCourseId] = useState(null);
 
     // Auto-hide info panel when no content to show
     useEffect(() => {
@@ -1242,8 +1244,27 @@ export default function App() {
                                                 {theater.activeCourses.length} {t('items') || '個項目'}
                                             </span>
                                             <div style={{ flex: 1 }} />
+                                            {/* Grid / List view toggle (list = sortable / reorderable) */}
                                             <button
-                                                onClick={() => setShowCourseListPanel(true)}
+                                                onClick={() => { const v = theaterView === 'list' ? 'grid' : 'list'; setTheaterView(v); localStorage.setItem('revid-theater-view', v); }}
+                                                title={theaterView === 'list' ? t('switchToGrid') : t('listView')}
+                                                style={{
+                                                    padding: '6px 12px', borderRadius: 6,
+                                                    background: theaterView === 'list' ? theme.accent : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'),
+                                                    color: theaterView === 'list' ? '#fff' : (isDark ? '#fff' : '#1f2937'),
+                                                    fontSize: 12, border: 'none', cursor: 'pointer',
+                                                    display: 'flex', alignItems: 'center', gap: 6
+                                                }}
+                                            >
+                                                {theaterView === 'list' ? (
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>
+                                                ) : (
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>
+                                                )}
+                                                {theaterView === 'list' ? (t('gridView') || 'Grid') : (t('listView') || 'List')}
+                                            </button>
+                                            <button
+                                                onClick={() => setShowBatchRenameDialog(true)}
                                                 style={{
                                                     padding: '6px 12px', borderRadius: 6,
                                                     background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
@@ -1278,7 +1299,47 @@ export default function App() {
                                                 {t('batchRename') || '批次命名'}
                                             </button>
                                         </div>
-                                        {/* Grid (drop a URL here to add quickly) */}
+                                        {theaterView === 'list' ? (
+                                          /* Detailed list — drag rows to reorder; drop a URL to add */
+                                          <div
+                                            onDragOver={(e) => { e.preventDefault(); if (!dragCourseId && !dragOverGrid) setDragOverGrid(true); }}
+                                            onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOverGrid(false); }}
+                                            onDrop={(e) => { e.preventDefault(); setDragOverGrid(false); if (dragCourseId) { theater.moveCourse(theater.selectedFolderId, dragCourseId, null); setDragCourseId(null); } else { handleDropUrls(e); } }}
+                                            style={{ flex: 1, overflowY: 'auto', padding: '6px 0', outline: dragOverGrid ? '2px dashed #6366f1' : 'none', outlineOffset: -8 }}
+                                          >
+                                            {theater.activeCourses.map((course, idx) => {
+                                              const isCur = theater.activeCourseId === course.id;
+                                              const label = /^https?:\/\//i.test(course.title || '') ? course.url : (course.title || course.url);
+                                              return (
+                                                <div
+                                                  key={course.id}
+                                                  draggable
+                                                  onDragStart={(e) => { setDragCourseId(course.id); e.dataTransfer.effectAllowed = 'move'; }}
+                                                  onDragEnd={() => setDragCourseId(null)}
+                                                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                                  onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (dragCourseId) { theater.moveCourse(theater.selectedFolderId, dragCourseId, course.id); setDragCourseId(null); } else { handleDropUrls(e); } }}
+                                                  onClick={() => theater.openCourse(course.id)}
+                                                  onContextMenu={(e) => { e.preventDefault(); setCourseContextMenu({ courseId: course.id, x: e.clientX, y: e.clientY }); }}
+                                                  style={{
+                                                    display: 'flex', alignItems: 'center', gap: 12, padding: '7px 16px',
+                                                    cursor: 'pointer', borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'}`,
+                                                    background: isCur ? (isDark ? 'rgba(99,102,241,0.18)' : 'rgba(99,102,241,0.12)') : 'transparent',
+                                                    opacity: dragCourseId === course.id ? 0.4 : 1
+                                                  }}
+                                                  onMouseEnter={e => { if (!isCur) e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)'; }}
+                                                  onMouseLeave={e => { if (!isCur) e.currentTarget.style.background = 'transparent'; }}
+                                                >
+                                                  <svg width="13" height="13" viewBox="0 0 24 24" fill={isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)'} style={{ cursor: 'grab', flexShrink: 0 }}><circle cx="9" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>
+                                                  <span style={{ width: 22, textAlign: 'right', fontSize: 12, color: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{idx + 1}</span>
+                                                  <div style={{ width: 52, height: 30, borderRadius: 4, overflow: 'hidden', flexShrink: 0, background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)' }}>
+                                                    {course.thumbnail && <img src={course.thumbnail} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />}
+                                                  </div>
+                                                  <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: isCur ? theme.accent : (isDark ? '#fff' : '#1f2937'), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        ) : (
                                         <div
                                             onDragOver={(e) => { e.preventDefault(); if (!dragOverGrid) setDragOverGrid(true); }}
                                             onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOverGrid(false); }}
@@ -1420,14 +1481,22 @@ export default function App() {
                                             );
                                         })}
                                         </div>
+                                        )}
                                     </div>
                                 ) : theater.selectedFolder ? (
-                                    /* Empty folder - show input to add URLs */
-                                    <div style={{
+                                    /* Empty folder - show input to add URLs (also a drop target) */
+                                    <div
+                                        onDragOver={(e) => { e.preventDefault(); if (!dragOverGrid) setDragOverGrid(true); }}
+                                        onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOverGrid(false); }}
+                                        onDrop={handleDropUrls}
+                                        style={{
                                         width: '100%', height: '100%',
                                         display: 'flex', flexDirection: 'column',
                                         alignItems: 'center', justifyContent: 'center',
-                                        padding: 32
+                                        padding: 32,
+                                        outline: dragOverGrid ? '2px dashed #6366f1' : 'none',
+                                        outlineOffset: -12,
+                                        background: dragOverGrid ? 'rgba(99,102,241,0.05)' : undefined
                                     }}>
                                         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: theme.textTertiary, marginBottom: 16 }}>
                                             <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />

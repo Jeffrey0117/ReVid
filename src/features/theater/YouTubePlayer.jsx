@@ -198,7 +198,7 @@ export const YouTubePlayer = ({
             {/* Info — title (marquee) + track / time. Reserved right zone keeps
                 the next/prev controls from ever covering the title. */}
             <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <TitleMarquee text={title || t('ytLoading')} style={{ color: '#fff', fontSize: 14, fontWeight: 600 }} />
+              <TitleMarquee text={title || ''} style={{ color: '#fff', fontSize: 14, fontWeight: 600 }} />
               <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span>{trackLabel}</span>
                 <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(currentTime)} / {fmt(duration)}</span>
@@ -282,7 +282,7 @@ export const YouTubePlayer = ({
                 color: '#fff', fontSize: 18, fontWeight: 600, lineHeight: 1.3,
                 overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box',
                 WebkitLineClamp: 2, WebkitBoxOrient: 'vertical'
-              }}>{title || t('ytLoading')}</div>
+              }}>{title || ''}</div>
               {trackLabel && (
                 <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, marginTop: 6 }}>{trackLabel}</div>
               )}

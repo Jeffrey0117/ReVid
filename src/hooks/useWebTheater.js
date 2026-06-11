@@ -118,6 +118,21 @@ export const useWebTheater = () => {
     ));
   }, []);
 
+  // Reorder: drop the dragged course at the target course's position.
+  const moveCourse = useCallback((folderId, draggedId, targetId) => {
+    if (!draggedId || draggedId === targetId) return;
+    setFolders(prev => prev.map(f => {
+      if (f.id !== folderId) return f;
+      const courses = [...f.courses];
+      const from = courses.findIndex(c => c.id === draggedId);
+      if (from < 0) return f;
+      const [moved] = courses.splice(from, 1);
+      const to = targetId ? courses.findIndex(c => c.id === targetId) : courses.length;
+      courses.splice(to < 0 ? courses.length : to, 0, moved);
+      return { ...f, courses };
+    }));
+  }, []);
+
   const deleteFolder = useCallback((folderId) => {
     setFolders(prev => prev.filter(f => f.id !== folderId));
     if (selectedFolderId === folderId) {
@@ -340,6 +355,7 @@ export const useWebTheater = () => {
     deleteFolder,
     toggleMusicMode,
     setFolderCover,
+    moveCourse,
     addCourse,
     removeCourse,
     renameCourse,
@@ -355,7 +371,7 @@ export const useWebTheater = () => {
     folders, selectedFolder, selectedFolderId,
     activeCourses, activeCourse, activeCourseId,
     selectFolder, createFolder, renameFolder, deleteFolder,
-    toggleMusicMode, setFolderCover,
+    toggleMusicMode, setFolderCover, moveCourse,
     addCourse, removeCourse, renameCourse, updateCourseUrl, updateProgress,
     updateCourseThumbnail, openCourse, closeCourse,
     importRevidFile, importRevidFiles, importJsonBackup,
