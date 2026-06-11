@@ -1214,11 +1214,23 @@ const handleVideoFileOpen = (filePath) => {
     }
 };
 
-// Route an opened file to the right handler by extension.
-const handleFileOpen = (filePath) => {
-    if (!filePath) return;
+// Route an opened file to the right handler by extension (renderer must be ready).
+const dispatchFileOpen = (filePath) => {
     if (filePath.endsWith('.revid')) handleRevidFileOpen(filePath);
     else if (isVideoFile(filePath)) handleVideoFileOpen(filePath);
+};
+
+// Open a file now if the window's renderer is ready; otherwise queue it so the
+// did-finish-load handler can deliver it once the IPC listeners are wired. This
+// closes a race where a second-instance file arrives mid-startup and the
+// 'open-video-file' message would be dropped.
+const handleFileOpen = (filePath) => {
+    if (!filePath) return;
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isLoading()) {
+        dispatchFileOpen(filePath);
+    } else {
+        app._pendingOpenFile = filePath;
+    }
 };
 
 // Find the first openable file (video or .revid) in a process argv array.
@@ -1329,8 +1341,10 @@ app.whenReady().then(() => {
     mainWindow.webContents.once('did-finish-load', () => {
         checkArgvForFile();
         if (app._pendingOpenFile) {
-            handleFileOpen(app._pendingOpenFile);
+            const pending = app._pendingOpenFile;
             app._pendingOpenFile = null;
+            // Delay so React has mounted and registered its IPC listeners.
+            setTimeout(() => dispatchFileOpen(pending), 500);
         }
     });
 
