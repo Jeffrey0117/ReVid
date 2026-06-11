@@ -234,6 +234,11 @@ const translations = {
     uploadSaveRevid: 'Save .revid after upload',
     uploadAddToTheater: 'Add to theater folder',
     uploadSelectFiles: 'Select video files to upload',
+    // Player right-click context menu
+    ctxPlaybackSpeed: 'Playback Speed',
+    ctxVolumeBoost: 'Volume Boost',
+    ctxLoop: 'Loop',
+    ctxPictureInPicture: 'Picture-in-Picture',
   },
   'zh-TW': {
     openFolder: '開啟資料夾',
@@ -455,6 +460,11 @@ const translations = {
     uploadSaveRevid: '\u4e0a\u50b3\u5f8c\u5132\u5b58 .revid',
     uploadAddToTheater: '\u52a0\u5165\u5f71\u7247\u8cc7\u6599\u593e',
     uploadSelectFiles: '\u9078\u64c7\u5f71\u7247\u6a94\u6848\u4e0a\u50b3',
+    // \u64ad\u653e\u5668\u53f3\u9375\u9078\u55ae
+    ctxPlaybackSpeed: '\u64ad\u653e\u901f\u5ea6',
+    ctxVolumeBoost: '\u97f3\u91cf\u589e\u5f37',
+    ctxLoop: '\u5faa\u74b0\u64ad\u653e',
+    ctxPictureInPicture: '\u5b50\u6bcd\u756b\u9762',
   }
 };
 
