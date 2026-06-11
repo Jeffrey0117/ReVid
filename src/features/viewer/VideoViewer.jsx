@@ -7,7 +7,8 @@ const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 // Gain multipliers for volume boost (1 = native 100%, >1 amplifies past it).
 const BOOST_OPTIONS = [1, 1.5, 2, 3];
 
-const SPEED_KEY = 'revid-viewer-speed';
+// Volume boost persists (it's a "my speakers are quiet" preference); speed does
+// NOT — each new video should start at the natural 1x.
 const BOOST_KEY = 'revid-viewer-boost';
 const readNum = (key, fallback) => {
     const n = Number(localStorage.getItem(key));
@@ -26,7 +27,7 @@ export const VideoViewer = ({ src }) => {
     const gainRef = useRef(null);
     const sourceRef = useRef(null);
 
-    const [speed, setSpeed] = useState(() => readNum(SPEED_KEY, 1));
+    const [speed, setSpeed] = useState(1); // always starts at 1x per video
     const [boost, setBoost] = useState(() => readNum(BOOST_KEY, 1));
     const [loop, setLoop] = useState(false);
     const [menu, setMenu] = useState(null); // { x, y } | null
@@ -71,8 +72,7 @@ export const VideoViewer = ({ src }) => {
     }, [ensureGain]);
 
     const applySpeed = useCallback((value) => {
-        setSpeed(value);
-        localStorage.setItem(SPEED_KEY, String(value));
+        setSpeed(value); // not persisted — resets to 1x on the next video
         const player = plyrRef.current;
         if (player) player.speed = value;
         else if (videoElRef.current) videoElRef.current.playbackRate = value;
@@ -124,7 +124,7 @@ export const VideoViewer = ({ src }) => {
                 'duration', 'mute', 'volume', 'settings', 'pip', 'fullscreen'
             ],
             settings: ['speed'],
-            speed: { selected: prefsRef.current.speed, options: SPEED_OPTIONS },
+            speed: { selected: 1, options: SPEED_OPTIONS },
             tooltips: { controls: false, seek: true },
             keyboard: { focused: true, global: false },
             autoplay: true
@@ -137,11 +137,12 @@ export const VideoViewer = ({ src }) => {
 
         plyrRef.current = player;
 
-        // Re-apply the user's current preferences to the new element.
-        const { speed: s, boost: b, loop: l } = prefsRef.current;
+        // Each new video starts at the natural 1x; volume boost carries over.
+        setSpeed(1);
+        const { boost: b, loop: l } = prefsRef.current;
         video.loop = l;
         const reapply = () => {
-            video.playbackRate = s;
+            video.playbackRate = 1;
             if (b !== 1) {
                 const gain = ensureGain();
                 if (gain) gain.gain.value = b;

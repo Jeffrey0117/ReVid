@@ -220,6 +220,13 @@ export default function App() {
         });
     }, [openVideoFile]);
 
+    // Signal the main process that file-open listeners are wired, so a video the
+    // app was launched with ("Open with ReVid") opens immediately instead of
+    // after a fixed delay.
+    useEffect(() => {
+        getElectronAPI()?.notifyReady?.();
+    }, []);
+
     const toggleAlwaysOnTop = useCallback(async () => {
         const api = getElectronAPI();
         if (!api?.setAlwaysOnTop) return;

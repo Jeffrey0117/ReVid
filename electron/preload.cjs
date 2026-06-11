@@ -299,5 +299,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.on('open-video-file', (_event, payload) => callback(payload));
     },
 
+    // Tell the main process the renderer has mounted and registered its file-open
+    // listeners, so a launch file can be delivered immediately.
+    notifyReady: () => ipcRenderer.send('renderer-ready'),
+
     isElectron: true
 });

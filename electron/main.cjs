@@ -26,7 +26,10 @@ function setupAutoUpdater() {
     autoUpdater.on('error', (err) => console.error('[updater] error:', err?.message || err));
     autoUpdater.on('update-available', (info) => console.log('[updater] update available:', info?.version));
     autoUpdater.on('update-downloaded', (info) => console.log('[updater] downloaded; install on quit:', info?.version));
-    autoUpdater.checkForUpdates().catch((e) => console.error('[updater] check failed:', e?.message || e));
+    // Defer the network check so it doesn't compete with first paint / playback.
+    setTimeout(() => {
+        autoUpdater.checkForUpdates().catch((e) => console.error('[updater] check failed:', e?.message || e));
+    }, 6000);
 }
 
 // Register local-video:// protocol for range-request support
@@ -122,6 +125,14 @@ function getTheaterDataPath() {
 }
 
 function setupIpcHandlers() {
+    // Renderer signals it has mounted and wired its IPC listeners — open the
+    // launch file immediately (no fixed delay) instead of guessing with a timer.
+    ipcMain.on('renderer-ready', (e) => {
+        if (mainWindow && !mainWindow.isDestroyed() && e.sender === mainWindow.webContents) {
+            flushInitialFile();
+        }
+    });
+
     // Theater data persistence (file-based, not localStorage)
     ipcMain.handle('load-theater-data', async () => {
         try {
@@ -697,8 +708,9 @@ function setupIpcHandlers() {
         } catch {}
     };
 
-    // Run cleanup on startup
-    cleanOldThumbnails();
+    // Thumbnail cleanup scans the cache dir synchronously — push it off the
+    // startup critical path so the window/video appear sooner.
+    setTimeout(cleanOldThumbnails, 8000);
 
     ipcMain.handle('fetch-thumbnail', async (_event, { url, courseId }) => {
         if (!url || !courseId) return { success: false, error: 'Missing url or courseId' };
@@ -1294,13 +1306,18 @@ const findOpenableFileInArgs = (argv) => {
     return null;
 };
 
-// Windows/Linux: open the file passed on the command line at launch.
-const checkArgvForFile = () => {
-    const target = findOpenableFileInArgs(process.argv);
-    if (target) {
-        // Delay so the renderer has finished its initial mount/IPC wiring.
-        setTimeout(() => handleFileOpen(target), 500);
-    }
+// Deliver the file the app was launched with (argv on Windows/Linux, or a
+// queued macOS open-file). Driven by the renderer's 'renderer-ready' signal so
+// it fires the instant React has wired its IPC listeners — no fixed delay — with
+// a timed fallback in did-finish-load. Idempotent: runs at most once.
+let initialFileHandled = false;
+const flushInitialFile = () => {
+    if (initialFileHandled) return;
+    const target = app._pendingOpenFile || findOpenableFileInArgs(process.argv);
+    if (!target) return;
+    initialFileHandled = true;
+    app._pendingOpenFile = null;
+    dispatchFileOpen(target);
 };
 
 // Single-instance lock: when a file is "opened with" ReVid while it is already
@@ -1401,14 +1418,10 @@ app.whenReady().then(async () => {
 
     // After the window loads, open any file passed on the command line (Windows/
     // Linux) or queued from a macOS open-file event before the window existed.
+    // Fallback in case the renderer-ready signal never arrives (it normally
+    // fires first and opens the file with no wait).
     mainWindow.webContents.once('did-finish-load', () => {
-        checkArgvForFile();
-        if (app._pendingOpenFile) {
-            const pending = app._pendingOpenFile;
-            app._pendingOpenFile = null;
-            // Delay so React has mounted and registered its IPC listeners.
-            setTimeout(() => dispatchFileOpen(pending), 500);
-        }
+        setTimeout(flushInitialFile, 800);
     });
 
     app.on('activate', () => {
