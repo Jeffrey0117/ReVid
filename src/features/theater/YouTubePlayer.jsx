@@ -29,6 +29,7 @@ export const YouTubePlayer = ({
   onVideoDetected,
   onVideoState,
   onEnded,
+  onTitle,
   onNext,
   onPrev,
   className = '',
@@ -46,6 +47,9 @@ export const YouTubePlayer = ({
     isRateClamped,
     errorCode,
     paused,
+    currentTime,
+    duration,
+    seekTo,
     togglePlay
   } = useYouTubePlayer({
     containerId: CONTAINER_ID,
@@ -54,8 +58,16 @@ export const YouTubePlayer = ({
     startAt,
     onVideoDetected,
     onVideoState,
-    onEnded
+    onEnded,
+    onTitle
   });
+
+  const fmt = (s) => {
+    if (!isFinite(s) || s < 0) s = 0;
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${String(sec).padStart(2, '0')}`;
+  };
 
   // Invalid URL - no video ID found
   if (!videoId) {
@@ -123,8 +135,22 @@ export const YouTubePlayer = ({
               borderRadius: 16, overflow: 'hidden', background: '#1a1a1a',
               boxShadow: '0 16px 48px rgba(0,0,0,0.6)'
             }}>
-              {cover ? (
-                <img src={cover} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              {(cover || videoId) ? (
+                <img
+                  src={cover || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`}
+                  alt=""
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  onError={(e) => {
+                    // maxres isn't available for every video — step down to a
+                    // resolution that exists so the cover isn't broken/blurry.
+                    const steps = ['maxresdefault', 'sddefault', 'hqdefault', 'mqdefault'];
+                    const el = e.currentTarget;
+                    const cur = steps.findIndex((s) => el.src.includes(s));
+                    if (videoId && cur >= 0 && cur < steps.length - 1) {
+                      el.src = `https://img.youtube.com/vi/${videoId}/${steps[cur + 1]}.jpg`;
+                    }
+                  }}
+                />
               ) : (
                 <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="1.5">
@@ -143,6 +169,27 @@ export const YouTubePlayer = ({
               {trackLabel && (
                 <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, marginTop: 6 }}>{trackLabel}</div>
               )}
+            </div>
+
+            {/* Seek bar */}
+            <div style={{ width: 'min(80%, 460px)', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontVariantNumeric: 'tabular-nums', minWidth: 36, textAlign: 'right' }}>{fmt(currentTime)}</span>
+              <div
+                onClick={(e) => {
+                  if (!duration) return;
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                  seekTo(ratio * duration);
+                }}
+                style={{ flex: 1, height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.18)', cursor: 'pointer', position: 'relative' }}
+              >
+                <div style={{
+                  position: 'absolute', left: 0, top: 0, bottom: 0, borderRadius: 3,
+                  width: `${duration ? Math.min(100, (currentTime / duration) * 100) : 0}%`,
+                  background: '#fff'
+                }} />
+              </div>
+              <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontVariantNumeric: 'tabular-nums', minWidth: 36 }}>{fmt(duration)}</span>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 28 }}>

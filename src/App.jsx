@@ -162,23 +162,6 @@ export default function App() {
         setTimeout(() => setToast(null), 2000);
     }, [theater.selectedFolderId, theater.createFolder, theater.addCourse, theater.updateCourseThumbnail, t]);
 
-    // Fetch the real YouTube title for the current track if it has none, so the
-    // music-album view shows song names instead of URLs.
-    useEffect(() => {
-        const c = theater.activeCourse;
-        if (!c || c.platform !== 'youtube' || c.title) return;
-        const api = getElectronAPI();
-        if (!api?.fetchYouTubeTitle) return;
-        let cancelled = false;
-        api.fetchYouTubeTitle(c.url).then((r) => {
-            if (!cancelled && r?.success && r.title) {
-                theater.renameCourse(theater.selectedFolderId, c.id, r.title);
-            }
-        }).catch(() => {});
-        return () => { cancelled = true; };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [theater.activeCourseId]);
-
     // Play the previous / next track in the current folder (wraps around).
     const playAdjacentCourse = useCallback((dir) => {
         const list = theater.activeCourses;
@@ -1112,10 +1095,15 @@ export default function App() {
                                             }}
                                             className="flex-1 min-h-0"
                                             musicMode={!!theater.selectedFolder?.musicMode}
-                                            cover={theater.selectedFolder?.cover || theater.activeCourse.thumbnail || null}
+                                            cover={theater.selectedFolder?.cover || null}
                                             title={theater.activeCourse.title || ''}
                                             trackLabel={`${theater.activeCourses.findIndex(c => c.id === theater.activeCourseId) + 1} / ${theater.activeCourses.length}`}
                                             onEnded={theater.selectedFolder?.musicMode ? () => playAdjacentCourse(1) : undefined}
+                                            onTitle={(ytTitle) => {
+                                                if (ytTitle && !theater.activeCourse?.title) {
+                                                    theater.renameCourse(theater.selectedFolderId, theater.activeCourseId, ytTitle);
+                                                }
+                                            }}
                                             onNext={() => playAdjacentCourse(1)}
                                             onPrev={() => playAdjacentCourse(-1)}
                                         />
@@ -1910,7 +1898,11 @@ export default function App() {
                         <button
                             onClick={() => {
                                 const c = theater.activeCourses.find(x => x.id === courseContextMenu.courseId);
-                                if (c?.thumbnail) theater.setFolderCover(theater.selectedFolderId, c.thumbnail);
+                                // Prefer a high-res cover; the music view falls back if maxres is missing.
+                                const cover = c?.thumbnail
+                                    ? c.thumbnail.replace('/mqdefault.jpg', '/maxresdefault.jpg')
+                                    : null;
+                                if (cover) theater.setFolderCover(theater.selectedFolderId, cover);
                                 setCourseContextMenu(null);
                             }}
                             style={{

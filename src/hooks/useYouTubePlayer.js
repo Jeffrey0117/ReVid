@@ -57,17 +57,33 @@ export const useYouTubePlayer = ({
   onVideoDetected,
   onVideoState,
   onError,
-  onEnded
+  onEnded,
+  onTitle
 }) => {
   const playerRef = useRef(null);
   const intervalRef = useRef(null);
   const endedFiredRef = useRef(false);
+  const titleReportedRef = useRef(false);
   const onEndedRef = useRef(onEnded);
   onEndedRef.current = onEnded;
+  const onTitleRef = useRef(onTitle);
+  onTitleRef.current = onTitle;
   const [status, setStatus] = useState('loading'); // loading | ready | error
   const [effectiveRate, setEffectiveRate] = useState(playbackRate);
   const [errorCode, setErrorCode] = useState(null);
   const [paused, setPaused] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  // Pull the real video title from the player itself (no network — avoids
+  // oEmbed/TLS issues) and report it once.
+  const reportTitle = (player) => {
+    if (titleReportedRef.current) return;
+    try {
+      const title = player.getVideoData?.()?.title;
+      if (title) { titleReportedRef.current = true; onTitleRef.current?.(title); }
+    } catch { /* not ready */ }
+  };
 
   // Clamp rate to YouTube's maximum
   const clampedRate = Math.min(playbackRate, YT_MAX_RATE);
@@ -78,6 +94,8 @@ export const useYouTubePlayer = ({
     if (!videoId || !containerId) return;
 
     let destroyed = false;
+    titleReportedRef.current = false;
+    endedFiredRef.current = false;
 
     const init = async () => {
       try {
@@ -110,15 +128,20 @@ export const useYouTubePlayer = ({
                 duration,
                 src: `https://www.youtube.com/watch?v=${videoId}`
               });
+              reportTitle(event.target);
 
               // Start state reporting interval
               intervalRef.current = setInterval(() => {
                 if (destroyed) return;
                 try {
-                  const currentTime = event.target.getCurrentTime() || 0;
+                  const t = event.target.getCurrentTime() || 0;
                   const dur = event.target.getDuration() || 0;
                   const state = event.target.getPlayerState();
                   const rate = event.target.getPlaybackRate() || 1;
+
+                  setCurrentTime(t);
+                  setDuration(dur);
+                  reportTitle(event.target); // title becomes available shortly after load
 
                   // YT.PlayerState: -1 unstarted, 0 ended, 1 playing, 2 paused, 3 buffering, 5 cued
                   const isPaused = state !== 1;
@@ -135,7 +158,7 @@ export const useYouTubePlayer = ({
                   }
 
                   onVideoState?.({
-                    currentTime,
+                    currentTime: t,
                     duration: dur,
                     paused: isPaused,
                     playbackRate: rate
@@ -233,6 +256,8 @@ export const useYouTubePlayer = ({
     isRateClamped,
     errorCode,
     paused,
+    currentTime,
+    duration,
     seekTo,
     play,
     pause,
