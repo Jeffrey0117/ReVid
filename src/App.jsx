@@ -1096,11 +1096,16 @@ export default function App() {
                                             className="flex-1 min-h-0"
                                             musicMode={!!theater.selectedFolder?.musicMode}
                                             cover={theater.selectedFolder?.cover || null}
-                                            title={theater.activeCourse.title || ''}
+                                            title={/^https?:\/\//i.test(theater.activeCourse.title || '') ? '' : (theater.activeCourse.title || '')}
                                             trackLabel={`${theater.activeCourses.findIndex(c => c.id === theater.activeCourseId) + 1} / ${theater.activeCourses.length}`}
                                             onEnded={theater.selectedFolder?.musicMode ? () => playAdjacentCourse(1) : undefined}
                                             onTitle={(ytTitle) => {
-                                                if (ytTitle && !theater.activeCourse?.title) {
+                                                const c = theater.activeCourse;
+                                                if (!ytTitle || !c) return;
+                                                // Courses default their title to the URL — replace that (or an
+                                                // empty title) with the real song name from the player.
+                                                const needsTitle = !c.title || c.title === c.url || /^https?:\/\//i.test(c.title);
+                                                if (needsTitle) {
                                                     theater.renameCourse(theater.selectedFolderId, theater.activeCourseId, ytTitle);
                                                 }
                                             }}
