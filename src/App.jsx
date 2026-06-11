@@ -162,6 +162,19 @@ export default function App() {
         setTimeout(() => setToast(null), 2000);
     }, [theater.selectedFolderId, theater.createFolder, theater.addCourse, theater.updateCourseThumbnail, t]);
 
+    // Where to start playback. Music mode always starts from the beginning;
+    // courses resume, but never at the very end (a finished track would
+    // otherwise start at its tail, instantly end, and skip to the next).
+    const getTheaterStartAt = useCallback(() => {
+        const c = theater.activeCourse;
+        if (!c) return 0;
+        if (theater.selectedFolder?.musicMode) return 0;
+        const p = c.progress;
+        if (!p || !p.lastPosition) return 0;
+        if (p.duration && p.lastPosition >= p.duration - 5) return 0;
+        return p.lastPosition;
+    }, [theater.activeCourse, theater.selectedFolder]);
+
     // Play the previous / next track in the current folder (wraps around).
     const playAdjacentCourse = useCallback((dir) => {
         const list = theater.activeCourses;
@@ -1084,7 +1097,7 @@ export default function App() {
                                         <YouTubePlayer
                                             url={theater.activeCourse.url}
                                             playbackRate={theaterSpeed}
-                                            startAt={theater.activeCourse.progress?.lastPosition || 0}
+                                            startAt={getTheaterStartAt()}
                                             onVideoDetected={(info) => {
                                                 theater.updateProgress(theater.selectedFolderId, theater.activeCourseId, {
                                                     duration: info.duration
@@ -1117,7 +1130,7 @@ export default function App() {
                                             url={theater.activeCourse.url}
                                             platform={theater.activeCourse.platform}
                                             playbackRate={theaterSpeed}
-                                            startAt={theater.activeCourse.progress?.lastPosition || 0}
+                                            startAt={getTheaterStartAt()}
                                             clickPath={theater.activeCourse.clickPath || []}
                                             onVideoDetected={(info) => {
                                                 console.log('[App] onVideoDetected:', {
