@@ -1,7 +1,14 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { extractYouTubeVideoId } from '../../utils/youtubeUrl';
 import { useYouTubePlayer } from '../../hooks/useYouTubePlayer';
 import { useI18n } from '../../i18n.jsx';
+
+const COVER_STEPS = ['maxresdefault', 'sddefault', 'hqdefault', 'mqdefault'];
+const iconBtn = {
+  width: 32, height: 32, borderRadius: 8, border: 'none', cursor: 'pointer',
+  background: 'rgba(255,255,255,0.12)', color: '#fff',
+  display: 'flex', alignItems: 'center', justifyContent: 'center'
+};
 
 const CONTAINER_ID = 'revid-yt-player';
 
@@ -32,8 +39,11 @@ export const YouTubePlayer = ({
   onTitle,
   onNext,
   onPrev,
+  onToggleMinimize,
+  onClose,
   className = '',
   musicMode = false,
+  minimized = false,
   cover = null,
   title = '',
   trackLabel = ''
@@ -68,6 +78,20 @@ export const YouTubePlayer = ({
     const sec = Math.floor(s % 60);
     return `${m}:${String(sec).padStart(2, '0')}`;
   };
+
+  // Resolve the cover once per video (step down only on real 404s) so the
+  // 1s state updates don't re-trigger maxres → flicker.
+  const [coverIdx, setCoverIdx] = useState(0);
+  useEffect(() => { setCoverIdx(0); }, [videoId, cover]);
+  const coverSrc = cover || (videoId ? `https://img.youtube.com/vi/${videoId}/${COVER_STEPS[coverIdx]}.jpg` : null);
+  const onCoverError = () => { if (!cover) setCoverIdx((i) => Math.min(i + 1, COVER_STEPS.length - 1)); };
+  const seekFromEvent = (e) => {
+    if (!duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    seekTo(ratio * duration);
+  };
+  const pct = duration ? Math.min(100, (currentTime / duration) * 100) : 0;
 
   // Invalid URL - no video ID found
   if (!videoId) {
@@ -121,36 +145,67 @@ export const YouTubePlayer = ({
           </div>
         )}
 
-        {/* Music-album overlay — one cover over the (still-playing) video,
-            current song title and prev / play-pause / next controls. */}
-        {musicMode && status !== 'error' && (
+        {/* Music-album overlay over the (still-playing) video. */}
+        {musicMode && status !== 'error' && (minimized ? (
+          /* ---- Minimized: flat wide bar (browse while it plays) ---- */
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 20, background: '#16161a',
+            display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px'
+          }}>
+            <div style={{ width: 78, height: 78, borderRadius: 8, overflow: 'hidden', flexShrink: 0, background: '#000' }}>
+              {coverSrc && <img src={coverSrc} onError={onCoverError} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+            </div>
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ color: '#fff', fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title || t('ytLoading')}</div>
+              <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>{trackLabel}</div>
+              <div onClick={seekFromEvent} style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.18)', cursor: 'pointer', position: 'relative' }}>
+                <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, background: '#fff', borderRadius: 2 }} />
+              </div>
+            </div>
+            <button onClick={onPrev} title="Prev" style={{ ...musicBtn, width: 30, height: 30 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" /></svg>
+            </button>
+            <button onClick={togglePlay} title="Play/Pause" style={{ ...musicBtn, width: 38, height: 38, background: '#fff', color: '#111' }}>
+              {paused
+                ? <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                : <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zm8 0h4v14h-4z" /></svg>}
+            </button>
+            <button onClick={onNext} title="Next" style={{ ...musicBtn, width: 30, height: 30 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zm-2.5 6L5 6v12z" /></svg>
+            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <button onClick={onToggleMinimize} title="Expand" style={{ ...iconBtn, width: 24, height: 24 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="m18 15-6-6-6 6" /></svg>
+              </button>
+              <button onClick={onClose} title="Close" style={{ ...iconBtn, width: 24, height: 24 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* ---- Full album ---- */
           <div style={{
             position: 'absolute', inset: 0, zIndex: 20,
             background: 'radial-gradient(circle at 50% 35%, #2a2a32 0%, #0a0a0c 70%)',
             display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center', gap: 22, padding: 24
           }}>
+            <div style={{ position: 'absolute', top: 14, right: 14, display: 'flex', gap: 8, zIndex: 2 }}>
+              <button onClick={onToggleMinimize} title="Minimize" style={iconBtn}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M5 12h14" /></svg>
+              </button>
+              <button onClick={onClose} title="Close" style={iconBtn}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+              </button>
+            </div>
+
             <div style={{
               width: 'min(46vh, 340px)', aspectRatio: '1 / 1',
               borderRadius: 16, overflow: 'hidden', background: '#1a1a1a',
               boxShadow: '0 16px 48px rgba(0,0,0,0.6)'
             }}>
-              {(cover || videoId) ? (
-                <img
-                  src={cover || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`}
-                  alt=""
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  onError={(e) => {
-                    // maxres isn't available for every video — step down to a
-                    // resolution that exists so the cover isn't broken/blurry.
-                    const steps = ['maxresdefault', 'sddefault', 'hqdefault', 'mqdefault'];
-                    const el = e.currentTarget;
-                    const cur = steps.findIndex((s) => el.src.includes(s));
-                    if (videoId && cur >= 0 && cur < steps.length - 1) {
-                      el.src = `https://img.youtube.com/vi/${videoId}/${steps[cur + 1]}.jpg`;
-                    }
-                  }}
-                />
+              {coverSrc ? (
+                <img src={coverSrc} onError={onCoverError} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               ) : (
                 <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="1.5">
@@ -171,23 +226,10 @@ export const YouTubePlayer = ({
               )}
             </div>
 
-            {/* Seek bar */}
             <div style={{ width: 'min(80%, 460px)', display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontVariantNumeric: 'tabular-nums', minWidth: 36, textAlign: 'right' }}>{fmt(currentTime)}</span>
-              <div
-                onClick={(e) => {
-                  if (!duration) return;
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                  seekTo(ratio * duration);
-                }}
-                style={{ flex: 1, height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.18)', cursor: 'pointer', position: 'relative' }}
-              >
-                <div style={{
-                  position: 'absolute', left: 0, top: 0, bottom: 0, borderRadius: 3,
-                  width: `${duration ? Math.min(100, (currentTime / duration) * 100) : 0}%`,
-                  background: '#fff'
-                }} />
+              <div onClick={seekFromEvent} style={{ flex: 1, height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.18)', cursor: 'pointer', position: 'relative' }}>
+                <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, borderRadius: 3, width: `${pct}%`, background: '#fff' }} />
               </div>
               <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontVariantNumeric: 'tabular-nums', minWidth: 36 }}>{fmt(duration)}</span>
             </div>
@@ -197,27 +239,27 @@ export const YouTubePlayer = ({
                 <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" /></svg>
               </button>
               <button onClick={togglePlay} title="Play/Pause" style={{ ...musicBtn, width: 64, height: 64, background: '#fff', color: '#111' }}>
-                {paused ? (
-                  <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
-                ) : (
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zm8 0h4v14h-4z" /></svg>
-                )}
+                {paused
+                  ? <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                  : <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zm8 0h4v14h-4z" /></svg>}
               </button>
               <button onClick={onNext} title="Next" style={musicBtn}>
                 <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zm-2.5 6L5 6v12z" /></svg>
               </button>
             </div>
           </div>
-        )}
+        ))}
       </div>
 
-      {/* Status bar */}
-      <StatusBar
-        status={status}
-        isRateClamped={isRateClamped}
-        playbackRate={playbackRate}
-        t={t}
-      />
+      {/* Status bar (hidden in music mode for a clean look) */}
+      {!musicMode && (
+        <StatusBar
+          status={status}
+          isRateClamped={isRateClamped}
+          playbackRate={playbackRate}
+          t={t}
+        />
+      )}
     </div>
   );
 };

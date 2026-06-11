@@ -99,6 +99,7 @@ export default function App() {
     const [theaterSidebarVisible, setTheaterSidebarVisible] = useState(true);
     const [showInfoPanel, setShowInfoPanel] = useState(false);
     const [dragOverGrid, setDragOverGrid] = useState(false);
+    const [musicMinimized, setMusicMinimized] = useState(false);
 
     // Auto-hide info panel when no content to show
     useEffect(() => {
@@ -195,6 +196,7 @@ export default function App() {
             });
         }
         theater.closeCourse();
+        setMusicMinimized(false);
     }, [theater.selectedFolderId, theater.activeCourseId, theater.updateProgress, theater.closeCourse]);
 
     // Import .revid / JSON backup
@@ -1062,7 +1064,7 @@ export default function App() {
                         {viewMode === 'theater' ? (
                             <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
                                 {/* Theater top bar: speed control + title */}
-                                {theater.activeCourse && (
+                                {theater.activeCourse && !theater.selectedFolder?.musicMode && (
                                     <div style={{
                                         flexShrink: 0, height: 40,
                                         display: 'flex', alignItems: 'center',
@@ -1092,7 +1094,7 @@ export default function App() {
                                     </div>
                                 )}
 
-                                {theater.activeCourse ? (
+                                {(theater.activeCourse && !theater.selectedFolder?.musicMode) ? (
                                     theater.activeCourse.platform === 'youtube' ? (
                                         <YouTubePlayer
                                             url={theater.activeCourse.url}
@@ -1470,6 +1472,47 @@ export default function App() {
                         ) : viewMode === 'viewer' && videoSrc ? (
                             <VideoViewer src={videoSrc} />
                         ) : null}
+
+                        {/* Floating music player — single persistent YT instance.
+                            Full: covers the content as an album view. Minimized:
+                            a small bottom-right bar so you can browse while it plays. */}
+                        {viewMode === 'theater' && theater.activeCourse && theater.selectedFolder?.musicMode && (
+                            <div style={musicMinimized ? {
+                                position: 'absolute', right: 16, bottom: 16, zIndex: 30,
+                                width: 380, height: 96, borderRadius: 14, overflow: 'hidden',
+                                boxShadow: '0 12px 40px rgba(0,0,0,0.55)',
+                                border: '1px solid rgba(255,255,255,0.08)'
+                            } : {
+                                position: 'absolute', inset: 0, zIndex: 30, background: '#0a0a0c'
+                            }}>
+                                <YouTubePlayer
+                                    url={theater.activeCourse.url}
+                                    playbackRate={theaterSpeed}
+                                    startAt={getTheaterStartAt()}
+                                    onVideoDetected={(info) => {
+                                        theater.updateProgress(theater.selectedFolderId, theater.activeCourseId, { duration: info.duration });
+                                    }}
+                                    onVideoState={(state) => { theaterVideoStateRef.current = state; }}
+                                    className="w-full h-full"
+                                    musicMode
+                                    minimized={musicMinimized}
+                                    onToggleMinimize={() => setMusicMinimized(m => !m)}
+                                    onClose={handleCloseCourse}
+                                    cover={theater.selectedFolder?.cover || null}
+                                    title={/^https?:\/\//i.test(theater.activeCourse.title || '') ? '' : (theater.activeCourse.title || '')}
+                                    trackLabel={`${theater.activeCourses.findIndex(c => c.id === theater.activeCourseId) + 1} / ${theater.activeCourses.length}`}
+                                    onEnded={() => playAdjacentCourse(1)}
+                                    onTitle={(ytTitle) => {
+                                        const c = theater.activeCourse;
+                                        if (!ytTitle || !c) return;
+                                        const needsTitle = !c.title || c.title === c.url || /^https?:\/\//i.test(c.title);
+                                        if (needsTitle) theater.renameCourse(theater.selectedFolderId, theater.activeCourseId, ytTitle);
+                                    }}
+                                    onNext={() => playAdjacentCourse(1)}
+                                    onPrev={() => playAdjacentCourse(-1)}
+                                />
+                            </div>
+                        )}
                     </main>
 
                     {/* Info Panel */}
@@ -1918,7 +1961,7 @@ export default function App() {
                                 const c = theater.activeCourses.find(x => x.id === courseContextMenu.courseId);
                                 // Prefer a high-res cover; the music view falls back if maxres is missing.
                                 const cover = c?.thumbnail
-                                    ? c.thumbnail.replace('/mqdefault.jpg', '/maxresdefault.jpg')
+                                    ? c.thumbnail.replace('/mqdefault.jpg', '/hqdefault.jpg')
                                     : null;
                                 if (cover) theater.setFolderCover(theater.selectedFolderId, cover);
                                 setCourseContextMenu(null);
