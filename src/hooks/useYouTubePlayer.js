@@ -86,7 +86,11 @@ export const useYouTubePlayer = ({
             start: Math.floor(startAt),
             rel: 0,
             modestbranding: 1,
-            playsinline: 1
+            playsinline: 1,
+            // Tie the embed to our real origin (http://localhost in packaged
+            // builds). Without a valid origin YouTube rejects playback (153).
+            origin: window.location.origin,
+            widget_referrer: window.location.origin
           },
           events: {
             onReady: (event) => {

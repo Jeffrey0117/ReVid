@@ -37,6 +37,58 @@ protocol.registerSchemesAsPrivileged([
 let mainWindow = null;
 let miniPlayerWindow = null;
 
+// Origin the renderer is served from. Dev uses the Vite server; packaged builds
+// serve dist/ over a loopback HTTP server (see startRendererServer) instead of
+// file://. A real http://localhost origin is required for the YouTube IFrame
+// API — from file:// the embed origin is "null" and YouTube errors (code 153).
+let rendererBaseUrl = null;
+
+const STATIC_MIME = {
+    '.html': 'text/html; charset=utf-8',
+    '.js': 'text/javascript; charset=utf-8',
+    '.mjs': 'text/javascript; charset=utf-8',
+    '.css': 'text/css; charset=utf-8',
+    '.json': 'application/json; charset=utf-8',
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif', '.svg': 'image/svg+xml', '.webp': 'image/webp',
+    '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2',
+    '.ttf': 'font/ttf', '.map': 'application/json'
+};
+
+// Serve the built renderer (dist/) from 127.0.0.1 on a FIXED port so the origin
+// — and therefore localStorage (last folder, pins, speed…) — stays stable across
+// launches. Falls back to the next few ports only if one is already taken.
+function startRendererServer() {
+    const http = require('http');
+    const root = path.join(__dirname, '../dist');
+    return new Promise((resolve, reject) => {
+        const server = http.createServer((req, res) => {
+            try {
+                const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
+                let filePath = path.normalize(path.join(root, urlPath === '/' ? 'index.html' : urlPath));
+                if (!filePath.startsWith(root)) { res.writeHead(403); res.end(); return; }
+                if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+                    filePath = path.join(root, 'index.html'); // SPA fallback
+                }
+                res.writeHead(200, { 'Content-Type': STATIC_MIME[path.extname(filePath).toLowerCase()] || 'application/octet-stream' });
+                fs.createReadStream(filePath).pipe(res);
+            } catch {
+                res.writeHead(500); res.end();
+            }
+        });
+        const tryListen = (port, attemptsLeft) => {
+            server.once('error', (err) => {
+                if (err.code === 'EADDRINUSE' && attemptsLeft > 0) tryListen(port + 1, attemptsLeft - 1);
+                else reject(err);
+            });
+            server.listen(port, '127.0.0.1', () => {
+                resolve(`http://localhost:${server.address().port}`);
+            });
+        };
+        tryListen(31847, 9);
+    });
+}
+
 function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1000,
@@ -57,11 +109,9 @@ function createWindow() {
     Menu.setApplicationMenu(null);
 
     const isDev = !app.isPackaged;
+    mainWindow.loadURL(rendererBaseUrl);
     if (isDev) {
-        mainWindow.loadURL('http://localhost:3001');
         mainWindow.webContents.openDevTools();
-    } else {
-        mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
     }
 }
 
@@ -520,8 +570,7 @@ function setupIpcHandlers() {
             return { success: true, alreadyOpen: true };
         }
 
-        const isDev = !app.isPackaged;
-        const baseUrl = isDev ? 'http://localhost:3001' : `file://${path.join(__dirname, '../dist/index.html')}`;
+        const baseUrl = rendererBaseUrl;
 
         miniPlayerWindow = new BrowserWindow({
             width: 400,
@@ -543,7 +592,7 @@ function setupIpcHandlers() {
             }
         });
 
-        miniPlayerWindow.loadURL(`${baseUrl}${isDev ? '' : ''}?mode=mini-player`);
+        miniPlayerWindow.loadURL(`${baseUrl}/?mode=mini-player`);
 
         miniPlayerWindow.webContents.once('did-finish-load', () => {
             if (miniPlayerWindow && !miniPlayerWindow.isDestroyed()) {
@@ -1282,7 +1331,21 @@ app.on('open-file', (event, filePath) => {
     }
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+    // Resolve the renderer origin: Vite in dev, a loopback static server when
+    // packaged (a real http origin so the YouTube IFrame API works — file://
+    // yields a "null" origin that YouTube rejects with error 153).
+    if (app.isPackaged) {
+        try {
+            rendererBaseUrl = await startRendererServer();
+        } catch (e) {
+            console.error('[renderer-server] failed, falling back to file://:', e?.message || e);
+            rendererBaseUrl = `file://${path.join(__dirname, '../dist/index.html')}`;
+        }
+    } else {
+        rendererBaseUrl = 'http://localhost:3001';
+    }
+
     // local-video:// protocol handler with range request support
     protocol.handle('local-video', (request) => {
         const url = new URL(request.url);
