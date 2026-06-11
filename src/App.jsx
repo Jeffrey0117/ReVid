@@ -176,6 +176,16 @@ export default function App() {
         return p.lastPosition;
     }, [theater.activeCourse, theater.selectedFolder]);
 
+    // Toggle the floating music mini-panel: shrink the whole window to just the
+    // player (always-on-top, bottom-right) and hide the rest of the UI.
+    const toggleMusicMini = useCallback(() => {
+        setMusicMinimized((prev) => {
+            const next = !prev;
+            getElectronAPI()?.setMusicMini?.(next);
+            return next;
+        });
+    }, []);
+
     // Play the previous / next track in the current folder (wraps around).
     const playAdjacentCourse = useCallback((dir) => {
         const list = theater.activeCourses;
@@ -196,8 +206,11 @@ export default function App() {
             });
         }
         theater.closeCourse();
-        setMusicMinimized(false);
-    }, [theater.selectedFolderId, theater.activeCourseId, theater.updateProgress, theater.closeCourse]);
+        if (musicMinimized) {
+            getElectronAPI()?.setMusicMini?.(false);
+            setMusicMinimized(false);
+        }
+    }, [theater.selectedFolderId, theater.activeCourseId, theater.updateProgress, theater.closeCourse, musicMinimized]);
 
     // Import .revid / JSON backup
     const handleImport = useCallback(async () => {
@@ -458,10 +471,10 @@ export default function App() {
                 overflow: 'hidden', userSelect: 'none'
             }}
         >
-            {/* Toolbar */}
+            {/* Toolbar (hidden when the window is shrunk to the music mini-panel) */}
             <div style={{
                 flexShrink: 0, height: 52,
-                display: 'flex', alignItems: 'center',
+                display: musicMinimized ? 'none' : 'flex', alignItems: 'center',
                 justifyContent: 'space-between',
                 padding: '0 16px',
                 background: theme.bgTertiary,
@@ -1043,7 +1056,7 @@ export default function App() {
                     )}
 
                     {/* Theater Sidebar */}
-                    {viewMode === 'theater' && (
+                    {viewMode === 'theater' && !musicMinimized && (
                         <TheaterSidebar
                             folders={theater.folders}
                             selectedFolderId={theater.selectedFolderId}
@@ -1477,14 +1490,7 @@ export default function App() {
                             Full: covers the content as an album view. Minimized:
                             a small bottom-right bar so you can browse while it plays. */}
                         {viewMode === 'theater' && theater.activeCourse && theater.selectedFolder?.musicMode && (
-                            <div style={musicMinimized ? {
-                                position: 'absolute', right: 16, bottom: 16, zIndex: 30,
-                                width: 380, height: 96, borderRadius: 14, overflow: 'hidden',
-                                boxShadow: '0 12px 40px rgba(0,0,0,0.55)',
-                                border: '1px solid rgba(255,255,255,0.08)'
-                            } : {
-                                position: 'absolute', inset: 0, zIndex: 30, background: '#0a0a0c'
-                            }}>
+                            <div style={{ position: 'absolute', inset: 0, zIndex: 30, background: '#0a0a0c' }}>
                                 <YouTubePlayer
                                     url={theater.activeCourse.url}
                                     playbackRate={theaterSpeed}
@@ -1496,7 +1502,7 @@ export default function App() {
                                     className="w-full h-full"
                                     musicMode
                                     minimized={musicMinimized}
-                                    onToggleMinimize={() => setMusicMinimized(m => !m)}
+                                    onToggleMinimize={toggleMusicMini}
                                     onClose={handleCloseCourse}
                                     cover={theater.selectedFolder?.cover || null}
                                     title={/^https?:\/\//i.test(theater.activeCourse.title || '') ? '' : (theater.activeCourse.title || '')}
@@ -1517,7 +1523,7 @@ export default function App() {
 
                     {/* Info Panel */}
                     <InfoPanel
-                        isVisible={showInfoPanel}
+                        isVisible={showInfoPanel && !musicMinimized}
                         mode={viewMode === 'theater' ? 'theater' : 'local'}
                         metadata={
                             viewMode === 'theater' && theater.activeCourse

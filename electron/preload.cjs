@@ -317,5 +317,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Fetch a YouTube video's real title (music-album song names).
     fetchYouTubeTitle: (url) => ipcRenderer.invoke('fetch-youtube-title', url),
 
+    // Shrink the whole window to a floating music mini-panel (or restore it).
+    setMusicMini: (enter) => ipcRenderer.invoke('set-music-mini', enter),
+
     isElectron: true
 });

@@ -100,11 +100,16 @@ const loadWindowState = () => {
     try { return JSON.parse(fs.readFileSync(getWindowStatePath(), 'utf-8')); } catch { return null; }
 };
 
+// Set when the window is shrunk to the floating music mini-panel, so we can
+// restore the real size and never persist the tiny bounds.
+let savedMusicBounds = null;
+
 const saveWindowState = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     try {
-        const b = mainWindow.getNormalBounds();
-        fs.writeFileSync(getWindowStatePath(), JSON.stringify({ ...b, isMaximized: mainWindow.isMaximized() }));
+        const b = savedMusicBounds || mainWindow.getNormalBounds();
+        const isMaximized = savedMusicBounds ? false : mainWindow.isMaximized();
+        fs.writeFileSync(getWindowStatePath(), JSON.stringify({ ...b, isMaximized }));
     } catch {}
 };
 
@@ -722,6 +727,32 @@ function setupIpcHandlers() {
         if (miniPlayerWindow && !miniPlayerWindow.isDestroyed()) {
             miniPlayerWindow.webContents.send('mini-player-update', data);
         }
+    });
+
+    // --- Music mini-panel: shrink the whole window to a floating player ---
+    ipcMain.handle('set-music-mini', (_event, enter) => {
+        if (!mainWindow || mainWindow.isDestroyed()) return { success: false };
+        const MINI_W = 440, MINI_H = 168;
+        if (enter) {
+            if (!savedMusicBounds) savedMusicBounds = mainWindow.getBounds();
+            if (mainWindow.isMaximized()) mainWindow.unmaximize();
+            mainWindow.setMinimumSize(300, 120);
+            mainWindow.setAlwaysOnTop(true);
+            mainWindow.setSize(MINI_W, MINI_H);
+            try {
+                const { screen } = require('electron');
+                const wa = screen.getPrimaryDisplay().workArea;
+                mainWindow.setPosition(wa.x + wa.width - MINI_W - 20, wa.y + wa.height - MINI_H - 20);
+            } catch {}
+        } else {
+            mainWindow.setAlwaysOnTop(false);
+            mainWindow.setMinimumSize(640, 480);
+            if (savedMusicBounds) {
+                mainWindow.setBounds(savedMusicBounds);
+                savedMusicBounds = null;
+            }
+        }
+        return { success: true };
     });
 
     // --- Always on Top ---
