@@ -92,10 +92,31 @@ function startRendererServer() {
     });
 }
 
+// Remember the window size/position across launches. A bigger viewer area also
+// means video is scaled less, so it looks sharper in windowed mode.
+const getWindowStatePath = () => path.join(app.getPath('userData'), 'window-state.json');
+
+const loadWindowState = () => {
+    try { return JSON.parse(fs.readFileSync(getWindowStatePath(), 'utf-8')); } catch { return null; }
+};
+
+const saveWindowState = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    try {
+        const b = mainWindow.getNormalBounds();
+        fs.writeFileSync(getWindowStatePath(), JSON.stringify({ ...b, isMaximized: mainWindow.isMaximized() }));
+    } catch {}
+};
+
 function createWindow() {
+    const saved = loadWindowState();
     mainWindow = new BrowserWindow({
-        width: 1000,
-        height: 700,
+        width: saved?.width || 1280,
+        height: saved?.height || 820,
+        x: saved?.x,
+        y: saved?.y,
+        minWidth: 640,
+        minHeight: 480,
         title: 'ReVid',
         backgroundColor: '#000000',
         icon: path.join(__dirname, '../revid.png'),
@@ -109,6 +130,8 @@ function createWindow() {
         }
     });
 
+    if (saved?.isMaximized) mainWindow.maximize();
+
     Menu.setApplicationMenu(null);
 
     const isDev = !app.isPackaged;
@@ -116,6 +139,8 @@ function createWindow() {
     if (isDev) {
         mainWindow.webContents.openDevTools();
     }
+
+    mainWindow.on('close', saveWindowState);
 }
 
 // Get path for theater data file
