@@ -1,6 +1,6 @@
 {
   "name": "revid",
-  "version": "0.4.0",
+  "version": "0.5.1",
   "description": "ReVid - Video viewer and spatial crop tool",
   "author": "Jeffrey0117",
   "main": "electron/main.cjs",
@@ -70,8 +70,7 @@
         ],
         "name": "Video",
         "description": "Video File",
-        "role": "Viewer",
-        "icon": "revid.png"
+        "role": "Viewer"
       }
     ],
     "win": {
@@ -81,7 +80,8 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "perMachine": false
+      "perMachine": false,
+      "include": "build/installer.nsh"
     }
   }
 }
