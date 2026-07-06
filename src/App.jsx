@@ -20,6 +20,7 @@ import { useI18n } from './i18n.jsx';
 import { useTheme } from './theme.jsx';
 import { useWebTheater } from './hooks/useWebTheater';
 import { toLocalVideoUrl } from './utils/localVideoUrl';
+import { TheaterSearchBox } from './components/TheaterSearchBox';
 import { usePlaybackSpeed } from './hooks/usePlaybackSpeed';
 import { TheaterSidebar } from './features/theater/TheaterSidebar';
 import { CourseWebview } from './features/theater/CourseWebview';
@@ -1360,31 +1361,7 @@ export default function App() {
                                                 {theaterVisibleCourses.length}{theaterSearch.trim() ? ` / ${theater.activeCourses.length}` : ''} {t('items') || '個項目'}
                                             </span>
                                             {/* Search box — filters the current folder by title / url */}
-                                            <div style={{ position: 'relative', width: 200 }}>
-                                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'} strokeWidth="2" strokeLinecap="round" style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
-                                                <input
-                                                    type="text"
-                                                    value={theaterSearch}
-                                                    onChange={(e) => setTheaterSearch(e.target.value)}
-                                                    placeholder={t('searchCourses') || '搜尋…'}
-                                                    style={{
-                                                        width: '100%', padding: '5px 24px 5px 26px', fontSize: 12,
-                                                        borderRadius: 6, outline: 'none',
-                                                        background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
-                                                        border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
-                                                        color: isDark ? '#fff' : '#1f2937'
-                                                    }}
-                                                />
-                                                {theaterSearch && (
-                                                    <button
-                                                        onClick={() => setTheaterSearch('')}
-                                                        title={t('clear') || 'Clear'}
-                                                        style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', padding: 2, border: 'none', background: 'transparent', cursor: 'pointer', color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)', display: 'flex' }}
-                                                    >
-                                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12" /></svg>
-                                                    </button>
-                                                )}
-                                            </div>
+                                            <TheaterSearchBox initialValue={theaterSearch} onSearch={setTheaterSearch} />
                                             <div style={{ flex: 1 }} />
                                             {/* Grid / List view toggle (list = sortable / reorderable) */}
                                             <button
@@ -1978,28 +1955,7 @@ export default function App() {
                         </div>
                         {/* Search box */}
                         <div style={{ padding: '10px 16px', borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}` }}>
-                            <div style={{ position: 'relative' }}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'} strokeWidth="2" strokeLinecap="round" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
-                                <input
-                                    type="text"
-                                    value={theaterSearch}
-                                    onChange={(e) => setTheaterSearch(e.target.value)}
-                                    placeholder={t('searchCourses') || '搜尋…'}
-                                    autoFocus
-                                    style={{
-                                        width: '100%', padding: '8px 28px 8px 30px', fontSize: 13,
-                                        borderRadius: 8, outline: 'none',
-                                        background: isDark ? 'rgba(255,255,255,0.06)' : '#f3f4f6',
-                                        border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
-                                        color: isDark ? '#fff' : '#1f2937'
-                                    }}
-                                />
-                                {theaterSearch && (
-                                    <button onClick={() => setTheaterSearch('')} style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', padding: 2, border: 'none', background: 'transparent', cursor: 'pointer', color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)', display: 'flex' }}>
-                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12" /></svg>
-                                    </button>
-                                )}
-                            </div>
+                            <TheaterSearchBox initialValue={theaterSearch} onSearch={setTheaterSearch} size="md" autoFocus />
                         </div>
                         {/* Course List */}
                         <div style={{ flex: 1, overflowY: 'auto' }}>
