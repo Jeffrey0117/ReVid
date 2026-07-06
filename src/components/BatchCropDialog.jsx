@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { getVideoMetadata, formatDuration } from '../utils/videoMetadata';
+import { toLocalVideoUrl } from '../utils/localVideoUrl';
 
 const getElectronAPI = () => window.electronAPI || null;
 
@@ -87,7 +88,7 @@ export const BatchCropDialog = ({ files, currentVideo, onClose }) => {
       setProgressPct(0);
 
       try {
-        const videoUrl = `local-video:///${file.replace(/\\/g, '/')}`;
+        const videoUrl = toLocalVideoUrl(file);
         const meta = await getVideoMetadata(videoUrl);
 
         if (!meta || !meta.width || !meta.height) {

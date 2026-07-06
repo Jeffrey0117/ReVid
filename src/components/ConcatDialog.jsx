@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { formatFileSize, formatDuration, getVideoMetadata } from '../utils/videoMetadata';
+import { toLocalVideoUrl } from '../utils/localVideoUrl';
 
 const getElectronAPI = () => window.electronAPI || null;
 
@@ -27,7 +28,7 @@ export const ConcatDialog = ({ files, onClose }) => {
       const durs = {};
       for (const file of files) {
         if (cancelled) break;
-        const videoUrl = `local-video:///${file.replace(/\\/g, '/')}`;
+        const videoUrl = toLocalVideoUrl(file);
         const meta = await getVideoMetadata(videoUrl);
         if (meta) durs[file] = meta.duration;
       }

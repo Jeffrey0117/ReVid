@@ -1013,6 +1013,19 @@ export const CourseWebview = ({
     `).catch(() => {});
   }, []);
 
+  // Restart from the beginning and keep playing (for the "0" shortcut).
+  const focusRestart = useCallback(() => {
+    const webview = webviewRef.current;
+    if (!webview) return;
+    webview.executeJavaScript(`
+      (function() {
+        ${findVideoScript}
+        var v = findVideo();
+        if (v) { v.currentTime = 0; var p = v.play(); if (p && p.catch) p.catch(function(){}); }
+      })();
+    `).catch(() => {});
+  }, []);
+
   const focusSkip = useCallback((delta) => {
     const webview = webviewRef.current;
     if (!webview) return;
@@ -1030,17 +1043,79 @@ export const CourseWebview = ({
     const webview = webviewRef.current;
     if (!webview) return;
 
-    // Simple approach: use native volume for 0-1, show warning for boost
-    // Web Audio API has too many issues with webview context
+    // 0-1 → native volume. >1 → route the element through a Web Audio
+    // GainNode so we can amplify past 100%. createMediaElementSource can only
+    // be called once per element, so the graph is cached on window and reused.
     webview.executeJavaScript(`
       (function() {
         ${findVideoScript}
         var v = findVideo();
         if (!v) return;
-        v.volume = Math.min(${vol}, 1);
+        var vol = ${vol};
+        try {
+          if (vol <= 1) {
+            // Within native range: flatten any gain boost and use v.volume.
+            if (window.__revidGain) window.__revidGain.gain.value = 1;
+            v.volume = Math.max(0, vol);
+            return;
+          }
+          // Boost: keep the element at full native volume, scale with gain.
+          v.volume = 1;
+          var AC = window.AudioContext || window.webkitAudioContext;
+          if (!AC) { v.volume = 1; return; } // no Web Audio — cap at 100%
+          if (!window.__revidAudioCtx) window.__revidAudioCtx = new AC();
+          var ctx = window.__revidAudioCtx;
+          if (ctx.state === 'suspended') ctx.resume();
+          if (window.__revidSourceEl !== v) {
+            // New (or first) video element — build the graph once.
+            window.__revidSource = ctx.createMediaElementSource(v);
+            window.__revidGain = ctx.createGain();
+            window.__revidSource.connect(window.__revidGain);
+            window.__revidGain.connect(ctx.destination);
+            window.__revidSourceEl = v;
+          }
+          if (window.__revidGain) window.__revidGain.gain.value = vol;
+        } catch (e) {
+          // CORS-tainted media silences the graph — fall back to native 100%.
+          try { v.volume = 1; } catch (e2) {}
+        }
       })();
     `).catch(() => {});
   }, []);
+
+  // Live volume for the keyboard handler (avoids re-binding on every change).
+  const volRef = useRef(volumeLevel); volRef.current = volumeLevel;
+
+  // Global playback shortcuts while the host (not the webview) has focus:
+  //   ←/→ seek ∓5s · Space/K play-pause · ↑/↓ volume · 0 restart. Keystrokes
+  //   typed inside the embedded page go to the webview, not here, so no clash.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const el = e.target;
+      const tag = el?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || el?.isContentEditable) return;
+      switch (e.key) {
+        case '0':
+          e.preventDefault(); focusRestart(); break;
+        case 'ArrowRight':
+          e.preventDefault(); focusSkip(5); break;
+        case 'ArrowLeft':
+          e.preventDefault(); focusSkip(-5); break;
+        case 'ArrowUp':
+          e.preventDefault(); focusSetVolume(Math.min(2, volRef.current + 0.1)); break;
+        case 'ArrowDown':
+          e.preventDefault(); focusSetVolume(Math.max(0, volRef.current - 0.1)); break;
+        case ' ':
+        case 'k':
+        case 'K':
+          e.preventDefault(); focusTogglePlay(); break;
+        default: break;
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [focusRestart, focusSkip, focusSetVolume, focusTogglePlay]);
 
   const partition = `persist:theater-${platform}`;
 
@@ -1505,15 +1580,15 @@ export const CourseWebview = ({
               <input
                 type="range"
                 min="0"
-                max="1"
+                max="2"
                 step="0.05"
                 value={volumeLevel}
                 onChange={(e) => focusSetVolume(parseFloat(e.target.value))}
                 style={{
-                  width: 70, height: 4, cursor: 'pointer',
-                  accentColor: theme.accent,
+                  width: 80, height: 4, cursor: 'pointer',
+                  accentColor: volumeLevel > 1 ? '#f59e0b' : theme.accent,
                 }}
-                title={`${Math.round(volumeLevel * 100)}%`}
+                title={`${Math.round(volumeLevel * 100)}%${volumeLevel > 1 ? ' (boost)' : ''}`}
               />
             </div>
 

@@ -58,7 +58,8 @@ export const useYouTubePlayer = ({
   onVideoState,
   onError,
   onEnded,
-  onTitle
+  onTitle,
+  loop = false
 }) => {
   const playerRef = useRef(null);
   const intervalRef = useRef(null);
@@ -66,6 +67,10 @@ export const useYouTubePlayer = ({
   const titleReportedRef = useRef(false);
   const onEndedRef = useRef(onEnded);
   onEndedRef.current = onEnded;
+  // Single-track repeat. Kept in a ref so toggling it never re-creates the
+  // player (the polling loop reads the latest value).
+  const loopRef = useRef(loop);
+  loopRef.current = loop;
   const onTitleRef = useRef(onTitle);
   onTitleRef.current = onTitle;
   const [status, setStatus] = useState('loading'); // loading | ready | error
@@ -74,6 +79,7 @@ export const useYouTubePlayer = ({
   const [paused, setPaused] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [volume, setVolumeState] = useState(100); // 0-100 (YouTube's scale)
 
   // Pull the real video title from the player itself (no network — avoids
   // oEmbed/TLS issues) and report it once.
@@ -124,6 +130,12 @@ export const useYouTubePlayer = ({
               event.target.setPlaybackRate(clampedRate);
               setEffectiveRate(clampedRate);
 
+              // Surface the player's real starting volume so the slider matches.
+              try {
+                const v = event.target.getVolume?.();
+                if (typeof v === 'number') setVolumeState(event.target.isMuted?.() ? 0 : v);
+              } catch { /* not ready */ }
+
               onVideoDetected?.({
                 duration,
                 src: `https://www.youtube.com/watch?v=${videoId}`
@@ -147,9 +159,13 @@ export const useYouTubePlayer = ({
                   const isPaused = state !== 1;
                   setPaused(isPaused);
 
-                  // Fire onEnded once when the track finishes (for auto-advance).
+                  // Track finished. With single-track repeat on, restart it in
+                  // place and swallow the end event so it never auto-advances.
                   if (state === 0) {
-                    if (!endedFiredRef.current) {
+                    if (loopRef.current) {
+                      try { event.target.seekTo(0, true); event.target.playVideo(); } catch { /* not ready */ }
+                      endedFiredRef.current = false;
+                    } else if (!endedFiredRef.current) {
                       endedFiredRef.current = true;
                       onEndedRef.current?.();
                     }
@@ -251,6 +267,19 @@ export const useYouTubePlayer = ({
     } catch { /* not ready */ }
   }, []);
 
+  // --- Volume (0-100). YouTube's hard ceiling is 100% — there is no boost
+  //     because the embed lives in a cross-origin iframe we can't tap into. ---
+  const setVolume = useCallback((vol) => {
+    const clamped = Math.max(0, Math.min(100, Math.round(vol)));
+    setVolumeState(clamped);
+    const player = playerRef.current;
+    try {
+      player?.setVolume?.(clamped);
+      if (clamped === 0) player?.mute?.();
+      else player?.unMute?.();
+    } catch { /* not ready */ }
+  }, []);
+
   return {
     status,
     effectiveRate,
@@ -259,6 +288,8 @@ export const useYouTubePlayer = ({
     paused,
     currentTime,
     duration,
+    volume,
+    setVolume,
     seekTo,
     play,
     pause,

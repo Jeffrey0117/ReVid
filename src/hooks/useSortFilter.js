@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { getCachedMetadata } from '../utils/videoMetadata';
+import { toLocalVideoUrl } from '../utils/localVideoUrl';
 
 const getElectronAPI = () => window.electronAPI || null;
 
@@ -40,21 +41,37 @@ export const useSortFilter = (files) => {
     localStorage.setItem(FILTER_EXT_KEY, filterExt);
   }, [filterExt]);
 
+  // Stats are only needed for size/date sorting, so don't stat a whole
+  // folder unless (until) one of those sorts is active.
+  const statsFilesRef = useRef(null);
   useEffect(() => {
     if (files.length === 0) {
+      statsFilesRef.current = null;
       setFileStats({});
       return;
     }
+    if (sortBy !== 'size' && sortBy !== 'date') return;
+    if (statsFilesRef.current === files) return;
+    statsFilesRef.current = files;
 
     const api = getElectronAPI();
-    if (!api?.getFileStat) return;
+    let cancelled = false;
 
-    const stats = {};
-    for (const file of files) {
-      stats[file] = api.getFileStat(file);
+    if (api?.getFileStats) {
+      // Batched async IPC: one round-trip, nothing blocks the render
+      api.getFileStats(files).then((res) => {
+        if (!cancelled && res?.success && res.stats) setFileStats(res.stats);
+      }).catch(() => {});
+    } else if (api?.getFileStat) {
+      const stats = {};
+      for (const file of files) {
+        stats[file] = api.getFileStat(file);
+      }
+      setFileStats(stats);
     }
-    setFileStats(stats);
-  }, [files]);
+
+    return () => { cancelled = true; };
+  }, [files, sortBy]);
 
   // Available extensions from current files
   const availableExtensions = useMemo(() => {
@@ -110,8 +127,8 @@ export const useSortFilter = (files) => {
         }
 
         case 'duration': {
-          const urlA = `local-video:///${a.replace(/\\/g, '/')}`;
-          const urlB = `local-video:///${b.replace(/\\/g, '/')}`;
+          const urlA = toLocalVideoUrl(a);
+          const urlB = toLocalVideoUrl(b);
           const metaA = getCachedMetadata(urlA);
           const metaB = getCachedMetadata(urlB);
           const durA = metaA?.duration || 0;
@@ -129,13 +146,13 @@ export const useSortFilter = (files) => {
 
   // Index mapping: original files index <-> display index
   const indexMap = useMemo(() => {
+    const originalIndexByFile = new Map(files.map((f, i) => [f, i]));
     const originalToDisplay = new Map();
     const displayToOriginal = new Map();
 
     for (let di = 0; di < displayFiles.length; di++) {
-      const file = displayFiles[di];
-      const oi = files.indexOf(file);
-      if (oi >= 0) {
+      const oi = originalIndexByFile.get(displayFiles[di]);
+      if (oi !== undefined) {
         originalToDisplay.set(oi, di);
         displayToOriginal.set(di, oi);
       }

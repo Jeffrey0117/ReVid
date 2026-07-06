@@ -19,6 +19,7 @@ import { ConcatDialog } from './components/ConcatDialog';
 import { useI18n } from './i18n.jsx';
 import { useTheme } from './theme.jsx';
 import { useWebTheater } from './hooks/useWebTheater';
+import { toLocalVideoUrl } from './utils/localVideoUrl';
 import { usePlaybackSpeed } from './hooks/usePlaybackSpeed';
 import { TheaterSidebar } from './features/theater/TheaterSidebar';
 import { CourseWebview } from './features/theater/CourseWebview';
@@ -102,6 +103,27 @@ export default function App() {
     const [musicMinimized, setMusicMinimized] = useState(false);
     const [theaterView, setTheaterView] = useState(() => localStorage.getItem('revid-theater-view') || 'grid');
     const [dragCourseId, setDragCourseId] = useState(null);
+    // Repeat mode for theater/music playback: off → all (wrap playlist) → one (single track).
+    const [loopMode, setLoopMode] = useState(() => localStorage.getItem('revid-loop-mode') || 'all');
+    // Text filter over the current folder's courses (by title / url).
+    const [theaterSearch, setTheaterSearch] = useState('');
+
+    const cycleLoop = useCallback(() => {
+        setLoopMode((prev) => {
+            const next = prev === 'off' ? 'all' : prev === 'all' ? 'one' : 'off';
+            localStorage.setItem('revid-loop-mode', next);
+            return next;
+        });
+    }, []);
+
+    // Courses in the selected folder that match the search box (case-insensitive).
+    const theaterVisibleCourses = useMemo(() => {
+        const q = theaterSearch.trim().toLowerCase();
+        if (!q) return theater.activeCourses;
+        return theater.activeCourses.filter((c) =>
+            (c.title || '').toLowerCase().includes(q) || (c.url || '').toLowerCase().includes(q)
+        );
+    }, [theater.activeCourses, theaterSearch]);
 
     // Auto-hide info panel when no content to show
     useEffect(() => {
@@ -165,6 +187,26 @@ export default function App() {
         setTimeout(() => setToast(null), 2000);
     }, [theater.selectedFolderId, theater.createFolder, theater.addCourse, theater.updateCourseThumbnail, t]);
 
+    // Theater library failed to load from disk — saves are disabled for this
+    // session so the on-disk data isn't overwritten; tell the user.
+    useEffect(() => {
+        if (theater.loadError) {
+            setToast(t('theaterLoadError'));
+            const id = setTimeout(() => setToast(null), 8000);
+            return () => clearTimeout(id);
+        }
+    }, [theater.loadError, t]);
+
+    // Library was restored from the .bak copy (main file was unreadable) —
+    // the most recent change may be missing, so let the user know.
+    useEffect(() => {
+        if (theater.loadRecovered) {
+            setToast(t('theaterLoadRecovered'));
+            const id = setTimeout(() => setToast(null), 8000);
+            return () => clearTimeout(id);
+        }
+    }, [theater.loadRecovered, t]);
+
     // Where to start playback. Music mode always starts from the beginning;
     // courses resume, but never at the very end (a finished track would
     // otherwise start at its tail, instantly end, and skip to the next).
@@ -177,6 +219,15 @@ export default function App() {
         if (p.duration && p.lastPosition >= p.duration - 5) return 0;
         return p.lastPosition;
     }, [theater.activeCourse, theater.selectedFolder]);
+
+    // Captured once per course open. Progress ticks update activeCourse every
+    // few seconds; recomputing startAt each render would feed the players an
+    // ever-changing value and re-trigger their seek effects mid-playback.
+    const theaterStartAt = useMemo(
+        () => getTheaterStartAt(),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [theater.activeCourseId]
+    );
 
     // Toggle a folder's music mode. Turning it on starts the album right away
     // (plays the first track) so the button always does something visible;
@@ -196,6 +247,27 @@ export default function App() {
         }
     }, [theater, t]);
 
+    // Self-heal: whenever we are NOT in the minimized panel, make sure the OS
+    // window has actually been restored to a normal size. Guards against the
+    // window getting stuck at the tiny mini size while the UI shows the full
+    // layout (e.g. after closing the course or leaving music mode). The main
+    // process no-ops this when the window is already normal, so it's cheap.
+    useEffect(() => {
+        if (!musicMinimized) {
+            getElectronAPI()?.setMusicMini?.(false);
+        }
+    }, [musicMinimized]);
+
+    // If music playback is no longer active (course closed, music mode turned
+    // off, folder/view switched) but we're still flagged as minimized, drop the
+    // minimized state — the effect above then restores the window.
+    useEffect(() => {
+        const musicActive = viewMode === 'theater' && theater.activeCourse && theater.selectedFolder?.musicMode;
+        if (!musicActive && musicMinimized) {
+            setMusicMinimized(false);
+        }
+    }, [viewMode, theater.activeCourse, theater.selectedFolder?.musicMode, musicMinimized]);
+
     // Toggle the floating music mini-panel: shrink the whole window to just the
     // player (always-on-top, bottom-right) and hide the rest of the UI.
     const toggleMusicMini = useCallback(() => {
@@ -206,15 +278,81 @@ export default function App() {
         });
     }, []);
 
+    // Live snapshot of the active theater selection. The player callbacks
+    // below read through this ref so their identities stay stable — the
+    // players' effects (webview listeners, injected detector scripts) depend
+    // on those identities and must not re-run on every App render.
+    const theaterRefs = useRef({ folderId: null, courseId: null, course: null, courses: [] });
+    useEffect(() => {
+        theaterRefs.current = {
+            folderId: theater.selectedFolderId,
+            courseId: theater.activeCourseId,
+            course: theater.activeCourse,
+            courses: theater.activeCourses,
+        };
+    }, [theater.selectedFolderId, theater.activeCourseId, theater.activeCourse, theater.activeCourses]);
+
     // Play the previous / next track in the current folder (wraps around).
     const playAdjacentCourse = useCallback((dir) => {
-        const list = theater.activeCourses;
-        if (!list || !list.length) return;
-        const idx = list.findIndex((c) => c.id === theater.activeCourseId);
+        const { courses, courseId } = theaterRefs.current;
+        if (!courses || !courses.length) return;
+        const idx = courses.findIndex((c) => c.id === courseId);
         if (idx < 0) return;
-        const nextIdx = (idx + dir + list.length) % list.length;
-        theater.openCourse(list[nextIdx].id);
-    }, [theater.activeCourses, theater.activeCourseId, theater.openCourse]);
+        const nextIdx = (idx + dir + courses.length) % courses.length;
+        theater.openCourse(courses[nextIdx].id);
+    }, [theater.openCourse]);
+
+    const playNextCourse = useCallback(() => playAdjacentCourse(1), [playAdjacentCourse]);
+    const playPrevCourse = useCallback(() => playAdjacentCourse(-1), [playAdjacentCourse]);
+
+    // What happens when a track finishes in music mode. 'one' is handled inside
+    // the player (it replays without firing this), so here we only handle
+    // 'all' (wrap to the next track) and 'off' (advance, but stop after the last).
+    const handleMusicEnded = useCallback(() => {
+        if (loopMode === 'all') { playAdjacentCourse(1); return; }
+        const { courses, courseId } = theaterRefs.current;
+        const idx = courses.findIndex((c) => c.id === courseId);
+        if (idx >= 0 && idx < courses.length - 1) theater.openCourse(courses[idx + 1].id);
+    }, [loopMode, playAdjacentCourse, theater.openCourse]);
+
+    const handleTheaterVideoState = useCallback((state) => {
+        theaterVideoStateRef.current = state;
+    }, []);
+
+    // YouTube player reported the video's duration.
+    const handleTheaterDurationDetected = useCallback((info) => {
+        const { folderId, courseId } = theaterRefs.current;
+        if (!folderId || !courseId) return;
+        theater.updateProgress(folderId, courseId, { duration: info.duration });
+    }, [theater.updateProgress]);
+
+    // Webview detected the actual video page: record duration, and remember
+    // the URL / click path so next open lands directly on the video.
+    const handleWebviewVideoDetected = useCallback((info) => {
+        const { folderId, courseId, course } = theaterRefs.current;
+        if (!folderId || !courseId || !course) return;
+        theater.updateProgress(folderId, courseId, { duration: info.duration });
+        const urlChanged = info.pageUrl && info.pageUrl !== course.url;
+        const hasNewClickPath = info.clickPath && info.clickPath.length > 0;
+        if (urlChanged || hasNewClickPath) {
+            theater.updateCourseUrl(folderId, courseId, info.pageUrl || course.url, info.clickPath || null);
+        }
+    }, [theater.updateProgress, theater.updateCourseUrl]);
+
+    // Courses default their title to the URL — replace that (or an empty
+    // title) with the real name reported by the player.
+    const handleTheaterTitle = useCallback((ytTitle) => {
+        const { folderId, courseId, course } = theaterRefs.current;
+        if (!ytTitle || !course) return;
+        const needsTitle = !course.title || course.title === course.url || /^https?:\/\//i.test(course.title);
+        if (needsTitle) theater.renameCourse(folderId, courseId, ytTitle);
+    }, [theater.renameCourse]);
+
+    const handleThumbnailCaptured = useCallback((thumbnail) => {
+        const { folderId, courseId, course } = theaterRefs.current;
+        if (!course || course.thumbnail) return;
+        theater.updateCourseThumbnail(folderId, courseId, thumbnail);
+    }, [theater.updateCourseThumbnail]);
 
     // Save progress and close course
     const handleCloseCourse = useCallback(() => {
@@ -444,7 +582,7 @@ export default function App() {
 
     const videoSrc = useMemo(() => {
         if (!currentVideo) return null;
-        return `local-video:///${currentVideo.replace(/\\/g, '/')}`;
+        return toLocalVideoUrl(currentVideo);
     }, [currentVideo]);
 
     const videoDuration = useMemo(() => {
@@ -1173,77 +1311,37 @@ export default function App() {
                                         <YouTubePlayer
                                             url={theater.activeCourse.url}
                                             playbackRate={theaterSpeed}
-                                            startAt={getTheaterStartAt()}
-                                            onVideoDetected={(info) => {
-                                                theater.updateProgress(theater.selectedFolderId, theater.activeCourseId, {
-                                                    duration: info.duration
-                                                });
-                                            }}
-                                            onVideoState={(state) => {
-                                                theaterVideoStateRef.current = state;
-                                            }}
+                                            startAt={theaterStartAt}
+                                            onVideoDetected={handleTheaterDurationDetected}
+                                            onVideoState={handleTheaterVideoState}
                                             className="flex-1 min-h-0"
                                             musicMode={!!theater.selectedFolder?.musicMode}
                                             cover={theater.selectedFolder?.cover || null}
                                             title={/^https?:\/\//i.test(theater.activeCourse.title || '') ? '' : (theater.activeCourse.title || '')}
                                             trackLabel={`${theater.activeCourses.findIndex(c => c.id === theater.activeCourseId) + 1} / ${theater.activeCourses.length}`}
-                                            onEnded={theater.selectedFolder?.musicMode ? () => playAdjacentCourse(1) : undefined}
-                                            onTitle={(ytTitle) => {
-                                                const c = theater.activeCourse;
-                                                if (!ytTitle || !c) return;
-                                                // Courses default their title to the URL — replace that (or an
-                                                // empty title) with the real song name from the player.
-                                                const needsTitle = !c.title || c.title === c.url || /^https?:\/\//i.test(c.title);
-                                                if (needsTitle) {
-                                                    theater.renameCourse(theater.selectedFolderId, theater.activeCourseId, ytTitle);
-                                                }
-                                            }}
-                                            onNext={() => playAdjacentCourse(1)}
-                                            onPrev={() => playAdjacentCourse(-1)}
+                                            onEnded={theater.selectedFolder?.musicMode ? playNextCourse : undefined}
+                                            onTitle={handleTheaterTitle}
+                                            onNext={playNextCourse}
+                                            onPrev={playPrevCourse}
+                                            onPlaybackRateChange={selectTheaterSpeed}
+                                            loop={loopMode === 'one'}
+                                            loopMode={loopMode}
+                                            onCycleLoop={cycleLoop}
                                         />
                                     ) : (
                                         <CourseWebview
                                             url={theater.activeCourse.url}
                                             platform={theater.activeCourse.platform}
                                             playbackRate={theaterSpeed}
-                                            startAt={getTheaterStartAt()}
+                                            startAt={theaterStartAt}
                                             clickPath={theater.activeCourse.clickPath || []}
-                                            onVideoDetected={(info) => {
-                                                console.log('[App] onVideoDetected:', {
-                                                    pageUrl: info.pageUrl,
-                                                    currentUrl: theater.activeCourse?.url,
-                                                    clickPath: info.clickPath,
-                                                    existingClickPath: theater.activeCourse?.clickPath
-                                                });
-                                                theater.updateProgress(theater.selectedFolderId, theater.activeCourseId, {
-                                                    duration: info.duration
-                                                });
-                                                // Update course URL and click path (so next time it opens directly to video)
-                                                const urlChanged = info.pageUrl && info.pageUrl !== theater.activeCourse?.url;
-                                                const hasNewClickPath = info.clickPath && info.clickPath.length > 0;
-
-                                                if (urlChanged || hasNewClickPath) {
-                                                    console.log('[App] Saving clickPath:', info.clickPath);
-                                                    theater.updateCourseUrl(
-                                                        theater.selectedFolderId,
-                                                        theater.activeCourseId,
-                                                        info.pageUrl || theater.activeCourse.url,
-                                                        info.clickPath || null
-                                                    );
-                                                }
-                                            }}
-                                            onVideoState={(state) => {
-                                                theaterVideoStateRef.current = state;
-                                            }}
-                                            onThumbnailCaptured={(thumbnail) => {
-                                                if (!theater.activeCourse?.thumbnail) {
-                                                    theater.updateCourseThumbnail(theater.selectedFolderId, theater.activeCourseId, thumbnail);
-                                                }
-                                            }}
+                                            onVideoDetected={handleWebviewVideoDetected}
+                                            onVideoState={handleTheaterVideoState}
+                                            onThumbnailCaptured={handleThumbnailCaptured}
                                             onPlaybackRateChange={selectTheaterSpeed}
                                             playlist={theater.activeCourses}
                                             currentCourseId={theater.activeCourseId}
-                                            onPlaylistSelect={(courseId) => theater.openCourse(courseId)}
+                                            onPlaylistSelect={theater.openCourse}
                                             className="flex-1 min-h-0"
                                         />
                                     )
@@ -1259,8 +1357,34 @@ export default function App() {
                                             <span style={{
                                                 fontSize: 12, color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)'
                                             }}>
-                                                {theater.activeCourses.length} {t('items') || '個項目'}
+                                                {theaterVisibleCourses.length}{theaterSearch.trim() ? ` / ${theater.activeCourses.length}` : ''} {t('items') || '個項目'}
                                             </span>
+                                            {/* Search box — filters the current folder by title / url */}
+                                            <div style={{ position: 'relative', width: 200 }}>
+                                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'} strokeWidth="2" strokeLinecap="round" style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
+                                                <input
+                                                    type="text"
+                                                    value={theaterSearch}
+                                                    onChange={(e) => setTheaterSearch(e.target.value)}
+                                                    placeholder={t('searchCourses') || '搜尋…'}
+                                                    style={{
+                                                        width: '100%', padding: '5px 24px 5px 26px', fontSize: 12,
+                                                        borderRadius: 6, outline: 'none',
+                                                        background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+                                                        border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
+                                                        color: isDark ? '#fff' : '#1f2937'
+                                                    }}
+                                                />
+                                                {theaterSearch && (
+                                                    <button
+                                                        onClick={() => setTheaterSearch('')}
+                                                        title={t('clear') || 'Clear'}
+                                                        style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', padding: 2, border: 'none', background: 'transparent', cursor: 'pointer', color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)', display: 'flex' }}
+                                                    >
+                                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                                                    </button>
+                                                )}
+                                            </div>
                                             <div style={{ flex: 1 }} />
                                             {/* Grid / List view toggle (list = sortable / reorderable) */}
                                             <button
@@ -1317,7 +1441,11 @@ export default function App() {
                                                 {t('batchRename') || '批次命名'}
                                             </button>
                                         </div>
-                                        {theaterView === 'list' ? (
+                                        {theaterVisibleCourses.length === 0 ? (
+                                          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }}>
+                                            {t('noResults') || '沒有符合的項目'}
+                                          </div>
+                                        ) : theaterView === 'list' ? (
                                           /* Detailed list — drag rows to reorder; drop a URL to add */
                                           <div
                                             onDragOver={(e) => { e.preventDefault(); if (!dragCourseId && !dragOverGrid) setDragOverGrid(true); }}
@@ -1325,7 +1453,7 @@ export default function App() {
                                             onDrop={(e) => { e.preventDefault(); setDragOverGrid(false); if (dragCourseId) { theater.moveCourse(theater.selectedFolderId, dragCourseId, null); setDragCourseId(null); } else { handleDropUrls(e); } }}
                                             style={{ flex: 1, overflowY: 'auto', padding: '6px 0', outline: dragOverGrid ? '2px dashed #6366f1' : 'none', outlineOffset: -8 }}
                                           >
-                                            {theater.activeCourses.map((course, idx) => {
+                                            {theaterVisibleCourses.map((course, idx) => {
                                               const isCur = theater.activeCourseId === course.id;
                                               const label = /^https?:\/\//i.test(course.title || '') ? course.url : (course.title || course.url);
                                               return (
@@ -1372,7 +1500,7 @@ export default function App() {
                                             outlineOffset: -8,
                                             background: dragOverGrid ? 'rgba(99,102,241,0.06)' : undefined
                                         }}>
-                                        {theater.activeCourses.map(course => {
+                                        {theaterVisibleCourses.map(course => {
                                             const progress = course.progress?.duration > 0
                                                 ? Math.round((course.progress.lastPosition / course.progress.duration) * 100)
                                                 : 0;
@@ -1622,11 +1750,9 @@ export default function App() {
                                 <YouTubePlayer
                                     url={theater.activeCourse.url}
                                     playbackRate={theaterSpeed}
-                                    startAt={getTheaterStartAt()}
-                                    onVideoDetected={(info) => {
-                                        theater.updateProgress(theater.selectedFolderId, theater.activeCourseId, { duration: info.duration });
-                                    }}
-                                    onVideoState={(state) => { theaterVideoStateRef.current = state; }}
+                                    startAt={theaterStartAt}
+                                    onVideoDetected={handleTheaterDurationDetected}
+                                    onVideoState={handleTheaterVideoState}
                                     className="w-full h-full"
                                     musicMode
                                     minimized={musicMinimized}
@@ -1635,15 +1761,14 @@ export default function App() {
                                     cover={theater.selectedFolder?.cover || null}
                                     title={/^https?:\/\//i.test(theater.activeCourse.title || '') ? '' : (theater.activeCourse.title || '')}
                                     trackLabel={`${theater.activeCourses.findIndex(c => c.id === theater.activeCourseId) + 1} / ${theater.activeCourses.length}`}
-                                    onEnded={() => playAdjacentCourse(1)}
-                                    onTitle={(ytTitle) => {
-                                        const c = theater.activeCourse;
-                                        if (!ytTitle || !c) return;
-                                        const needsTitle = !c.title || c.title === c.url || /^https?:\/\//i.test(c.title);
-                                        if (needsTitle) theater.renameCourse(theater.selectedFolderId, theater.activeCourseId, ytTitle);
-                                    }}
-                                    onNext={() => playAdjacentCourse(1)}
-                                    onPrev={() => playAdjacentCourse(-1)}
+                                    onEnded={handleMusicEnded}
+                                    onTitle={handleTheaterTitle}
+                                    onNext={playNextCourse}
+                                    onPrev={playPrevCourse}
+                                    onPlaybackRateChange={selectTheaterSpeed}
+                                    loop={loopMode === 'one'}
+                                    loopMode={loopMode}
+                                    onCycleLoop={cycleLoop}
                                 />
                             </div>
                         )}
@@ -1833,7 +1958,7 @@ export default function App() {
                                     fontSize: 12, color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
                                     marginTop: 2
                                 }}>
-                                    {theater.activeCourses.length} {t('items') || '個項目'}
+                                    {theaterVisibleCourses.length}{theaterSearch.trim() ? ` / ${theater.activeCourses.length}` : ''} {t('items') || '個項目'}
                                 </div>
                             </div>
                             <button
@@ -1851,9 +1976,39 @@ export default function App() {
                                 </svg>
                             </button>
                         </div>
+                        {/* Search box */}
+                        <div style={{ padding: '10px 16px', borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}` }}>
+                            <div style={{ position: 'relative' }}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'} strokeWidth="2" strokeLinecap="round" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
+                                <input
+                                    type="text"
+                                    value={theaterSearch}
+                                    onChange={(e) => setTheaterSearch(e.target.value)}
+                                    placeholder={t('searchCourses') || '搜尋…'}
+                                    autoFocus
+                                    style={{
+                                        width: '100%', padding: '8px 28px 8px 30px', fontSize: 13,
+                                        borderRadius: 8, outline: 'none',
+                                        background: isDark ? 'rgba(255,255,255,0.06)' : '#f3f4f6',
+                                        border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
+                                        color: isDark ? '#fff' : '#1f2937'
+                                    }}
+                                />
+                                {theaterSearch && (
+                                    <button onClick={() => setTheaterSearch('')} style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', padding: 2, border: 'none', background: 'transparent', cursor: 'pointer', color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)', display: 'flex' }}>
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                                    </button>
+                                )}
+                            </div>
+                        </div>
                         {/* Course List */}
                         <div style={{ flex: 1, overflowY: 'auto' }}>
-                            {theater.activeCourses.map((course, idx) => {
+                            {theaterVisibleCourses.length === 0 && (
+                                <div style={{ padding: '24px 16px', textAlign: 'center', fontSize: 13, color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }}>
+                                    {t('noResults') || '沒有符合的項目'}
+                                </div>
+                            )}
+                            {theaterVisibleCourses.map((course, idx) => {
                                 const progress = course.progress?.duration > 0
                                     ? Math.round((course.progress.lastPosition / course.progress.duration) * 100)
                                     : 0;

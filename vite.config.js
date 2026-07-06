@@ -7,7 +7,12 @@ export default defineConfig({
   base: './',
   server: {
     port: 3001,
-    strictPort: true
+    strictPort: true,
+    watch: {
+      // Never watch build output — electron-builder writes into release/ and
+      // the watcher would crash with EBUSY (and reload on packaged files).
+      ignored: ['**/release/**', '**/dist/**']
+    }
   },
   build: {
     target: 'esnext'

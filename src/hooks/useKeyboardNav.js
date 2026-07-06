@@ -13,14 +13,14 @@ export const useKeyboardNav = ({ onNext, onPrev, enabled = true }) => {
         return;
       }
 
+      // Arrow keys are intentionally NOT bound here — the video player owns
+      // ←/→ for seeking. Use n/p (next/previous) to switch videos.
       switch (e.key) {
-        case 'ArrowRight':
         case 'n':
         case 'N':
           e.preventDefault();
           onNext();
           break;
-        case 'ArrowLeft':
         case 'p':
         case 'P':
           e.preventDefault();

@@ -103,6 +103,9 @@ const loadWindowState = () => {
 // Set when the window is shrunk to the floating music mini-panel, so we can
 // restore the real size and never persist the tiny bounds.
 let savedMusicBounds = null;
+// Whether the window is currently in the mini-panel layout. Guards the restore
+// so calling set-music-mini(false) when already normal is a harmless no-op.
+let isMusicMini = false;
 
 const saveWindowState = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -182,6 +185,37 @@ function getTheaterDataPath() {
     return path.join(userDataPath, 'theater-data.json');
 }
 
+async function readTheaterFile(filePath) {
+    try {
+        const raw = await fs.promises.readFile(filePath, 'utf-8');
+        return { ok: true, data: JSON.parse(raw) };
+    } catch (e) {
+        return { ok: false, missing: e.code === 'ENOENT', error: e.message };
+    }
+}
+
+// Atomic write: tmp → rename, previous good copy kept as .bak.
+// Serialized through a chain so overlapping saves never interleave on the same tmp file.
+let theaterSaveChain = Promise.resolve();
+
+async function writeTheaterData(data) {
+    const dataPath = getTheaterDataPath();
+    const tmpPath = `${dataPath}.tmp`;
+    try {
+        await fs.promises.writeFile(tmpPath, JSON.stringify(data), 'utf-8');
+        try {
+            await fs.promises.rename(dataPath, `${dataPath}.bak`);
+        } catch (e) {
+            if (e.code !== 'ENOENT') throw e;
+        }
+        await fs.promises.rename(tmpPath, dataPath);
+        return { success: true };
+    } catch (e) {
+        console.error('[save-theater-data] Error:', e);
+        return { success: false, error: e.message };
+    }
+}
+
 function setupIpcHandlers() {
     // Renderer signals it has mounted and wired its IPC listeners — open the
     // launch file immediately (no fixed delay) instead of guessing with a timer.
@@ -213,30 +247,59 @@ function setupIpcHandlers() {
         }
     });
 
-    // Theater data persistence (file-based, not localStorage)
+    // Theater data persistence (file-based, not localStorage).
+    // Returns { success: true, data } (data null on first run) or { success: false, error }.
+    // A read/parse failure must be distinguishable from "no data yet" — the renderer
+    // blocks saves on failure so an empty state never overwrites the library.
     ipcMain.handle('load-theater-data', async () => {
-        try {
-            const dataPath = getTheaterDataPath();
-            if (fs.existsSync(dataPath)) {
-                const data = fs.readFileSync(dataPath, 'utf-8');
-                return JSON.parse(data);
+        const dataPath = getTheaterDataPath();
+        const main = await readTheaterFile(dataPath);
+        if (main.ok) return { success: true, data: main.data };
+
+        if (!main.missing) {
+            // Preserve the unreadable file for manual recovery before any future save replaces it
+            try {
+                await fs.promises.copyFile(dataPath, `${dataPath}.corrupt`);
+            } catch (copyErr) {
+                console.error('[load-theater-data] Could not preserve corrupt file:', copyErr);
             }
-            return null;
-        } catch (e) {
-            console.error('[load-theater-data] Error:', e);
-            return null;
         }
+
+        const bak = await readTheaterFile(`${dataPath}.bak`);
+        if (bak.ok) {
+            console.error('[load-theater-data] Main file unreadable, recovered from .bak');
+            return { success: true, data: bak.data, recovered: true };
+        }
+
+        if (main.missing && bak.missing) return { success: true, data: null };
+
+        console.error('[load-theater-data] Error:', main.error || bak.error);
+        return { success: false, error: main.error || bak.error };
     });
 
-    ipcMain.handle('save-theater-data', async (_event, data) => {
-        try {
-            const dataPath = getTheaterDataPath();
-            fs.writeFileSync(dataPath, JSON.stringify(data, null, 2), 'utf-8');
-            return { success: true };
-        } catch (e) {
-            console.error('[save-theater-data] Error:', e);
-            return { success: false, error: e.message };
+    ipcMain.handle('save-theater-data', (_event, data) => {
+        const run = theaterSaveChain.then(() => writeTheaterData(data));
+        theaterSaveChain = run.catch(() => {});
+        return run;
+    });
+
+    // Batched file stats for sorting — replaces per-file synchronous stat calls.
+    // Chunked so a huge folder doesn't burst thousands of concurrent handles.
+    ipcMain.handle('get-file-stats', async (_event, filePaths) => {
+        if (!Array.isArray(filePaths)) return { success: false, error: 'Expected an array of paths' };
+        const stats = {};
+        const CHUNK = 100;
+        for (let i = 0; i < filePaths.length; i += CHUNK) {
+            await Promise.all(filePaths.slice(i, i + CHUNK).map(async (p) => {
+                try {
+                    const s = await fs.promises.stat(p);
+                    stats[p] = { size: s.size, mtimeMs: s.mtimeMs };
+                } catch (e) {
+                    stats[p] = { size: 0, mtimeMs: 0 };
+                }
+            }));
         }
+        return { success: true, stats };
     });
 
     // Open file dialog for video
@@ -752,18 +815,30 @@ function setupIpcHandlers() {
             // Fixed-size panel: removes the window's edge resize zones so the
             // bottom progress bar is clickable (clicks there were resizing).
             mainWindow.setResizable(false);
+            isMusicMini = true;
             try {
                 const { screen } = require('electron');
                 const wa = screen.getPrimaryDisplay().workArea;
                 mainWindow.setPosition(wa.x + wa.width - MINI_W - 20, wa.y + wa.height - MINI_H - 20);
             } catch {}
         } else {
+            // Already in the normal layout — nothing to restore. (Lets the
+            // renderer safely re-assert "not mini" without clobbering the size.)
+            if (!isMusicMini) return { success: true };
+            isMusicMini = false;
             mainWindow.setResizable(true);
             mainWindow.setAlwaysOnTop(false);
             mainWindow.setMinimumSize(640, 480);
             if (savedMusicBounds) {
                 mainWindow.setBounds(savedMusicBounds);
                 savedMusicBounds = null;
+            } else {
+                // Never leave the window stuck at the tiny mini size.
+                const cur = mainWindow.getBounds();
+                if (cur.width < 640 || cur.height < 480) {
+                    mainWindow.setSize(1100, 720);
+                    mainWindow.center();
+                }
             }
         }
         return { success: true };
@@ -833,6 +908,7 @@ function setupIpcHandlers() {
 
     ipcMain.handle('fetch-thumbnail', async (_event, { url, courseId }) => {
         if (!url || !courseId) return { success: false, error: 'Missing url or courseId' };
+        if (!/^https?:\/\//i.test(url)) return { success: false, error: 'Only http(s) URLs allowed' };
 
         ensureThumbnailDir();
 
@@ -906,6 +982,7 @@ function setupIpcHandlers() {
     // Download video file (supports direct URLs and m3u8/HLS streams)
     ipcMain.handle('download-video', async (_event, { url, filename }) => {
         if (!url || !mainWindow) return { success: false, error: 'Missing url or window' };
+        if (!/^https?:\/\//i.test(url)) return { success: false, error: 'Only http(s) URLs allowed' };
 
         const isHLS = url.includes('.m3u8');
 
@@ -1483,6 +1560,13 @@ app.whenReady().then(async () => {
     }
 
     // local-video:// protocol handler with range request support
+    const VIDEO_MIME_TYPES = {
+        '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.webm': 'video/webm',
+        '.mov': 'video/quicktime', '.mkv': 'video/x-matroska', '.avi': 'video/x-msvideo',
+        '.ogv': 'video/ogg', '.ts': 'video/mp2t', '.mp3': 'audio/mpeg',
+        '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.flac': 'audio/flac'
+    };
+
     protocol.handle('local-video', (request) => {
         const url = new URL(request.url);
         let filePath = decodeURIComponent(url.pathname);
@@ -1495,34 +1579,60 @@ app.whenReady().then(async () => {
             const stat = fs.statSync(filePath);
             const fileSize = stat.size;
             const rangeHeader = request.headers.get('range');
+            const contentType = VIDEO_MIME_TYPES[path.extname(filePath).toLowerCase()] || 'video/mp4';
+
+            // Streams the file after the Response has been handed back, so a
+            // file deleted mid-playback errors on the stream with no listener —
+            // swallow it instead of crashing the main process.
+            const toBody = (stream) => {
+                stream.on('error', () => {});
+                return Readable.toWeb(stream);
+            };
 
             // Stream from disk instead of buffering the whole file/range into
             // memory — a multi-GB video would otherwise spike RAM on each request.
             if (rangeHeader) {
-                const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
-                if (match) {
-                    const start = parseInt(match[1], 10);
-                    const end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
+                const match = rangeHeader.match(/bytes=(\d*)-(\d*)/);
+                if (match && (match[1] || match[2])) {
+                    let start;
+                    let end;
+                    if (match[1]) {
+                        start = parseInt(match[1], 10);
+                        end = match[2] ? Math.min(parseInt(match[2], 10), fileSize - 1) : fileSize - 1;
+                    } else {
+                        // Suffix range: bytes=-500 → the last 500 bytes
+                        const suffix = Math.min(parseInt(match[2], 10), fileSize);
+                        start = fileSize - suffix;
+                        end = fileSize - 1;
+                    }
+
+                    if (start >= fileSize || start > end || Number.isNaN(start)) {
+                        return new Response('Range not satisfiable', {
+                            status: 416,
+                            headers: { 'Content-Range': `bytes */${fileSize}` }
+                        });
+                    }
+
                     const chunkSize = end - start + 1;
                     const stream = fs.createReadStream(filePath, { start, end });
 
-                    return new Response(Readable.toWeb(stream), {
+                    return new Response(toBody(stream), {
                         status: 206,
                         headers: {
                             'Content-Range': `bytes ${start}-${end}/${fileSize}`,
                             'Accept-Ranges': 'bytes',
                             'Content-Length': String(chunkSize),
-                            'Content-Type': 'video/mp4'
+                            'Content-Type': contentType
                         }
                     });
                 }
             }
 
-            return new Response(Readable.toWeb(fs.createReadStream(filePath)), {
+            return new Response(toBody(fs.createReadStream(filePath)), {
                 status: 200,
                 headers: {
                     'Content-Length': String(fileSize),
-                    'Content-Type': 'video/mp4',
+                    'Content-Type': contentType,
                     'Accept-Ranges': 'bytes'
                 }
             });
@@ -1550,4 +1660,20 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();
+});
+
+// Let any in-flight theater-data write finish before the process exits,
+// otherwise the atomic tmp→rename sequence can be cut off mid-way.
+// will-quit (not before-quit) fires after all windows have closed, so the
+// renderer's pagehide flush has already been delivered and sits on the chain.
+// The timeout bounds a hung write so quitting can never wedge the app.
+let quitFlushed = false;
+app.on('will-quit', (event) => {
+    if (quitFlushed) return;
+    quitFlushed = true;
+    event.preventDefault();
+    Promise.race([
+        theaterSaveChain,
+        new Promise((resolve) => setTimeout(resolve, 2000)),
+    ]).finally(() => app.quit());
 });

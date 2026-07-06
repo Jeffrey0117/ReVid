@@ -195,6 +195,8 @@ const translations = {
     ytError: 'YouTube playback error',
     ytInvalidUrl: 'Invalid YouTube URL',
     ytMaxSpeed: 'YouTube max: 2x',
+    searchCourses: 'Search…',
+    noResults: 'No matching items',
     // Export / Import
     exportData: 'Export',
     importData: 'Import',
@@ -245,6 +247,8 @@ const translations = {
     listView: 'List',
     gridView: 'Grid',
     musicModeEmpty: 'Music mode on — add some songs first',
+    theaterLoadError: 'Could not read the course library — changes will not be saved this session. Restart the app to retry.',
+    theaterLoadRecovered: 'Course library restored from backup — the most recent change may be missing',
   },
   'zh-TW': {
     openFolder: '開啟資料夾',
@@ -427,6 +431,8 @@ const translations = {
     ytError: 'YouTube \u64ad\u653e\u932f\u8aa4',
     ytInvalidUrl: '\u7121\u6548\u7684 YouTube \u7db2\u5740',
     ytMaxSpeed: 'YouTube \u6700\u9ad8\uff1a2x',
+    searchCourses: '\u641c\u5c0b\u2026',
+    noResults: '\u6c92\u6709\u7b26\u5408\u7684\u9805\u76ee',
     // 匯出 / 匯入
     exportData: '\u532f\u51fa',
     importData: '\u532f\u5165',
@@ -477,6 +483,8 @@ const translations = {
     listView: '\u5217\u8868',
     gridView: '\u7db2\u683c',
     musicModeEmpty: '\u5df2\u958b\u555f\u97f3\u6a02\u6a21\u5f0f \u2014 \u8acb\u5148\u65b0\u589e\u6b4c\u66f2',
+    theaterLoadError: '\u8b80\u53d6\u8ab2\u7a0b\u8cc7\u6599\u5931\u6557 \u2014 \u672c\u6b21\u4e0d\u6703\u5132\u5b58\u8b8a\u66f4\uff0c\u8acb\u91cd\u555f\u61c9\u7528\u7a0b\u5f0f\u91cd\u8a66',
+    theaterLoadRecovered: '\u8ab2\u7a0b\u8cc7\u6599\u5df2\u5f9e\u5099\u4efd\u5fa9\u539f \u2014 \u6700\u8fd1\u4e00\u6b21\u7684\u8b8a\u66f4\u53ef\u80fd\u907a\u5931',
   }
 };
 

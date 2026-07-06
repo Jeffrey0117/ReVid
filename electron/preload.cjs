@@ -51,6 +51,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
     },
 
+    // Batched, async variant — one IPC round-trip for a whole folder
+    getFileStats: async (filePaths) => {
+        return await ipcRenderer.invoke('get-file-stats', filePaths);
+    },
+
     selectOutputDirectory: () => ipcRenderer.invoke('select-output-directory'),
 
     extractScreenshots: async (params, onProgress) => {
@@ -131,8 +136,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.send('start-drag', filePath);
     },
 
+    // Rename-in-place only: both paths must resolve to the same directory,
+    // so this can't be used to move files anywhere else on disk.
     renameFile: (oldPath, newPath) => {
         try {
+            const oldDir = path.resolve(path.dirname(oldPath));
+            const newDir = path.resolve(path.dirname(newPath));
+            if (oldDir.toLowerCase() !== newDir.toLowerCase()) {
+                return { success: false, error: 'Rename must stay in the same directory' };
+            }
             fs.renameSync(oldPath, newPath);
             return { success: true };
         } catch (e) {

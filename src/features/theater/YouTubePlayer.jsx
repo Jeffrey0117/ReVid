@@ -38,6 +38,96 @@ const iconBtn = {
 
 const CONTAINER_ID = 'revid-yt-player';
 
+// YouTube caps playback at 2x, so the menu only offers up to 2x.
+const YT_SPEED_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
+// Speaker glyph that reflects the current level (muted / low / high).
+const VolumeIcon = ({ level }) => {
+  if (level <= 0) return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" />
+    </svg>
+  );
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+      {level > 55 && <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />}
+    </svg>
+  );
+};
+
+/**
+ * Volume slider (0-100) + speed menu shared by the music album view and the
+ * regular YouTube course bar. `onSpeed` is optional — when absent the speed
+ * pills are hidden.
+ */
+const YtControls = ({ volume, setVolume, playbackRate, onSpeed, loopMode, onCycleLoop, dark = true }) => {
+  const fg = dark ? '#fff' : '#111';
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+      {onCycleLoop && (
+        <button
+          onClick={onCycleLoop}
+          title={loopMode === 'one' ? 'Repeat one' : loopMode === 'all' ? 'Repeat all' : 'Repeat off'}
+          style={{
+            position: 'relative', border: 'none', cursor: 'pointer', borderRadius: 6,
+            padding: 4, display: 'flex', WebkitAppRegion: 'no-drag',
+            background: loopMode === 'off' ? 'rgba(255,255,255,0.12)' : '#1db954',
+            color: loopMode === 'off' ? (dark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.7)') : '#fff'
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="m17 2 4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" />
+            <path d="m7 22-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" />
+          </svg>
+          {loopMode === 'one' && (
+            <span style={{
+              position: 'absolute', top: -3, right: -3, fontSize: 9, fontWeight: 700,
+              lineHeight: 1, background: '#fff', color: '#1db954', borderRadius: 6, padding: '1px 3px'
+            }}>1</span>
+          )}
+        </button>
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: fg }}>
+        <button
+          onClick={() => setVolume(volume > 0 ? 0 : 100)}
+          title={volume > 0 ? 'Mute' : 'Unmute'}
+          style={{ border: 'none', background: 'transparent', color: fg, cursor: 'pointer', padding: 2, display: 'flex', WebkitAppRegion: 'no-drag' }}
+        >
+          <VolumeIcon level={volume} />
+        </button>
+        <input
+          type="range" min="0" max="100" step="1" value={volume}
+          onChange={(e) => setVolume(parseInt(e.target.value, 10))}
+          title={`${volume}%`}
+          style={{ width: 84, height: 4, cursor: 'pointer', accentColor: '#1db954', WebkitAppRegion: 'no-drag' }}
+        />
+      </div>
+      {onSpeed && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          {YT_SPEED_PRESETS.map((s) => {
+            const active = Math.abs((playbackRate || 1) - s) < 0.001;
+            return (
+              <button
+                key={s}
+                onClick={() => onSpeed(s)}
+                style={{
+                  border: 'none', cursor: 'pointer', borderRadius: 6,
+                  padding: '3px 7px', fontSize: 11, fontWeight: 600,
+                  WebkitAppRegion: 'no-drag',
+                  background: active ? '#1db954' : 'rgba(255,255,255,0.12)',
+                  color: active ? '#fff' : (dark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.7)')
+                }}
+              >{s}x</button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const musicBtn = {
   width: 48, height: 48, borderRadius: '50%', border: 'none', cursor: 'pointer',
   background: 'rgba(255,255,255,0.12)', color: '#fff',
@@ -68,6 +158,10 @@ export const YouTubePlayer = ({
   onPrev,
   onToggleMinimize,
   onClose,
+  onPlaybackRateChange,
+  loop = false,
+  loopMode,
+  onCycleLoop,
   className = '',
   musicMode = false,
   minimized = false,
@@ -86,7 +180,10 @@ export const YouTubePlayer = ({
     paused,
     currentTime,
     duration,
+    volume,
+    setVolume,
     seekTo,
+    play,
     togglePlay
   } = useYouTubePlayer({
     containerId: CONTAINER_ID,
@@ -96,7 +193,8 @@ export const YouTubePlayer = ({
     onVideoDetected,
     onVideoState,
     onEnded,
-    onTitle
+    onTitle,
+    loop
   });
 
   const fmt = (s) => {
@@ -105,6 +203,44 @@ export const YouTubePlayer = ({
     const sec = Math.floor(s % 60);
     return `${m}:${String(sec).padStart(2, '0')}`;
   };
+
+  // Live values for the keyboard handler, kept in refs so the listener is
+  // bound once (not re-attached on every 500ms state tick).
+  const ctRef = useRef(0); ctRef.current = currentTime;
+  const durRef = useRef(0); durRef.current = duration;
+  const volRef = useRef(100); volRef.current = volume;
+
+  // Global playback shortcuts (mirror the local viewer / YouTube itself):
+  //   ←/→ seek ∓5s · Space/K play-pause · ↑/↓ volume · 0 restart.
+  // When the YouTube iframe itself has focus it handles these natively and the
+  // host never sees the keydown, so there's no double action.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const el = e.target;
+      const tag = el?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || el?.isContentEditable) return;
+      switch (e.key) {
+        case '0':
+          e.preventDefault(); seekTo(0); play(); break;
+        case 'ArrowRight':
+          e.preventDefault(); seekTo(Math.min((durRef.current || 0), ctRef.current + 5)); break;
+        case 'ArrowLeft':
+          e.preventDefault(); seekTo(Math.max(0, ctRef.current - 5)); break;
+        case 'ArrowUp':
+          e.preventDefault(); setVolume(volRef.current + 10); break;
+        case 'ArrowDown':
+          e.preventDefault(); setVolume(volRef.current - 10); break;
+        case ' ':
+        case 'k':
+        case 'K':
+          e.preventDefault(); togglePlay(); break;
+        default: break;
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [seekTo, play, togglePlay, setVolume]);
 
   const [hovered, setHovered] = useState(false);
 
@@ -309,18 +445,42 @@ export const YouTubePlayer = ({
                 <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zm-2.5 6L5 6v12z" /></svg>
               </button>
             </div>
+
+            {/* Volume + speed + repeat */}
+            <YtControls
+              volume={volume}
+              setVolume={setVolume}
+              playbackRate={playbackRate}
+              onSpeed={onPlaybackRateChange}
+              loopMode={loopMode}
+              onCycleLoop={onCycleLoop}
+            />
           </div>
         ))}
       </div>
 
-      {/* Status bar (hidden in music mode for a clean look) */}
+      {/* Volume + speed bar + status (hidden in music mode for a clean look) */}
       {!musicMode && (
-        <StatusBar
-          status={status}
-          isRateClamped={isRateClamped}
-          playbackRate={playbackRate}
-          t={t}
-        />
+        <>
+          {status === 'ready' && (
+            <div style={{ padding: '6px 10px', background: 'rgba(0,0,0,0.6)', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+              <YtControls
+                volume={volume}
+                setVolume={setVolume}
+                playbackRate={playbackRate}
+                onSpeed={onPlaybackRateChange}
+                loopMode={loopMode}
+                onCycleLoop={onCycleLoop}
+              />
+            </div>
+          )}
+          <StatusBar
+            status={status}
+            isRateClamped={isRateClamped}
+            playbackRate={playbackRate}
+            t={t}
+          />
+        </>
       )}
     </div>
   );

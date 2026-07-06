@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 
 const STORAGE_KEY = 'revid-playback-speed';
-const SPEED_PRESETS = [1, 1.25, 1.5, 2, 3];
+const SPEED_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
 
 const loadSpeed = () => {
   try {

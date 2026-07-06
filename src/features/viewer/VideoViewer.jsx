@@ -126,7 +126,10 @@ export const VideoViewer = ({ src }) => {
             settings: ['speed'],
             speed: { selected: 1, options: SPEED_OPTIONS },
             tooltips: { controls: false, seek: true },
-            keyboard: { focused: true, global: false },
+            // Global so shortcuts work without first clicking the player:
+            // ←/→ seek, Space/K play, ↑/↓ volume, M mute, F fullscreen, 0-9 seek%.
+            keyboard: { focused: true, global: true },
+            seekTime: 5,
             autoplay: true
         });
 
@@ -171,6 +174,28 @@ export const VideoViewer = ({ src }) => {
     useEffect(() => () => {
         try { audioCtxRef.current?.close(); } catch {}
         audioCtxRef.current = null;
+    }, []);
+
+    // Press "0" to restart the current video from the beginning (and keep
+    // playing). Global so it works even when the Plyr player isn't focused —
+    // but ignored while typing in an input so it never eats a real "0".
+    useEffect(() => {
+        const onKey = (e) => {
+            if (e.key !== '0' || e.ctrlKey || e.metaKey || e.altKey) return;
+            const el = e.target;
+            const tag = el?.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || el?.isContentEditable) return;
+            const player = plyrRef.current;
+            if (!player) return;
+            e.preventDefault();
+            try {
+                player.currentTime = 0;
+                const p = player.play();
+                if (p && typeof p.catch === 'function') p.catch(() => {});
+            } catch { /* player not ready */ }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
     }, []);
 
     // Close the context menu on outside click / Escape.

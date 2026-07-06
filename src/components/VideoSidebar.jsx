@@ -1,5 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from 'react';
 import { generateVideoThumbnail, getCachedThumbnail } from '../utils/videoThumbnails';
+import { toLocalVideoUrl } from '../utils/localVideoUrl';
 
 const getElectronAPI = () => window.electronAPI || null;
 
@@ -90,7 +91,7 @@ export const VideoSidebar = ({
 
         generatingRef.current.add(file);
 
-        const videoUrl = `local-video:///${file.replace(/\\/g, '/')}`;
+        const videoUrl = toLocalVideoUrl(file);
         const cached = getCachedThumbnail(videoUrl);
         if (cached) {
           if (!cancelled) {

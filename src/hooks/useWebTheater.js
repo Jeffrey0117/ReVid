@@ -23,9 +23,14 @@ export const useWebTheater = () => {
   const [selectedFolderId, setSelectedFolderId] = useState(null);
   const [activeCourseId, setActiveCourseId] = useState(null);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+  const [loadRecovered, setLoadRecovered] = useState(false);
   const initialLoadDone = useRef(false);
+  const pendingSaveRef = useRef(null);
 
-  // Load from file on mount
+  // Load from file on mount.
+  // On load failure isLoaded stays false, which blocks the save effect —
+  // otherwise the empty initial state would overwrite the library on disk.
   useEffect(() => {
     if (initialLoadDone.current) return;
     initialLoadDone.current = true;
@@ -34,7 +39,14 @@ export const useWebTheater = () => {
       try {
         const api = window.electronAPI;
         if (api?.loadTheaterData) {
-          const data = await api.loadTheaterData();
+          const result = await api.loadTheaterData();
+          if (result && result.success === false) {
+            console.error('[useWebTheater] Load failed, saves disabled:', result.error);
+            setLoadError(result.error || 'unknown error');
+            return;
+          }
+          if (result?.recovered) setLoadRecovered(true);
+          const data = result?.data;
           if (data && Array.isArray(data)) {
             setFolders(data);
             if (data.length > 0) {
@@ -42,10 +54,11 @@ export const useWebTheater = () => {
             }
           }
         }
+        setIsLoaded(true);
       } catch (e) {
-        console.error('[useWebTheater] Failed to load:', e);
+        console.error('[useWebTheater] Failed to load, saves disabled:', e);
+        setLoadError(e.message || 'unknown error');
       }
-      setIsLoaded(true);
     };
 
     loadData();
@@ -53,9 +66,11 @@ export const useWebTheater = () => {
 
   // Debounced save to file
   useEffect(() => {
-    if (!isLoaded) return; // Don't save before initial load
+    if (!isLoaded) return; // Don't save before initial load (or after a failed one)
 
+    pendingSaveRef.current = folders;
     const timeoutId = setTimeout(() => {
+      pendingSaveRef.current = null;
       const api = window.electronAPI;
       if (api?.saveTheaterData) {
         api.saveTheaterData(folders).catch(e => {
@@ -65,6 +80,24 @@ export const useWebTheater = () => {
     }, 500);
     return () => clearTimeout(timeoutId);
   }, [folders, isLoaded]);
+
+  // Flush a still-debounced save when the window closes (or the hook unmounts),
+  // so quitting the app right after a change doesn't drop it.
+  useEffect(() => {
+    const flush = () => {
+      const pending = pendingSaveRef.current;
+      if (pending == null) return;
+      pendingSaveRef.current = null;
+      window.electronAPI?.saveTheaterData?.(pending)?.catch?.(() => {});
+    };
+    window.addEventListener('pagehide', flush);
+    window.addEventListener('beforeunload', flush);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      window.removeEventListener('beforeunload', flush);
+      flush();
+    };
+  }, []);
 
   // Selected folder (computed)
   const selectedFolder = useMemo(
@@ -344,6 +377,8 @@ export const useWebTheater = () => {
 
   return useMemo(() => ({
     folders,
+    loadError,
+    loadRecovered,
     selectedFolder,
     selectedFolderId,
     activeCourses,
@@ -368,7 +403,7 @@ export const useWebTheater = () => {
     importRevidFiles,
     importJsonBackup,
   }), [
-    folders, selectedFolder, selectedFolderId,
+    folders, loadError, loadRecovered, selectedFolder, selectedFolderId,
     activeCourses, activeCourse, activeCourseId,
     selectFolder, createFolder, renameFolder, deleteFolder,
     toggleMusicMode, setFolderCover, moveCourse,
