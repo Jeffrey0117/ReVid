@@ -2,13 +2,19 @@ const { app, BrowserWindow, Menu, ipcMain, dialog, protocol } = require('electro
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
-// ffmpeg-static resolves to a path inside app.asar when packaged, but a binary can't be
-// spawned from inside the asar archive. asarUnpack ships it to app.asar.unpacked, so
-// rewrite the path for the packaged app — otherwise every ffmpeg op silently fails.
-const ffmpegStatic = require('ffmpeg-static');
-const ffmpegPath = app.isPackaged
-    ? ffmpegStatic.replace('app.asar', 'app.asar.unpacked')
-    : ffmpegStatic;
+const {
+    ffmpegPath,
+    setFfmpegProgressWindowGetter,
+    trackFfmpegProc,
+    isCancelledFfmpegProc,
+    cancelFfmpegJobs,
+    killAllFfmpegJobs,
+    runFfmpeg,
+    fileSizeOrZero,
+    ffmpegFailure
+} = require('./ffmpeg-runner.cjs');
+const { registerTheaterStore, drainTheaterSaves } = require('./theater-store.cjs');
+const { registerLocalVideoProtocol } = require('./local-video-protocol.cjs');
 
 // Auto-update (packaged builds only): check GitHub Releases on launch, download in the
 // background, install on next quit. Install once per machine, then updates land for free.
@@ -39,6 +45,9 @@ protocol.registerSchemesAsPrivileged([
 
 let mainWindow = null;
 let miniPlayerWindow = null;
+
+// ffmpeg progress percentages go to the main window
+setFfmpegProgressWindowGetter(() => mainWindow);
 
 // Origin the renderer is served from. Dev uses the Vite server; packaged builds
 // serve dist/ over a loopback HTTP server (see startRendererServer) instead of
@@ -179,129 +188,9 @@ function createWindow() {
     mainWindow.on('close', saveWindowState);
 }
 
-// Get path for theater data file
-function getTheaterDataPath() {
-    const userDataPath = app.getPath('userData');
-    return path.join(userDataPath, 'theater-data.json');
-}
-
-async function readTheaterFile(filePath) {
-    try {
-        const raw = await fs.promises.readFile(filePath, 'utf-8');
-        return { ok: true, data: JSON.parse(raw) };
-    } catch (e) {
-        return { ok: false, missing: e.code === 'ENOENT', error: e.message };
-    }
-}
-
-// Atomic write: tmp → rename, previous good copy kept as .bak.
-// Serialized through a chain so overlapping saves never interleave on the same tmp file.
-let theaterSaveChain = Promise.resolve();
-
-async function writeTheaterData(data) {
-    const dataPath = getTheaterDataPath();
-    const tmpPath = `${dataPath}.tmp`;
-    try {
-        await fs.promises.writeFile(tmpPath, JSON.stringify(data), 'utf-8');
-        try {
-            await fs.promises.rename(dataPath, `${dataPath}.bak`);
-        } catch (e) {
-            if (e.code !== 'ENOENT') throw e;
-        }
-        await fs.promises.rename(tmpPath, dataPath);
-        return { success: true };
-    } catch (e) {
-        console.error('[save-theater-data] Error:', e);
-        return { success: false, error: e.message };
-    }
-}
-
-// --- ffmpeg job tracking -------------------------------------------------
-// Every spawned ffmpeg process is tracked per operation so the renderer can
-// cancel it (closing a dialog mid-encode) and quit kills stragglers instead
-// of leaving orphaned encoders burning CPU.
-const activeFfmpegJobs = new Map(); // op -> Set<ChildProcess>
-const cancelledFfmpegProcs = new WeakSet();
-
-function trackFfmpegProc(op, proc) {
-    let jobs = activeFfmpegJobs.get(op);
-    if (!jobs) {
-        jobs = new Set();
-        activeFfmpegJobs.set(op, jobs);
-    }
-    jobs.add(proc);
-    proc.on('close', () => jobs.delete(proc));
-    proc.on('error', () => jobs.delete(proc));
-}
-
-function cancelFfmpegJobs(op) {
-    const jobs = activeFfmpegJobs.get(op);
-    if (!jobs) return 0;
-    let count = 0;
-    for (const proc of [...jobs]) {
-        cancelledFfmpegProcs.add(proc);
-        try {
-            proc.kill();
-            count += 1;
-        } catch (e) {
-            // process already exited
-        }
-    }
-    return count;
-}
-
-function killAllFfmpegJobs() {
-    for (const op of activeFfmpegJobs.keys()) cancelFfmpegJobs(op);
-}
-
-// Runs ffmpeg with uniform '-progress pipe:1' percentage reporting.
-// Progress lines are buffered so a value split across stdout chunks isn't
-// dropped. Resolves { code, cancelled, error? } — the caller shapes the
-// IPC result from that.
-function runFfmpeg({ op, args, progressChannel, totalUs }) {
-    return new Promise((resolve) => {
-        const proc = spawn(ffmpegPath, args);
-        trackFfmpegProc(op, proc);
-
-        let buffered = '';
-        proc.stdout.on('data', (data) => {
-            buffered += data.toString();
-            const lines = buffered.split('\n');
-            buffered = lines.pop();
-            for (const line of lines) {
-                const match = line.match(/out_time_us=(\d+)/);
-                if (match && progressChannel && totalUs > 0 && mainWindow && !mainWindow.isDestroyed()) {
-                    const pct = Math.min(100, Math.round((parseInt(match[1], 10) / totalUs) * 100));
-                    mainWindow.webContents.send(progressChannel, pct);
-                }
-            }
-        });
-        proc.stderr.on('data', () => {});
-
-        proc.on('close', (code) => {
-            resolve({ code, cancelled: cancelledFfmpegProcs.has(proc) });
-        });
-        proc.on('error', (err) => {
-            resolve({ code: -1, cancelled: cancelledFfmpegProcs.has(proc), error: err.message });
-        });
-    });
-}
-
-function fileSizeOrZero(p) {
-    try {
-        return fs.statSync(p).size;
-    } catch (e) {
-        return 0;
-    }
-}
-
-// Maps a runFfmpeg result to a failure IPC payload, or null on success.
-function ffmpegFailure(r) {
-    if (r.cancelled) return { success: false, cancelled: true, error: 'Cancelled' };
-    if (r.error) return { success: false, error: r.error };
-    if (r.code !== 0) return { success: false, error: `ffmpeg exited with code ${r.code}` };
-    return null;
-}
+// Theater persistence, ffmpeg job running and the local-video:// protocol
+// live in their own modules: theater-store.cjs, ffmpeg-runner.cjs,
+// local-video-protocol.cjs.
 
 function setupIpcHandlers() {
     // Renderer signals it has mounted and wired its IPC listeners — open the
@@ -334,41 +223,8 @@ function setupIpcHandlers() {
         }
     });
 
-    // Theater data persistence (file-based, not localStorage).
-    // Returns { success: true, data } (data null on first run) or { success: false, error }.
-    // A read/parse failure must be distinguishable from "no data yet" — the renderer
-    // blocks saves on failure so an empty state never overwrites the library.
-    ipcMain.handle('load-theater-data', async () => {
-        const dataPath = getTheaterDataPath();
-        const main = await readTheaterFile(dataPath);
-        if (main.ok) return { success: true, data: main.data };
-
-        if (!main.missing) {
-            // Preserve the unreadable file for manual recovery before any future save replaces it
-            try {
-                await fs.promises.copyFile(dataPath, `${dataPath}.corrupt`);
-            } catch (copyErr) {
-                console.error('[load-theater-data] Could not preserve corrupt file:', copyErr);
-            }
-        }
-
-        const bak = await readTheaterFile(`${dataPath}.bak`);
-        if (bak.ok) {
-            console.error('[load-theater-data] Main file unreadable, recovered from .bak');
-            return { success: true, data: bak.data, recovered: true };
-        }
-
-        if (main.missing && bak.missing) return { success: true, data: null };
-
-        console.error('[load-theater-data] Error:', main.error || bak.error);
-        return { success: false, error: main.error || bak.error };
-    });
-
-    ipcMain.handle('save-theater-data', (_event, data) => {
-        const run = theaterSaveChain.then(() => writeTheaterData(data));
-        theaterSaveChain = run.catch(() => {});
-        return run;
-    });
+    // Theater data persistence (load-theater-data / save-theater-data)
+    registerTheaterStore();
 
     // Batched file stats for sorting — replaces per-file synchronous stat calls.
     // Chunked so a huge folder doesn't burst thousands of concurrent handles.
@@ -977,7 +833,7 @@ function setupIpcHandlers() {
                 });
 
                 proc.on('close', (code) => {
-                    if (cancelledFfmpegProcs.has(proc)) {
+                    if (isCancelledFfmpegProc(proc)) {
                         fs.unlink(savePath, () => {});
                         resolve({ success: false, cancelled: true, error: 'Cancelled' });
                     } else if (code === 0) {
@@ -1500,86 +1356,7 @@ app.whenReady().then(async () => {
     }
 
     // local-video:// protocol handler with range request support
-    const VIDEO_MIME_TYPES = {
-        '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.webm': 'video/webm',
-        '.mov': 'video/quicktime', '.mkv': 'video/x-matroska', '.avi': 'video/x-msvideo',
-        '.ogv': 'video/ogg', '.ts': 'video/mp2t', '.mp3': 'audio/mpeg',
-        '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.flac': 'audio/flac'
-    };
-
-    protocol.handle('local-video', (request) => {
-        const url = new URL(request.url);
-        let filePath = decodeURIComponent(url.pathname);
-        if (process.platform === 'win32' && filePath.startsWith('/')) {
-            filePath = filePath.slice(1);
-        }
-
-        try {
-            const { Readable } = require('stream');
-            const stat = fs.statSync(filePath);
-            const fileSize = stat.size;
-            const rangeHeader = request.headers.get('range');
-            const contentType = VIDEO_MIME_TYPES[path.extname(filePath).toLowerCase()] || 'video/mp4';
-
-            // Streams the file after the Response has been handed back, so a
-            // file deleted mid-playback errors on the stream with no listener —
-            // swallow it instead of crashing the main process.
-            const toBody = (stream) => {
-                stream.on('error', () => {});
-                return Readable.toWeb(stream);
-            };
-
-            // Stream from disk instead of buffering the whole file/range into
-            // memory — a multi-GB video would otherwise spike RAM on each request.
-            if (rangeHeader) {
-                const match = rangeHeader.match(/bytes=(\d*)-(\d*)/);
-                if (match && (match[1] || match[2])) {
-                    let start;
-                    let end;
-                    if (match[1]) {
-                        start = parseInt(match[1], 10);
-                        end = match[2] ? Math.min(parseInt(match[2], 10), fileSize - 1) : fileSize - 1;
-                    } else {
-                        // Suffix range: bytes=-500 → the last 500 bytes
-                        const suffix = Math.min(parseInt(match[2], 10), fileSize);
-                        start = fileSize - suffix;
-                        end = fileSize - 1;
-                    }
-
-                    if (start >= fileSize || start > end || Number.isNaN(start)) {
-                        return new Response('Range not satisfiable', {
-                            status: 416,
-                            headers: { 'Content-Range': `bytes */${fileSize}` }
-                        });
-                    }
-
-                    const chunkSize = end - start + 1;
-                    const stream = fs.createReadStream(filePath, { start, end });
-
-                    return new Response(toBody(stream), {
-                        status: 206,
-                        headers: {
-                            'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-                            'Accept-Ranges': 'bytes',
-                            'Content-Length': String(chunkSize),
-                            'Content-Type': contentType
-                        }
-                    });
-                }
-            }
-
-            return new Response(toBody(fs.createReadStream(filePath)), {
-                status: 200,
-                headers: {
-                    'Content-Length': String(fileSize),
-                    'Content-Type': contentType,
-                    'Accept-Ranges': 'bytes'
-                }
-            });
-        } catch (e) {
-            return new Response('File not found', { status: 404 });
-        }
-    });
+    registerLocalVideoProtocol(protocol);
 
     setupIpcHandlers();
     createWindow();
@@ -1614,7 +1391,7 @@ app.on('will-quit', (event) => {
     event.preventDefault();
     killAllFfmpegJobs(); // don't leave orphaned encoders behind
     Promise.race([
-        theaterSaveChain,
+        drainTheaterSaves(),
         new Promise((resolve) => setTimeout(resolve, 2000)),
     ]).finally(() => app.quit());
 });
