@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { getVideoMetadata, formatDuration } from '../utils/videoMetadata';
 import { toLocalVideoUrl } from '../utils/localVideoUrl';
 
@@ -47,6 +47,13 @@ export const BatchCropDialog = ({ files, currentVideo, onClose }) => {
   const [results, setResults] = useState({ success: 0, failed: 0 });
   const [error, setError] = useState(null);
 
+  // Unmounting mid-batch must stop the loop and kill the running ffmpeg job
+  const abortedRef = useRef(false);
+  useEffect(() => () => {
+    abortedRef.current = true;
+    getElectronAPI()?.cancelFfmpeg?.('crop-video');
+  }, []);
+
   const api = getElectronAPI();
 
   const getFileName = useCallback((filePath) => {
@@ -82,6 +89,7 @@ export const BatchCropDialog = ({ files, currentVideo, onClose }) => {
     const selectedArr = [...selected];
 
     for (let i = 0; i < selectedArr.length; i++) {
+      if (abortedRef.current) break; // dialog unmounted — stop spawning jobs
       const file = selectedArr[i];
       setProgressFile(getFileName(file));
       setProgressIdx(i + 1);
@@ -110,6 +118,7 @@ export const BatchCropDialog = ({ files, currentVideo, onClose }) => {
         }, (pct) => setProgressPct(pct));
 
         if (result.success) success++;
+        else if (result.cancelled) break;
         else failed++;
       } catch {
         failed++;

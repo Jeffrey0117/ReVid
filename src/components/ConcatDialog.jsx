@@ -14,6 +14,9 @@ export const ConcatDialog = ({ files, onClose }) => {
   const [error, setError] = useState(null);
   const [durations, setDurations] = useState({});
 
+  // Unmounting mid-encode must not leave ffmpeg running
+  useEffect(() => () => { getElectronAPI()?.cancelFfmpeg?.('concat-videos'); }, []);
+
   const api = getElectronAPI();
 
   const getFileName = useCallback((filePath) => {

@@ -65,6 +65,9 @@ export const VideoEditor = ({ videoSrc, videoPath, onCancel, onComplete }) => {
     const containerRef = useRef(null);
     const videoRef = useRef(null);
 
+    // Leaving the editor mid-encode must not leave ffmpeg running
+    useEffect(() => () => { getElectronAPI()?.cancelFfmpeg?.('crop-video'); }, []);
+
     const [step, setStep] = useState(STEP.EDIT);
     const [videoDims, setVideoDims] = useState(null);
     const [duration, setDuration] = useState(0);

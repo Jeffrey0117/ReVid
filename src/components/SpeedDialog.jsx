@@ -21,6 +21,9 @@ export const SpeedDialog = ({ videoPath, videoDuration, onClose }) => {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
 
+  // Unmounting mid-encode must not leave ffmpeg running
+  useEffect(() => () => { getElectronAPI()?.cancelFfmpeg?.('speed-video'); }, []);
+
   const outputDuration = videoDuration / SPEEDS[speedIdx].value;
 
   const handleStart = useCallback(async () => {

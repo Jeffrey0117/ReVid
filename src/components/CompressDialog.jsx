@@ -28,6 +28,9 @@ export const CompressDialog = ({ videoPath, videoDuration, onClose }) => {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
 
+  // Unmounting mid-encode must not leave ffmpeg running
+  useEffect(() => () => { getElectronAPI()?.cancelFfmpeg?.('compress-video'); }, []);
+
   const handleStart = useCallback(async () => {
     const api = getElectronAPI();
     if (!api || !videoPath) return;

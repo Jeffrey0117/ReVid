@@ -136,6 +136,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.send('start-drag', filePath);
     },
 
+    // Kill all running ffmpeg jobs of one operation, e.g. cancelFfmpeg('create-gif').
+    // Tool dialogs call this when closed mid-encode.
+    cancelFfmpeg: async (op) => {
+        return await ipcRenderer.invoke('cancel-ffmpeg', op);
+    },
+
     // Rename-in-place only: both paths must resolve to the same directory,
     // so this can't be used to move files anywhere else on disk.
     renameFile: (oldPath, newPath) => {

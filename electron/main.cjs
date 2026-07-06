@@ -216,6 +216,93 @@ async function writeTheaterData(data) {
     }
 }
 
+// --- ffmpeg job tracking -------------------------------------------------
+// Every spawned ffmpeg process is tracked per operation so the renderer can
+// cancel it (closing a dialog mid-encode) and quit kills stragglers instead
+// of leaving orphaned encoders burning CPU.
+const activeFfmpegJobs = new Map(); // op -> Set<ChildProcess>
+const cancelledFfmpegProcs = new WeakSet();
+
+function trackFfmpegProc(op, proc) {
+    let jobs = activeFfmpegJobs.get(op);
+    if (!jobs) {
+        jobs = new Set();
+        activeFfmpegJobs.set(op, jobs);
+    }
+    jobs.add(proc);
+    proc.on('close', () => jobs.delete(proc));
+    proc.on('error', () => jobs.delete(proc));
+}
+
+function cancelFfmpegJobs(op) {
+    const jobs = activeFfmpegJobs.get(op);
+    if (!jobs) return 0;
+    let count = 0;
+    for (const proc of [...jobs]) {
+        cancelledFfmpegProcs.add(proc);
+        try {
+            proc.kill();
+            count += 1;
+        } catch (e) {
+            // process already exited
+        }
+    }
+    return count;
+}
+
+function killAllFfmpegJobs() {
+    for (const op of activeFfmpegJobs.keys()) cancelFfmpegJobs(op);
+}
+
+// Runs ffmpeg with uniform '-progress pipe:1' percentage reporting.
+// Progress lines are buffered so a value split across stdout chunks isn't
+// dropped. Resolves { code, cancelled, error? } — the caller shapes the
+// IPC result from that.
+function runFfmpeg({ op, args, progressChannel, totalUs }) {
+    return new Promise((resolve) => {
+        const proc = spawn(ffmpegPath, args);
+        trackFfmpegProc(op, proc);
+
+        let buffered = '';
+        proc.stdout.on('data', (data) => {
+            buffered += data.toString();
+            const lines = buffered.split('\n');
+            buffered = lines.pop();
+            for (const line of lines) {
+                const match = line.match(/out_time_us=(\d+)/);
+                if (match && progressChannel && totalUs > 0 && mainWindow && !mainWindow.isDestroyed()) {
+                    const pct = Math.min(100, Math.round((parseInt(match[1], 10) / totalUs) * 100));
+                    mainWindow.webContents.send(progressChannel, pct);
+                }
+            }
+        });
+        proc.stderr.on('data', () => {});
+
+        proc.on('close', (code) => {
+            resolve({ code, cancelled: cancelledFfmpegProcs.has(proc) });
+        });
+        proc.on('error', (err) => {
+            resolve({ code: -1, cancelled: cancelledFfmpegProcs.has(proc), error: err.message });
+        });
+    });
+}
+
+function fileSizeOrZero(p) {
+    try {
+        return fs.statSync(p).size;
+    } catch (e) {
+        return 0;
+    }
+}
+
+// Maps a runFfmpeg result to a failure IPC payload, or null on success.
+function ffmpegFailure(r) {
+    if (r.cancelled) return { success: false, cancelled: true, error: 'Cancelled' };
+    if (r.error) return { success: false, error: r.error };
+    if (r.code !== 0) return { success: false, error: `ffmpeg exited with code ${r.code}` };
+    return null;
+}
+
 function setupIpcHandlers() {
     // Renderer signals it has mounted and wired its IPC listeners — open the
     // launch file immediately (no fixed delay) instead of guessing with a timer.
@@ -352,6 +439,12 @@ function setupIpcHandlers() {
         return result.filePaths[0];
     });
 
+    // Cancel every running job of one operation (renderer calls this when a
+    // tool dialog closes mid-encode).
+    ipcMain.handle('cancel-ffmpeg', (_event, op) => {
+        return { success: true, cancelled: cancelFfmpegJobs(op) };
+    });
+
     // Extract screenshots from video at intervals
     ipcMain.handle('extract-screenshots', async (_event, params) => {
         const { inputPath, outputDir, interval, format, totalDuration } = params;
@@ -359,56 +452,40 @@ function setupIpcHandlers() {
         const baseName = path.basename(inputPath, path.extname(inputPath));
         const outputPattern = path.join(outputDir, `${baseName}_%04d.${ext}`);
 
-        const args = [
-            '-y',
-            '-i', inputPath,
-            '-vf', `fps=1/${interval}`,
-        ];
-
+        const args = ['-y', '-i', inputPath, '-vf', `fps=1/${interval}`];
         if (ext === 'png') {
             args.push('-compression_level', '3');
         } else {
             args.push('-q:v', '2');
         }
+        args.push('-progress', 'pipe:1', outputPattern);
 
-        args.push('-progress', 'pipe:1');
-        args.push(outputPattern);
-
-        const totalUs = (totalDuration || 1) * 1_000_000;
-
-        return new Promise((resolve) => {
-            const proc = spawn(ffmpegPath, args);
-
-            proc.stdout.on('data', (data) => {
-                const str = data.toString();
-                const match = str.match(/out_time_us=(\d+)/);
-                if (match && mainWindow) {
-                    const pct = Math.min(100, Math.round((parseInt(match[1]) / totalUs) * 100));
-                    mainWindow.webContents.send('screenshot-progress', pct);
-                }
-            });
-
-            proc.stderr.on('data', () => {});
-
-            proc.on('close', (code) => {
-                // Count output files
-                try {
-                    const outputFiles = fs.readdirSync(outputDir)
-                        .filter(f => f.startsWith(baseName + '_') && f.endsWith(`.${ext}`));
-                    if (code === 0) {
-                        resolve({ success: true, count: outputFiles.length });
-                    } else {
-                        resolve({ success: false, error: `ffmpeg exited with code ${code}`, count: outputFiles.length });
-                    }
-                } catch (e) {
-                    resolve({ success: code === 0, count: 0, error: code !== 0 ? `ffmpeg exited with code ${code}` : undefined });
-                }
-            });
-
-            proc.on('error', (err) => {
-                resolve({ success: false, error: err.message, count: 0 });
-            });
+        const startedAt = Date.now() - 2000; // small margin for fs mtime rounding
+        const r = await runFfmpeg({
+            op: 'extract-screenshots',
+            args,
+            progressChannel: 'screenshot-progress',
+            totalUs: (totalDuration || 1) * 1_000_000
         });
+
+        // Count only files this run produced, not leftovers from earlier runs
+        let count = 0;
+        try {
+            count = fs.readdirSync(outputDir).filter((f) => {
+                if (!f.startsWith(baseName + '_') || !f.endsWith(`.${ext}`)) return false;
+                try {
+                    return fs.statSync(path.join(outputDir, f)).mtimeMs >= startedAt;
+                } catch (e) {
+                    return false;
+                }
+            }).length;
+        } catch (e) {
+            // output dir unreadable — report zero
+        }
+
+        const failure = ffmpegFailure(r);
+        if (failure) return { ...failure, count };
+        return { success: true, count };
     });
 
     // Create GIF from video segment
@@ -428,39 +505,13 @@ function setupIpcHandlers() {
             outputPath
         ];
 
-        const totalUs = duration * 1_000_000;
-
-        return new Promise((resolve) => {
-            const proc = spawn(ffmpegPath, args);
-
-            proc.stdout.on('data', (data) => {
-                const str = data.toString();
-                const match = str.match(/out_time_us=(\d+)/);
-                if (match && mainWindow) {
-                    const pct = Math.min(100, Math.round((parseInt(match[1]) / totalUs) * 100));
-                    mainWindow.webContents.send('gif-progress', pct);
-                }
-            });
-
-            proc.stderr.on('data', () => {});
-
-            proc.on('close', (code) => {
-                if (code === 0) {
-                    try {
-                        const stat = fs.statSync(outputPath);
-                        resolve({ success: true, fileSize: stat.size });
-                    } catch {
-                        resolve({ success: true, fileSize: 0 });
-                    }
-                } else {
-                    resolve({ success: false, error: `ffmpeg exited with code ${code}` });
-                }
-            });
-
-            proc.on('error', (err) => {
-                resolve({ success: false, error: err.message });
-            });
+        const r = await runFfmpeg({
+            op: 'create-gif',
+            args,
+            progressChannel: 'gif-progress',
+            totalUs: duration * 1_000_000
         });
+        return ffmpegFailure(r) || { success: true, fileSize: fileSizeOrZero(outputPath) };
     });
 
     // Compress video (re-encode with quality/resolution)
@@ -477,39 +528,13 @@ function setupIpcHandlers() {
         args.push('-progress', 'pipe:1');
         args.push(outputPath);
 
-        const totalUs = (totalDuration || 1) * 1_000_000;
-
-        return new Promise((resolve) => {
-            const proc = spawn(ffmpegPath, args);
-
-            proc.stdout.on('data', (data) => {
-                const str = data.toString();
-                const match = str.match(/out_time_us=(\d+)/);
-                if (match && mainWindow) {
-                    const pct = Math.min(100, Math.round((parseInt(match[1]) / totalUs) * 100));
-                    mainWindow.webContents.send('compress-progress', pct);
-                }
-            });
-
-            proc.stderr.on('data', () => {});
-
-            proc.on('close', (code) => {
-                if (code === 0) {
-                    try {
-                        const stat = fs.statSync(outputPath);
-                        resolve({ success: true, fileSize: stat.size });
-                    } catch {
-                        resolve({ success: true, fileSize: 0 });
-                    }
-                } else {
-                    resolve({ success: false, error: `ffmpeg exited with code ${code}` });
-                }
-            });
-
-            proc.on('error', (err) => {
-                resolve({ success: false, error: err.message });
-            });
+        const r = await runFfmpeg({
+            op: 'compress-video',
+            args,
+            progressChannel: 'compress-progress',
+            totalUs: (totalDuration || 1) * 1_000_000
         });
+        return ffmpegFailure(r) || { success: true, fileSize: fileSizeOrZero(outputPath) };
     });
 
     // Extract audio from video
@@ -529,39 +554,13 @@ function setupIpcHandlers() {
         args.push('-progress', 'pipe:1');
         args.push(outputPath);
 
-        const totalUs = (totalDuration || 1) * 1_000_000;
-
-        return new Promise((resolve) => {
-            const proc = spawn(ffmpegPath, args);
-
-            proc.stdout.on('data', (data) => {
-                const str = data.toString();
-                const match = str.match(/out_time_us=(\d+)/);
-                if (match && mainWindow) {
-                    const pct = Math.min(100, Math.round((parseInt(match[1]) / totalUs) * 100));
-                    mainWindow.webContents.send('audio-progress', pct);
-                }
-            });
-
-            proc.stderr.on('data', () => {});
-
-            proc.on('close', (code) => {
-                if (code === 0) {
-                    try {
-                        const stat = fs.statSync(outputPath);
-                        resolve({ success: true, fileSize: stat.size });
-                    } catch {
-                        resolve({ success: true, fileSize: 0 });
-                    }
-                } else {
-                    resolve({ success: false, error: `ffmpeg exited with code ${code}` });
-                }
-            });
-
-            proc.on('error', (err) => {
-                resolve({ success: false, error: err.message });
-            });
+        const r = await runFfmpeg({
+            op: 'extract-audio',
+            args,
+            progressChannel: 'audio-progress',
+            totalUs: (totalDuration || 1) * 1_000_000
         });
+        return ffmpegFailure(r) || { success: true, fileSize: fileSizeOrZero(outputPath) };
     });
 
     // Export video at different speed
@@ -580,41 +579,15 @@ function setupIpcHandlers() {
             outputPath
         ];
 
-        const totalUs = (totalDuration || 1) * 1_000_000;
-
-        return new Promise((resolve) => {
-            const proc = spawn(ffmpegPath, args);
-
-            proc.stdout.on('data', (data) => {
-                const str = data.toString();
-                const match = str.match(/out_time_us=(\d+)/);
-                if (match && mainWindow) {
-                    const outputDur = totalDuration / speed;
-                    const outputUs = outputDur * 1_000_000;
-                    const pct = Math.min(100, Math.round((parseInt(match[1]) / outputUs) * 100));
-                    mainWindow.webContents.send('speed-progress', pct);
-                }
-            });
-
-            proc.stderr.on('data', () => {});
-
-            proc.on('close', (code) => {
-                if (code === 0) {
-                    try {
-                        const stat = fs.statSync(outputPath);
-                        resolve({ success: true, fileSize: stat.size });
-                    } catch {
-                        resolve({ success: true, fileSize: 0 });
-                    }
-                } else {
-                    resolve({ success: false, error: `ffmpeg exited with code ${code}` });
-                }
-            });
-
-            proc.on('error', (err) => {
-                resolve({ success: false, error: err.message });
-            });
+        // Output runs at the new speed, so progress is measured against the
+        // sped-up duration, not the input duration.
+        const r = await runFfmpeg({
+            op: 'speed-video',
+            args,
+            progressChannel: 'speed-progress',
+            totalUs: ((totalDuration || 1) / speed) * 1_000_000
         });
+        return ffmpegFailure(r) || { success: true, fileSize: fileSizeOrZero(outputPath) };
     });
 
     // Video concat (join multiple videos)
@@ -634,41 +607,17 @@ function setupIpcHandlers() {
             outputPath
         ];
 
-        const totalUs = (totalDuration || 1) * 1_000_000;
-
-        return new Promise((resolve) => {
-            const proc = spawn(ffmpegPath, args);
-
-            proc.stdout.on('data', (data) => {
-                const str = data.toString();
-                const match = str.match(/out_time_us=(\d+)/);
-                if (match && mainWindow) {
-                    const pct = Math.min(100, Math.round((parseInt(match[1]) / totalUs) * 100));
-                    mainWindow.webContents.send('concat-progress', pct);
-                }
+        try {
+            const r = await runFfmpeg({
+                op: 'concat-videos',
+                args,
+                progressChannel: 'concat-progress',
+                totalUs: (totalDuration || 1) * 1_000_000
             });
-
-            proc.stderr.on('data', () => {});
-
-            proc.on('close', (code) => {
-                try { fs.unlinkSync(listPath); } catch {}
-                if (code === 0) {
-                    try {
-                        const stat = fs.statSync(outputPath);
-                        resolve({ success: true, fileSize: stat.size });
-                    } catch {
-                        resolve({ success: true, fileSize: 0 });
-                    }
-                } else {
-                    resolve({ success: false, error: `ffmpeg exited with code ${code}` });
-                }
-            });
-
-            proc.on('error', (err) => {
-                try { fs.unlinkSync(listPath); } catch {}
-                resolve({ success: false, error: err.message });
-            });
-        });
+            return ffmpegFailure(r) || { success: true, fileSize: fileSizeOrZero(outputPath) };
+        } finally {
+            try { fs.unlinkSync(listPath); } catch (e) {}
+        }
     });
 
     // Crop + trim video using ffmpeg (runs in main process)
@@ -688,31 +637,18 @@ function setupIpcHandlers() {
         args.push('-progress', 'pipe:1');
         args.push(outputPath);
 
-        const totalUs = (totalDuration || 1) * 1_000_000;
-
-        return new Promise((resolve) => {
-            const proc = spawn(ffmpegPath, args);
-
-            proc.stdout.on('data', (data) => {
-                const str = data.toString();
-                const match = str.match(/out_time_us=(\d+)/);
-                if (match && mainWindow) {
-                    const pct = Math.min(100, Math.round((parseInt(match[1]) / totalUs) * 100));
-                    mainWindow.webContents.send('crop-progress', pct);
-                }
-            });
-
-            proc.stderr.on('data', () => {});
-
-            proc.on('close', (code) => {
-                if (code === 0) resolve({ success: true });
-                else resolve({ success: false, error: `ffmpeg exited with code ${code}` });
-            });
-
-            proc.on('error', (err) => {
-                resolve({ success: false, error: err.message });
-            });
+        // When trimming, the output only spans the trimmed range — measure
+        // progress against that, not the full input duration.
+        const outputDuration = trim
+            ? Math.max(trim.endTime - trim.startTime, 0.001)
+            : (totalDuration || 1);
+        const r = await runFfmpeg({
+            op: 'crop-video',
+            args,
+            progressChannel: 'crop-progress',
+            totalUs: outputDuration * 1_000_000
         });
+        return ffmpegFailure(r) || { success: true };
     });
 
     // --- Mini Player IPC Handlers ---
@@ -1018,6 +954,7 @@ function setupIpcHandlers() {
                 ];
 
                 const proc = spawn(ffmpegPath, args);
+                trackFfmpegProc('download-video', proc);
                 let duration = 0;
 
                 proc.stderr.on('data', (data) => {
@@ -1040,7 +977,10 @@ function setupIpcHandlers() {
                 });
 
                 proc.on('close', (code) => {
-                    if (code === 0) {
+                    if (cancelledFfmpegProcs.has(proc)) {
+                        fs.unlink(savePath, () => {});
+                        resolve({ success: false, cancelled: true, error: 'Cancelled' });
+                    } else if (code === 0) {
                         mainWindow?.webContents.send('download-progress', { progress: 100 });
                         resolve({ success: true, filePath: savePath });
                     } else {
@@ -1672,6 +1612,7 @@ app.on('will-quit', (event) => {
     if (quitFlushed) return;
     quitFlushed = true;
     event.preventDefault();
+    killAllFfmpegJobs(); // don't leave orphaned encoders behind
     Promise.race([
         theaterSaveChain,
         new Promise((resolve) => setTimeout(resolve, 2000)),

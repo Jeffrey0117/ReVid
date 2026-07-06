@@ -15,6 +15,9 @@ export const GifDialog = ({ videoPath, videoDuration, onClose }) => {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
 
+  // Unmounting mid-encode must not leave ffmpeg running
+  useEffect(() => () => { getElectronAPI()?.cancelFfmpeg?.('create-gif'); }, []);
+
   const duration = Math.max(0.1, endTime - startTime);
 
   useEffect(() => {

@@ -13,6 +13,9 @@ export const ScreenshotDialog = ({ videoPath, videoDuration, onClose }) => {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
 
+  // Unmounting mid-encode must not leave ffmpeg running
+  useEffect(() => () => { getElectronAPI()?.cancelFfmpeg?.('extract-screenshots'); }, []);
+
   const estimatedCount = videoDuration > 0
     ? Math.floor(videoDuration / interval) + 1
     : 0;

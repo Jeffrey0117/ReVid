@@ -17,6 +17,9 @@ export const AudioDialog = ({ videoPath, videoDuration, onClose }) => {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
 
+  // Unmounting mid-encode must not leave ffmpeg running
+  useEffect(() => () => { getElectronAPI()?.cancelFfmpeg?.('extract-audio'); }, []);
+
   const handleStart = useCallback(async () => {
     const api = getElectronAPI();
     if (!api || !videoPath) return;
