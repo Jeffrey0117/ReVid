@@ -25,6 +25,7 @@ import { usePlaybackSpeed } from './hooks/usePlaybackSpeed';
 import { TheaterSidebar } from './features/theater/TheaterSidebar';
 import { CourseWebview } from './features/theater/CourseWebview';
 import { YouTubePlayer } from './features/theater/YouTubePlayer';
+import { MusicPlaylist } from './features/theater/MusicPlaylist';
 import { AddCourseDialog } from './features/theater/AddCourseDialog';
 import { BatchRenameCourseDialog } from './features/theater/BatchRenameCourseDialog';
 import { ExportDialog } from './features/theater/ExportDialog';
@@ -102,6 +103,15 @@ export default function App() {
     const [showInfoPanel, setShowInfoPanel] = useState(false);
     const [dragOverGrid, setDragOverGrid] = useState(false);
     const [musicMinimized, setMusicMinimized] = useState(false);
+    // Track-list sidebar beside the full music-album view (remembered).
+    const [showMusicPlaylist, setShowMusicPlaylist] = useState(() => localStorage.getItem('revid-music-playlist') !== 'hidden');
+    const toggleMusicPlaylist = useCallback(() => {
+        setShowMusicPlaylist((prev) => {
+            const next = !prev;
+            localStorage.setItem('revid-music-playlist', next ? 'shown' : 'hidden');
+            return next;
+        });
+    }, []);
     const [theaterView, setTheaterView] = useState(() => localStorage.getItem('revid-theater-view') || 'grid');
     const [dragCourseId, setDragCourseId] = useState(null);
     // Repeat mode for theater/music playback: off → all (wrap playlist) → one (single track).
@@ -349,6 +359,31 @@ export default function App() {
         if (needsTitle) theater.renameCourse(folderId, courseId, ytTitle);
     }, [theater.renameCourse]);
 
+    // While the music playlist is open, fill in real song names for tracks that
+    // still have their URL as the title (one request at a time, once per track).
+    const titleFetchTried = useRef(new Set());
+    const musicPlaylistOpen = viewMode === 'theater' && !!theater.activeCourse
+        && !!theater.selectedFolder?.musicMode && showMusicPlaylist && !musicMinimized;
+    useEffect(() => {
+        const api = getElectronAPI();
+        if (!musicPlaylistOpen || !api?.fetchYouTubeTitle) return;
+        const folderId = theater.selectedFolderId;
+        const pending = theater.activeCourses.filter((c) =>
+            (!c.title || /^https?:\/\//i.test(c.title)) && !titleFetchTried.current.has(c.id));
+        let cancelled = false;
+        (async () => {
+            for (const course of pending) {
+                if (cancelled) return;
+                titleFetchTried.current.add(course.id);
+                const result = await api.fetchYouTubeTitle(course.url).catch(() => null);
+                if (result?.success && result.title) {
+                    theater.renameCourse(folderId, course.id, result.title);
+                }
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [musicPlaylistOpen, theater.selectedFolderId, theater.activeCourses, theater.renameCourse]);
+
     const handleThumbnailCaptured = useCallback((thumbnail) => {
         const { folderId, courseId, course } = theaterRefs.current;
         if (!course || course.thumbnail) return;
@@ -455,6 +490,14 @@ export default function App() {
     // after a fixed delay.
     useEffect(() => {
         getElectronAPI()?.notifyReady?.();
+    }, []);
+
+    // The main process restores the saved "pin on top" choice at launch; sync
+    // the toolbar button with it.
+    useEffect(() => {
+        getElectronAPI()?.getAlwaysOnTop?.().then((result) => {
+            if (result?.success) setIsAlwaysOnTop(result.alwaysOnTop);
+        }).catch(() => {});
     }, []);
 
     const toggleAlwaysOnTop = useCallback(async () => {
@@ -1723,7 +1766,23 @@ export default function App() {
                             Full: covers the content as an album view. Minimized:
                             a small bottom-right bar so you can browse while it plays. */}
                         {viewMode === 'theater' && theater.activeCourse && theater.selectedFolder?.musicMode && (
-                            <div style={{ position: 'absolute', inset: 0, zIndex: 30, background: '#0a0a0c' }}>
+                            <div style={{ position: 'absolute', inset: 0, zIndex: 30, background: '#0a0a0c', display: 'flex' }}>
+                                <div style={{ flex: 1, minWidth: 0, position: 'relative', display: 'flex' }}>
+                                {!musicMinimized && !showMusicPlaylist && (
+                                    <button
+                                        onClick={toggleMusicPlaylist}
+                                        title={t('showPlaylist')}
+                                        style={{
+                                            position: 'absolute', top: 14, left: 14, zIndex: 40,
+                                            height: 36, padding: '0 12px', borderRadius: 18, border: 'none', cursor: 'pointer',
+                                            background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.85)',
+                                            display: 'flex', alignItems: 'center', gap: 6, fontSize: 13
+                                        }}
+                                    >
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h13M3 12h13M3 18h9" /><circle cx="19" cy="17" r="2" /><path d="M21 17V8" /></svg>
+                                        {t('musicPlaylist')}
+                                    </button>
+                                )}
                                 <YouTubePlayer
                                     url={theater.activeCourse.url}
                                     playbackRate={theaterSpeed}
@@ -1747,6 +1806,16 @@ export default function App() {
                                     loopMode={loopMode}
                                     onCycleLoop={cycleLoop}
                                 />
+                                </div>
+                                {!musicMinimized && showMusicPlaylist && (
+                                    <MusicPlaylist
+                                        courses={theater.activeCourses}
+                                        currentId={theater.activeCourseId}
+                                        folderName={theater.selectedFolder?.name}
+                                        onSelect={theater.openCourse}
+                                        onHide={toggleMusicPlaylist}
+                                    />
+                                )}
                             </div>
                         )}
                     </main>

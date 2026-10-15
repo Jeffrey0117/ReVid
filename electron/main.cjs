@@ -115,13 +115,17 @@ let savedMusicBounds = null;
 // Whether the window is currently in the mini-panel layout. Guards the restore
 // so calling set-music-mini(false) when already normal is a harmless no-op.
 let isMusicMini = false;
+// The user's own "pin on top" choice (toolbar button). Kept separate from the
+// mini-panel's forced on-top so leaving the mini-panel restores it, and
+// persisted in window-state.json so it survives restarts.
+let userAlwaysOnTop = false;
 
 const saveWindowState = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     try {
         const b = savedMusicBounds || mainWindow.getNormalBounds();
         const isMaximized = savedMusicBounds ? false : mainWindow.isMaximized();
-        fs.writeFileSync(getWindowStatePath(), JSON.stringify({ ...b, isMaximized }));
+        fs.writeFileSync(getWindowStatePath(), JSON.stringify({ ...b, isMaximized, alwaysOnTop: userAlwaysOnTop }));
     } catch {}
 };
 
@@ -161,6 +165,8 @@ function createWindow() {
     if (launchVideo) initialFileHandled = true;
 
     if (saved?.isMaximized) mainWindow.maximize();
+    userAlwaysOnTop = !!saved?.alwaysOnTop;
+    if (userAlwaysOnTop) mainWindow.setAlwaysOnTop(true);
 
     Menu.setApplicationMenu(null);
 
@@ -619,7 +625,7 @@ function setupIpcHandlers() {
             if (!isMusicMini) return { success: true };
             isMusicMini = false;
             mainWindow.setResizable(true);
-            mainWindow.setAlwaysOnTop(false);
+            mainWindow.setAlwaysOnTop(userAlwaysOnTop);
             mainWindow.setMinimumSize(640, 480);
             if (savedMusicBounds) {
                 mainWindow.setBounds(savedMusicBounds);
@@ -640,15 +646,17 @@ function setupIpcHandlers() {
 
     ipcMain.handle('set-always-on-top', (_event, value) => {
         if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.setAlwaysOnTop(!!value);
-            return { success: true, alwaysOnTop: !!value };
+            userAlwaysOnTop = !!value;
+            mainWindow.setAlwaysOnTop(userAlwaysOnTop);
+            saveWindowState();
+            return { success: true, alwaysOnTop: userAlwaysOnTop };
         }
         return { success: false };
     });
 
     ipcMain.handle('get-always-on-top', () => {
         if (mainWindow && !mainWindow.isDestroyed()) {
-            return { success: true, alwaysOnTop: mainWindow.isAlwaysOnTop() };
+            return { success: true, alwaysOnTop: userAlwaysOnTop };
         }
         return { success: false, alwaysOnTop: false };
     });
