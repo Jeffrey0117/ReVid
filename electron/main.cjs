@@ -112,6 +112,9 @@ const loadWindowState = () => {
 // Set when the window is shrunk to the floating music mini-panel, so we can
 // restore the real size and never persist the tiny bounds.
 let savedMusicBounds = null;
+// Whether the window was maximized before entering the mini-panel, so leaving
+// it re-maximizes instead of restoring the maximized size as a normal window.
+let savedMusicMaximized = false;
 // Whether the window is currently in the mini-panel layout. Guards the restore
 // so calling set-music-mini(false) when already normal is a harmless no-op.
 let isMusicMini = false;
@@ -124,13 +127,43 @@ const saveWindowState = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     try {
         const b = savedMusicBounds || mainWindow.getNormalBounds();
-        const isMaximized = savedMusicBounds ? false : mainWindow.isMaximized();
+        const isMaximized = savedMusicBounds ? savedMusicMaximized : mainWindow.isMaximized();
         fs.writeFileSync(getWindowStatePath(), JSON.stringify({ ...b, isMaximized, alwaysOnTop: userAlwaysOnTop }));
     } catch {}
 };
 
+// Save shortly after the user stops resizing/moving, not only on close — a
+// close that skips the 'close' event (crash, kill, updater) would lose it.
+let saveWindowStateTimer = null;
+const scheduleSaveWindowState = () => {
+    if (isMusicMini) return; // never persist the tiny mini-panel bounds
+    clearTimeout(saveWindowStateTimer);
+    saveWindowStateTimer = setTimeout(saveWindowState, 500);
+};
+
+// Keep a restored (non-maximized) window within the display it lands on, so a
+// stale full-screen-sized state never comes back as an oversized window.
+const fitToWorkArea = (saved) => {
+    if (!saved?.width || !saved?.height) return null;
+    try {
+        const { screen } = require('electron');
+        const hasPos = Number.isFinite(saved.x) && Number.isFinite(saved.y);
+        const wa = (hasPos ? screen.getDisplayMatching(saved) : screen.getPrimaryDisplay()).workArea;
+        const width = Math.min(saved.width, Math.round(wa.width * 0.9));
+        const height = Math.min(saved.height, Math.round(wa.height * 0.9));
+        const fits = hasPos && saved.x >= wa.x && saved.y >= wa.y
+            && saved.x + width <= wa.x + wa.width && saved.y + height <= wa.y + wa.height;
+        return fits
+            ? { x: saved.x, y: saved.y, width, height }
+            : { x: wa.x + Math.round((wa.width - width) / 2), y: wa.y + Math.round((wa.height - height) / 2), width, height };
+    } catch {
+        return null;
+    }
+};
+
 function createWindow() {
     const saved = loadWindowState();
+    const bounds = fitToWorkArea(saved);
 
     // If launched to open a video ("Open with ReVid"), hand the path to the
     // renderer up-front via preload argv so it boots straight into the player —
@@ -139,10 +172,10 @@ function createWindow() {
     const launchVideo = (launchFile && isVideoFile(launchFile)) ? launchFile : null;
 
     mainWindow = new BrowserWindow({
-        width: saved?.width || 1280,
-        height: saved?.height || 820,
-        x: saved?.x,
-        y: saved?.y,
+        width: bounds?.width || 1280,
+        height: bounds?.height || 820,
+        x: bounds?.x,
+        y: bounds?.y,
         minWidth: 640,
         minHeight: 480,
         title: 'ReVid',
@@ -164,6 +197,9 @@ function createWindow() {
     // The renderer opens it from argv, so don't also push it over IPC.
     if (launchVideo) initialFileHandled = true;
 
+    // Re-apply the bounds: at fractional display scaling (e.g. 125%) the
+    // constructor rounds the size up, so the window would grow every launch.
+    if (bounds) mainWindow.setBounds(bounds);
     if (saved?.isMaximized) mainWindow.maximize();
     userAlwaysOnTop = !!saved?.alwaysOnTop;
     if (userAlwaysOnTop) mainWindow.setAlwaysOnTop(true);
@@ -192,6 +228,9 @@ function createWindow() {
     }, 2000);
 
     mainWindow.on('close', saveWindowState);
+    for (const evt of ['resize', 'move', 'maximize', 'unmaximize']) {
+        mainWindow.on(evt, scheduleSaveWindowState);
+    }
 }
 
 // Theater persistence, ffmpeg job running and the local-video:// protocol
@@ -605,7 +644,13 @@ function setupIpcHandlers() {
         if (!mainWindow || mainWindow.isDestroyed()) return { success: false };
         const MINI_W = 400, MINI_H = 92;
         if (enter) {
-            if (!savedMusicBounds) savedMusicBounds = mainWindow.getBounds();
+            if (!savedMusicBounds) {
+                savedMusicMaximized = mainWindow.isMaximized();
+                savedMusicBounds = mainWindow.getNormalBounds();
+            }
+            // Flag first so the resize events below aren't persisted.
+            isMusicMini = true;
+            clearTimeout(saveWindowStateTimer);
             if (mainWindow.isMaximized()) mainWindow.unmaximize();
             mainWindow.setMinimumSize(300, 80);
             mainWindow.setAlwaysOnTop(true);
@@ -613,7 +658,6 @@ function setupIpcHandlers() {
             // Fixed-size panel: removes the window's edge resize zones so the
             // bottom progress bar is clickable (clicks there were resizing).
             mainWindow.setResizable(false);
-            isMusicMini = true;
             try {
                 const { screen } = require('electron');
                 const wa = screen.getPrimaryDisplay().workArea;
@@ -629,7 +673,10 @@ function setupIpcHandlers() {
             mainWindow.setMinimumSize(640, 480);
             if (savedMusicBounds) {
                 mainWindow.setBounds(savedMusicBounds);
+                if (savedMusicMaximized) mainWindow.maximize();
                 savedMusicBounds = null;
+                savedMusicMaximized = false;
+                scheduleSaveWindowState();
             } else {
                 // Never leave the window stuck at the tiny mini size.
                 const cur = mainWindow.getBounds();
