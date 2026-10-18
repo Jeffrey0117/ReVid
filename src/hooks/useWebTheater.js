@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { extractYouTubeVideoId } from '../utils/youtubeUrl';
 import { validateRevidFile, revidToCourse } from '../utils/revidFile';
+import { touch, markDeleted, visibleFolders, normalizeLoadedFolders } from '../utils/theaterRecords';
 
 const generateId = () => `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
@@ -13,13 +14,18 @@ const getYouTubeThumbnail = (url) => {
  * Hook for managing virtual course theater with file-based persistence.
  *
  * Data Model:
- *   Folder { id, name, platform, courses[], createdAt }
+ *   Folder { id, name, platform, courses[], createdAt, updatedAt, deletedAt }
  *   Course { id, url, title, thumbnail, platform,
  *            progress: { lastPosition, duration, lastWatched, completed },
- *            addedAt, deletedAt? }
+ *            addedAt, updatedAt, deletedAt }
+ *
+ * Content changes stamp `updatedAt` and deletes leave tombstones (see
+ * utils/theaterRecords.js) so the library can be synced. `allFolders` keeps
+ * the tombstones; everything exposed to the UI is the visible subset.
  */
 export const useWebTheater = () => {
-  const [folders, setFolders] = useState([]);
+  const [allFolders, setFolders] = useState([]);
+  const folders = useMemo(() => visibleFolders(allFolders), [allFolders]);
   const [selectedFolderId, setSelectedFolderId] = useState(null);
   const [activeCourseId, setActiveCourseId] = useState(null);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -48,9 +54,11 @@ export const useWebTheater = () => {
           if (result?.recovered) setLoadRecovered(true);
           const data = result?.data;
           if (data && Array.isArray(data)) {
-            setFolders(data);
-            if (data.length > 0) {
-              setSelectedFolderId(data[0].id);
+            const normalized = normalizeLoadedFolders(data);
+            setFolders(normalized);
+            const firstVisible = visibleFolders(normalized)[0];
+            if (firstVisible) {
+              setSelectedFolderId(firstVisible.id);
             }
           }
         }
@@ -68,18 +76,18 @@ export const useWebTheater = () => {
   useEffect(() => {
     if (!isLoaded) return; // Don't save before initial load (or after a failed one)
 
-    pendingSaveRef.current = folders;
+    pendingSaveRef.current = allFolders;
     const timeoutId = setTimeout(() => {
       pendingSaveRef.current = null;
       const api = window.electronAPI;
       if (api?.saveTheaterData) {
-        api.saveTheaterData(folders).catch(e => {
+        api.saveTheaterData(allFolders).catch(e => {
           console.error('[useWebTheater] Failed to save:', e);
         });
       }
     }, 500);
     return () => clearTimeout(timeoutId);
-  }, [folders, isLoaded]);
+  }, [allFolders, isLoaded]);
 
   // Flush a still-debounced save when the window closes (or the hook unmounts),
   // so quitting the app right after a change doesn't drop it.
@@ -120,12 +128,15 @@ export const useWebTheater = () => {
   // --- Folder CRUD ---
 
   const createFolder = useCallback((name, platform = 'custom') => {
+    const now = Date.now();
     const newFolder = {
       id: generateId(),
       name: name || 'New Folder',
       platform,
       courses: [],
-      createdAt: Date.now()
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null
     };
     setFolders(prev => [...prev, newFolder]);
     setSelectedFolderId(newFolder.id);
@@ -134,24 +145,25 @@ export const useWebTheater = () => {
 
   const renameFolder = useCallback((folderId, newName) => {
     setFolders(prev => prev.map(f =>
-      f.id === folderId ? { ...f, name: newName } : f
+      f.id === folderId ? touch({ ...f, name: newName }) : f
     ));
   }, []);
 
   // Music-album mode: play the folder like an album (one cover, auto-advance).
   const toggleMusicMode = useCallback((folderId) => {
     setFolders(prev => prev.map(f =>
-      f.id === folderId ? { ...f, musicMode: !f.musicMode } : f
+      f.id === folderId ? touch({ ...f, musicMode: !f.musicMode }) : f
     ));
   }, []);
 
   const setFolderCover = useCallback((folderId, cover) => {
     setFolders(prev => prev.map(f =>
-      f.id === folderId ? { ...f, cover } : f
+      f.id === folderId ? touch({ ...f, cover }) : f
     ));
   }, []);
 
   // Reorder: drop the dragged course at the target course's position.
+  // The order belongs to the folder, so reordering stamps the folder.
   const moveCourse = useCallback((folderId, draggedId, targetId) => {
     if (!draggedId || draggedId === targetId) return;
     setFolders(prev => prev.map(f => {
@@ -162,12 +174,13 @@ export const useWebTheater = () => {
       const [moved] = courses.splice(from, 1);
       const to = targetId ? courses.findIndex(c => c.id === targetId) : courses.length;
       courses.splice(to < 0 ? courses.length : to, 0, moved);
-      return { ...f, courses };
+      return touch({ ...f, courses });
     }));
   }, []);
 
+  // Soft delete: keep a tombstone so the deletion can sync to other machines.
   const deleteFolder = useCallback((folderId) => {
-    setFolders(prev => prev.filter(f => f.id !== folderId));
+    setFolders(prev => prev.map(f => (f.id === folderId ? markDeleted(f) : f)));
     if (selectedFolderId === folderId) {
       setSelectedFolderId(prev => {
         const remaining = folders.filter(f => f.id !== folderId);
@@ -189,7 +202,7 @@ export const useWebTheater = () => {
       return {
         ...f,
         courses: f.courses.map(c =>
-          c.id === courseId ? { ...c, thumbnail } : c
+          c.id === courseId ? touch({ ...c, thumbnail }) : c
         )
       };
     }));
@@ -200,6 +213,7 @@ export const useWebTheater = () => {
       ? getYouTubeThumbnail(url)
       : null;
 
+    const now = Date.now();
     const newCourse = {
       id: generateId(),
       url,
@@ -212,7 +226,8 @@ export const useWebTheater = () => {
         lastWatched: null,
         completed: false
       },
-      addedAt: Date.now(),
+      addedAt: now,
+      updatedAt: now,
       deletedAt: null
     };
 
@@ -230,7 +245,7 @@ export const useWebTheater = () => {
       return {
         ...f,
         courses: f.courses.map(c =>
-          c.id === courseId ? { ...c, deletedAt: Date.now() } : c
+          c.id === courseId ? markDeleted(c) : c
         )
       };
     }));
@@ -246,7 +261,7 @@ export const useWebTheater = () => {
       return {
         ...f,
         courses: f.courses.map(c =>
-          c.id === courseId ? { ...c, title: newTitle } : c
+          c.id === courseId ? touch({ ...c, title: newTitle }) : c
         )
       };
     }));
@@ -260,16 +275,13 @@ export const useWebTheater = () => {
         ...f,
         courses: f.courses.map(c => {
           if (c.id !== courseId) return c;
-          const updated = { ...c, url: newUrl };
-          if (clickPath !== null) {
-            updated.clickPath = clickPath;
-          }
-          return updated;
+          return touch(clickPath !== null ? { ...c, url: newUrl, clickPath } : { ...c, url: newUrl });
         })
       };
     }));
   }, []);
 
+  // Progress merges on its own lastWatched, so it does not stamp updatedAt.
   const updateProgress = useCallback((folderId, courseId, progress) => {
     setFolders(prev => prev.map(f => {
       if (f.id !== folderId) return f;
@@ -352,19 +364,24 @@ export const useWebTheater = () => {
       return { success: false, error: 'Not a collection file' };
     }
 
-    const importedFolders = (collectionData.folders || []).map(folder => {
-      const folderId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      return {
-        id: folderId,
-        name: folder.name || 'Imported Folder',
-        platform: folder.platform || 'custom',
-        courses: (folder.courses || []).map(c => revidToCourse(c)),
-        createdAt: Date.now(),
-      };
-    });
+    const now = Date.now();
+    const importedFolders = (collectionData.folders || []).map(folder => ({
+      id: generateId(),
+      name: folder.name || 'Imported Folder',
+      platform: folder.platform || 'custom',
+      courses: (folder.courses || []).map(c => revidToCourse(c)),
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    }));
 
     if (mode === 'replace') {
-      setFolders(importedFolders);
+      // Tombstone the current folders rather than dropping them, so the
+      // replacement also deletes them on other synced machines.
+      setFolders(prev => [
+        ...prev.map(f => (f.deletedAt ? f : markDeleted(f, now))),
+        ...importedFolders
+      ]);
       if (importedFolders.length > 0) {
         setSelectedFolderId(importedFolders[0].id);
       }

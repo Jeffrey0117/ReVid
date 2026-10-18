@@ -124,6 +124,7 @@ export const revidToCourse = (revidData) => {
           completed: false,
         },
     addedAt: now,
+    updatedAt: now,
     deletedAt: null,
   };
 };

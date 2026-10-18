@@ -10,7 +10,8 @@
     "electron:dev": "concurrently -k \"cross-env BROWSER=none npm run dev\" \"wait-on http://localhost:3001 && node electron/start.cjs\"",
     "electron:build": "vite build && electron-builder",
     "release": "vite build && electron-builder --publish always",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"src/**/*.test.mjs\""
   },
   "dependencies": {
     "electron-updater": "^6.8.3",
