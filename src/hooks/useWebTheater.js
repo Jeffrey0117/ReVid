@@ -113,6 +113,14 @@ export const useWebTheater = () => {
     [folders, selectedFolderId]
   );
 
+  // Keep a folder selected when folders appear or the selected one vanishes
+  // without a local action (e.g. synced in from / deleted on another machine).
+  useEffect(() => {
+    if (selectedFolder || folders.length === 0) return;
+    setSelectedFolderId(folders[0].id);
+    setActiveCourseId(null);
+  }, [selectedFolder, folders]);
+
   // Active courses in selected folder (excluding soft-deleted)
   const activeCourses = useMemo(() => {
     if (!selectedFolder) return [];
@@ -298,6 +306,12 @@ export const useWebTheater = () => {
     }));
   }, []);
 
+  // Cloud sync: swap in a merged library (updater receives the full list,
+  // tombstones included). Only used by useTheaterSync.
+  const replaceAllFolders = useCallback((updater) => {
+    setFolders(updater);
+  }, []);
+
   const openCourse = useCallback((courseId) => {
     setActiveCourseId(courseId);
   }, []);
@@ -394,6 +408,9 @@ export const useWebTheater = () => {
 
   return useMemo(() => ({
     folders,
+    allFolders,
+    isLoaded,
+    replaceAllFolders,
     loadError,
     loadRecovered,
     selectedFolder,
@@ -420,7 +437,8 @@ export const useWebTheater = () => {
     importRevidFiles,
     importJsonBackup,
   }), [
-    folders, loadError, loadRecovered, selectedFolder, selectedFolderId,
+    folders, allFolders, isLoaded, replaceAllFolders,
+    loadError, loadRecovered, selectedFolder, selectedFolderId,
     activeCourses, activeCourse, activeCourseId,
     selectFolder, createFolder, renameFolder, deleteFolder,
     toggleMusicMode, setFolderCover, moveCourse,

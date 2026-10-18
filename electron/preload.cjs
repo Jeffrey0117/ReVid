@@ -239,6 +239,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return await ipcRenderer.invoke('save-theater-data', data);
     },
 
+    // --- Cloud Sync (docs/SYNC-API.md) ---
+
+    // { baseUrl, method, route, token, body } → { success, data | code, error }
+    syncRequest: (req) => ipcRenderer.invoke('sync-request', req),
+    loadSyncState: () => ipcRenderer.invoke('load-sync-state'),
+    saveSyncState: (state) => ipcRenderer.invoke('save-sync-state', state),
+
     // --- Theater Session API ---
 
     createPersistentSession: async (platform) => {

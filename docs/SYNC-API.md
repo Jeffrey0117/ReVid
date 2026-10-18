@@ -118,7 +118,11 @@
 ### 4.1 Folder / Course 內容：Last-Write-Wins（逐筆）
 
 比較兩邊的 `updatedAt`，大的贏，整筆內容（progress 除外）用贏的那邊。
-相等時用 `deviceId` 字串比較決勝（保證兩邊算出同一個結果）。
+相等時比較兩邊內容的穩定 JSON（key 排序後）字串，大的贏——紀錄裡沒有存 deviceId，用內容比較一樣能保證每台算出同一個結果。
+贏的那邊缺少的欄位（例如超過大小沒同步的封面）保留輸的那邊的值。
+
+> 參考實作：`src/utils/syncMerge.js`（`mergeFolder` / `mergeCourse` / `mergeProgress`），
+> 後端請直接沿用同一套邏輯；`dev/mock-sync-server/core.mjs` 是照本規格寫的記憶體版伺服器。
 
 ### 4.2 刪除
 

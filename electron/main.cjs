@@ -14,6 +14,7 @@ const {
     ffmpegFailure
 } = require('./ffmpeg-runner.cjs');
 const { registerTheaterStore, drainTheaterSaves } = require('./theater-store.cjs');
+const { registerSyncClient } = require('./sync-client.cjs');
 const { registerLocalVideoProtocol } = require('./local-video-protocol.cjs');
 
 // Auto-update (packaged builds only): check GitHub Releases on launch, download in the
@@ -270,6 +271,9 @@ function setupIpcHandlers() {
 
     // Theater data persistence (load-theater-data / save-theater-data)
     registerTheaterStore();
+
+    // Cloud sync transport + sync-state.json (sync-request / load / save-sync-state)
+    registerSyncClient();
 
     // Batched file stats for sorting — replaces per-file synchronous stat calls.
     // Chunked so a huge folder doesn't burst thousands of concurrent handles.

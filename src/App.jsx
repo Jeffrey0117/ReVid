@@ -26,6 +26,8 @@ import { TheaterSidebar } from './features/theater/TheaterSidebar';
 import { CourseWebview } from './features/theater/CourseWebview';
 import { YouTubePlayer } from './features/theater/YouTubePlayer';
 import { MusicPlaylist } from './features/theater/MusicPlaylist';
+import { useTheaterSync } from './features/sync/useTheaterSync';
+import { SyncSettingsDialog } from './features/sync/SyncSettingsDialog';
 import { AddCourseDialog } from './features/theater/AddCourseDialog';
 import { BatchRenameCourseDialog } from './features/theater/BatchRenameCourseDialog';
 import { ExportDialog } from './features/theater/ExportDialog';
@@ -92,6 +94,8 @@ export default function App() {
 
     // Theater hooks
     const theater = useWebTheater();
+    const theaterSync = useTheaterSync(theater);
+    const [showSyncSettings, setShowSyncSettings] = useState(false);
     const { speed: theaterSpeed, selectSpeed: selectTheaterSpeed, SPEED_PRESETS } = usePlaybackSpeed();
     const [showAddCourseDialog, setShowAddCourseDialog] = useState(false);
     const [showExportDialog, setShowExportDialog] = useState(false);
@@ -1255,6 +1259,21 @@ export default function App() {
                                             <span>{t('uploadSettings')}</span>
                                         </button>
                                     )}
+                                    <button
+                                        onClick={() => { setShowSyncSettings(true); setShowSettingsMenu(false); }}
+                                        style={{
+                                            width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+                                            padding: '8px 12px', fontSize: 13, color: theme.textSecondary,
+                                            transition: 'background 0.1s'
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.background = theme.hoverBg}
+                                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                    >
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M17.5 19a4.5 4.5 0 1 0-1.4-8.8A6 6 0 0 0 4.5 12a4 4 0 0 0 .5 7z" />
+                                        </svg>
+                                        <span>{t('syncTitle')}</span>
+                                    </button>
                                     <div style={{ height: 1, margin: '4px 0', background: theme.border }} />
                                     <button
                                         onClick={() => { setShowAbout(true); setShowSettingsMenu(false); }}
@@ -1945,6 +1964,13 @@ export default function App() {
                     onClose={() => setShowConcat(false)}
                 />
             )}
+
+            {/* Cloud sync settings */}
+            <SyncSettingsDialog
+                isOpen={showSyncSettings}
+                onClose={() => setShowSyncSettings(false)}
+                sync={theaterSync}
+            />
 
             {/* Add Course dialog (theater) */}
             <AddCourseDialog
