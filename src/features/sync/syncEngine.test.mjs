@@ -169,3 +169,45 @@ test('retryDelayFor: backs off, honours Retry-After, stops on auth errors', () =
   assert.equal(retryDelayFor({ code: 'RATE_LIMITED', retryAfter: 7 }, 0), 7000);
   assert.equal(retryDelayFor({ code: 'UNAUTHORIZED' }, 0), null);
 });
+
+test('413 TOO_LARGE splits the batch and skips only the oversize record (§5.1)', async () => {
+  const store = createSyncStore();
+  const many = Array.from({ length: 10 }, (_, i) => course(`c${i}`, 10 + i));
+  many[3] = course('huge', 13, { title: 'huge' });
+  const a = machine(store, 'dA', [folder('f', 10, many)]);
+  // Fake a server that 413s any request containing the oversize record.
+  const real = a.request;
+  let posts = 0;
+  a.request = async (method, route, body) => {
+    if (method === 'POST') {
+      posts += 1;
+      if ((body.courses || []).some((c) => c.id === 'huge') && (body.courses.length + body.folders.length) >= 1) {
+        if (body.courses.length + body.folders.length === 1) return { success: false, code: 'TOO_LARGE', error: 'record too large' };
+        return { success: false, code: 'TOO_LARGE', error: 'body too large' };
+      }
+    }
+    return real(method, route, body);
+  };
+  const r = await a.sync();
+  assert.equal(r.skipped, 1);
+  assert.equal(r.pushed, 10); // folder + 10 courses − 1 skipped
+  const b = machine(store, 'dB');
+  await b.sync();
+  assert.deepEqual(songs(b, 'f').includes('huge'), false); // oversize record stayed local
+  assert.equal(songs(b, 'f').length, 9);
+  assert.ok(posts > 1, 'batch was split');
+});
+
+test('a chunk-level non-413 failure still aborts the round', async () => {
+  const store = createSyncStore();
+  const a = machine(store, 'dA', [folder('f', 10, [course('c1', 11)])]);
+  const r = await syncOnce({
+    request: async (method, route) => {
+      if (route === '/v1/me') return { success: true, data: { userId: 'u1' } };
+      return { success: false, code: 'SERVER_ERROR', error: 'boom' };
+    },
+    state: a.state, verifiedUserId: null, getFolders: () => a.folders, applyFolders: () => {}, now: a.now
+  });
+  assert.equal(r.ok, false);
+  assert.equal(r.failure.code, 'SERVER_ERROR');
+});

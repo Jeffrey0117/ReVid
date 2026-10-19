@@ -14,7 +14,7 @@ const {
     ffmpegFailure
 } = require('./ffmpeg-runner.cjs');
 const { registerTheaterStore, drainTheaterSaves } = require('./theater-store.cjs');
-const { registerSyncClient } = require('./sync-client.cjs');
+const { registerSyncClient, drainSyncRequests } = require('./sync-client.cjs');
 const { registerLocalVideoProtocol } = require('./local-video-protocol.cjs');
 
 // Auto-update (packaged builds only): check GitHub Releases on launch, download in the
@@ -1450,7 +1450,7 @@ app.on('will-quit', (event) => {
     event.preventDefault();
     killAllFfmpegJobs(); // don't leave orphaned encoders behind
     Promise.race([
-        drainTheaterSaves(),
+        Promise.allSettled([drainTheaterSaves(), drainSyncRequests()]),
         new Promise((resolve) => setTimeout(resolve, 2000)),
     ]).finally(() => app.quit());
 });

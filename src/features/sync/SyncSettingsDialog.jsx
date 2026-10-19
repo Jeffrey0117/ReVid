@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useTheme } from '../../theme.jsx';
 import { useI18n } from '../../i18n.jsx';
 import { useLetMeUse } from '../../hooks/useLetMeUse';
-import { normalizeBaseUrl } from './syncConfig.js';
+import { normalizeBaseUrl, DEFAULT_SYNC_URL } from './syncConfig.js';
 
 const STATUS_COLORS = {
   idle: '#22c55e', syncing: '#3b82f6', offline: '#f59e0b',
@@ -26,7 +26,7 @@ export const SyncSettingsDialog = ({ isOpen, onClose, sync }) => {
 
   useEffect(() => {
     if (!isOpen) return;
-    setUrl(sync.baseUrl);
+    setUrl(sync.baseUrl || DEFAULT_SYNC_URL);
     setEnabled(sync.configEnabled);
     setSaved(false);
   }, [isOpen, sync.baseUrl, sync.configEnabled]);
@@ -117,7 +117,7 @@ export const SyncSettingsDialog = ({ isOpen, onClose, sync }) => {
             type="url"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://sync.example.com"
+            placeholder={DEFAULT_SYNC_URL}
             style={inputStyle}
           />
           <div style={{ fontSize: 12, marginTop: 4, color: urlError ? '#ef4444' : muted }}>
@@ -133,6 +133,9 @@ export const SyncSettingsDialog = ({ isOpen, onClose, sync }) => {
           </div>
           {sync.error && sync.status !== 'idle' && sync.status !== 'syncing' && (
             <div style={{ color: '#ef4444', fontSize: 12 }}>{sync.error}</div>
+          )}
+          {sync.clockSkewed && (
+            <div style={{ color: '#f59e0b', fontSize: 12 }}>{t('syncClockSkew')}</div>
           )}
           <div>{t('syncLastSynced')}: {formatTime(sync.lastSyncedAt, lang)}</div>
         </div>

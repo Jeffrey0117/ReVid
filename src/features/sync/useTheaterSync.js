@@ -25,6 +25,7 @@ export function useTheaterSync(theater) {
   const [syncState, setSyncState] = useState(null);
   const [status, setStatus] = useState('loading');
   const [error, setError] = useState(null);
+  const [clockSkewed, setClockSkewed] = useState(false); // local clock vs X-Server-Time (§4.4)
 
   const stateRef = useRef(null);
   const theaterRef = useRef(theater);
@@ -70,7 +71,12 @@ export function useTheaterSync(theater) {
     if (!tok) { setStatus('signed_out'); return; }
 
     setStatus('syncing');
-    const request = (method, route, body) => api.syncRequest({ baseUrl, method, route, token: currentToken() || tok, body });
+    const request = async (method, route, body) => {
+      const res = await api.syncRequest({ baseUrl, method, route, token: currentToken() || tok, body });
+      // §4.4: LWW relies on wall clocks; warn in settings past 60s of skew.
+      if (res?.serverTime) setClockSkewed(Math.abs(Date.now() - res.serverTime) > SYNC_TIMING.clockSkewMax);
+      return res;
+    };
     const result = await syncOnce({
       request,
       state,
@@ -161,6 +167,31 @@ export function useTheaterSync(theater) {
     return () => { clearInterval(interval); window.removeEventListener('focus', onFocus); };
   }, [enabled, syncNow]);
 
+  // Best-effort final push when the window goes away (§6.1 「關閉 app 前 push
+  // 一次」). Fire-and-forget: the main process holds the request open past
+  // renderer teardown (sync-client drains in-flight pushes on will-quit), and
+  // the watermark is NOT advanced — if the push doesn't land, the same records
+  // are simply pushed again on next launch (merge is idempotent).
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const flush = () => {
+      const api = getElectronAPI();
+      const state = stateRef.current;
+      const baseUrl = normalizeBaseUrl(state?.baseUrl);
+      const tok = currentToken();
+      if (!api?.syncRequest || !baseUrl || !tok || !theaterRef.current.isLoaded) return;
+      const dirty = collectDirty(theaterRef.current.allFolders, state.watermark || 0);
+      const records = [...dirty.folders.map((r) => ['folders', r]), ...dirty.courses.map((r) => ['courses', r])]
+        .slice(0, SYNC_TIMING.pushChunk); // one guaranteed-valid request; the rest syncs next launch
+      if (!records.length) return;
+      const body = { deviceId: state.deviceId, folders: [], courses: [] };
+      for (const [kind, rec] of records) body[kind].push(rec);
+      api.syncRequest({ baseUrl, method: 'POST', route: '/v1/sync', token: tok, body });
+    };
+    window.addEventListener('pagehide', flush);
+    return () => window.removeEventListener('pagehide', flush);
+  }, [enabled]);
+
   useEffect(() => () => clearTimeout(timerRef.current), []);
 
   // Settings: changing the server means a different dataset — start over.
@@ -184,6 +215,7 @@ export function useTheaterSync(theater) {
     baseUrl,
     configEnabled: !!syncState?.enabled,
     lastSyncedAt: syncState?.lastSyncedAt || null,
+    clockSkewed,
     syncNow,
     setConfig
   };

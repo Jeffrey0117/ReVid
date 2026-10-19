@@ -118,8 +118,19 @@ function saveSyncState(state) {
     return saveChain;
 }
 
+// In-flight requests, so will-quit can give the renderer's final pagehide push
+// (§6.1) a chance to land before the process exits.
+const inFlight = new Set();
+const trackedSyncRequest = (req) => {
+    const p = syncRequest(req);
+    inFlight.add(p);
+    p.finally(() => inFlight.delete(p));
+    return p;
+};
+const drainSyncRequests = () => Promise.allSettled([...inFlight]);
+
 function registerSyncClient() {
-    ipcMain.handle('sync-request', (_event, req) => syncRequest(req || {}));
+    ipcMain.handle('sync-request', (_event, req) => trackedSyncRequest(req || {}));
     ipcMain.handle('load-sync-state', async () => {
         try {
             return { success: true, state: await loadSyncState() };
@@ -133,4 +144,4 @@ function registerSyncClient() {
     });
 }
 
-module.exports = { registerSyncClient, parseBaseUrl, isAllowedRoute };
+module.exports = { registerSyncClient, drainSyncRequests, parseBaseUrl, isAllowedRoute };

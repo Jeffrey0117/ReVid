@@ -46,13 +46,30 @@ export async function syncOnce({ request, state, verifiedUserId, getFolders, app
     ...dirty.folders.map((r) => ['folders', r]),
     ...dirty.courses.map((r) => ['courses', r])
   ];
-  for (const part of chunk(records, SYNC_TIMING.pushChunk)) {
+  // 413 TOO_LARGE → split the batch in half; a single record that is still too
+  // large is skipped (it stays local-only until edited) instead of wedging the
+  // whole round in a retry loop (§5.1 「拆小批 / 跳過該筆」).
+  let skipped = 0;
+  const pushPart = async (part) => {
     const body = { deviceId: next.deviceId, folders: [], courses: [] };
     for (const [kind, rec] of part) body[kind].push(rec);
     const res = await request('POST', '/v1/sync', body);
-    if (!res.success) return { ok: false, failure: res, userId };
-    incoming.folders.push(...(res.data?.conflicts?.folders || []));
-    incoming.courses.push(...(res.data?.conflicts?.courses || []));
+    if (res.success) {
+      incoming.folders.push(...(res.data?.conflicts?.folders || []));
+      incoming.courses.push(...(res.data?.conflicts?.courses || []));
+      return null;
+    }
+    if (res.code === 'TOO_LARGE') {
+      if (part.length === 1) { skipped += 1; return null; }
+      const mid = Math.ceil(part.length / 2);
+      const failure = await pushPart(part.slice(0, mid));
+      return failure || pushPart(part.slice(mid));
+    }
+    return res;
+  };
+  for (const part of chunk(records, SYNC_TIMING.pushChunk)) {
+    const failure = await pushPart(part);
+    if (failure) return { ok: false, failure, userId };
   }
 
   // Pull everything since our cursor, all pages, then merge once (so a course
@@ -79,7 +96,8 @@ export async function syncOnce({ request, state, verifiedUserId, getFolders, app
     ok: true,
     state: next,
     userId,
-    pushed: records.length,
+    pushed: records.length - skipped,
+    skipped,
     pulled: incoming.folders.length + incoming.courses.length
   };
 }
