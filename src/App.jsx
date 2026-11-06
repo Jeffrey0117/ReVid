@@ -28,6 +28,7 @@ import { YouTubePlayer } from './features/theater/YouTubePlayer';
 import { MusicPlaylist } from './features/theater/MusicPlaylist';
 import { useTheaterSync } from './features/sync/useTheaterSync';
 import { SyncSettingsDialog } from './features/sync/SyncSettingsDialog';
+import { FamilyDialog } from './features/family/FamilyDialog';
 import { AddCourseDialog } from './features/theater/AddCourseDialog';
 import { BatchRenameCourseDialog } from './features/theater/BatchRenameCourseDialog';
 import { ExportDialog } from './features/theater/ExportDialog';
@@ -96,6 +97,7 @@ export default function App() {
     const theater = useWebTheater();
     const theaterSync = useTheaterSync(theater);
     const [showSyncSettings, setShowSyncSettings] = useState(false);
+    const [showFamily, setShowFamily] = useState(false);
     const { speed: theaterSpeed, selectSpeed: selectTheaterSpeed, SPEED_PRESETS } = usePlaybackSpeed();
     const [showAddCourseDialog, setShowAddCourseDialog] = useState(false);
     const [showExportDialog, setShowExportDialog] = useState(false);
@@ -1259,6 +1261,25 @@ export default function App() {
                                             <span>{t('uploadSettings')}</span>
                                         </button>
                                     )}
+                                    {/* 鴨鴨家族：同一家的其他 app 一鍵安裝 */}
+                                    <button
+                                        onClick={() => { setShowFamily(true); setShowSettingsMenu(false); }}
+                                        style={{
+                                            width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+                                            padding: '8px 12px', fontSize: 13, color: theme.textSecondary,
+                                            transition: 'background 0.1s'
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.background = theme.hoverBg}
+                                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                    >
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <rect x="3" y="3" width="7" height="7" rx="1.5" />
+                                            <rect x="14" y="3" width="7" height="7" rx="1.5" />
+                                            <rect x="3" y="14" width="7" height="7" rx="1.5" />
+                                            <path d="M17.5 14v7M14 17.5h7" />
+                                        </svg>
+                                        <span>{t('familyMenu')}</span>
+                                    </button>
                                     <button
                                         onClick={() => { setShowSyncSettings(true); setShowSettingsMenu(false); }}
                                         style={{
@@ -1966,6 +1987,7 @@ export default function App() {
             )}
 
             {/* Cloud sync settings */}
+            <FamilyDialog isOpen={showFamily} onClose={() => setShowFamily(false)} />
             <SyncSettingsDialog
                 isOpen={showSyncSettings}
                 onClose={() => setShowSyncSettings(false)}

@@ -220,6 +220,11 @@ const translations = {
     // Upload / Export
     export: 'Export',
     uploadSettings: 'Upload Settings',
+    familyMenu: 'Duck Family',
+    familyTitle: 'Duck Family',
+    familySubtitle: 'DuckShot for screenshots, RePic for images — one-click install',
+    familyUnavailable: 'Only available in the desktop app',
+    familyClose: 'Close',
     uploadVideo: 'Upload',
     uploadApiUrl: 'API URL',
     uploadAuthType: 'Authentication',
@@ -482,6 +487,11 @@ const translations = {
     // 匯出 / 上傳
     export: '\u532f\u51fa',
     uploadSettings: '\u4e0a\u50b3\u8a2d\u5b9a',
+    familyMenu: '鴨鴨家族',
+    familyTitle: '鴨鴨家族',
+    familySubtitle: '截圖用 DuckShot、看圖用 RePic，一鍵裝好',
+    familyUnavailable: '只在桌面版可用',
+    familyClose: '關閉',
     uploadVideo: '\u4e0a\u50b3',
     uploadApiUrl: 'API \u7db2\u5740',
     uploadAuthType: '\u9a57\u8b49\u65b9\u5f0f',

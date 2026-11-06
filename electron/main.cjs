@@ -1,4 +1,5 @@
-const { app, BrowserWindow, Menu, ipcMain, dialog, protocol } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, protocol, shell, net } = require('electron');
+const createFamily = require('family-kit');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -239,6 +240,24 @@ function createWindow() {
 // local-video-protocol.cjs.
 
 function setupIpcHandlers() {
+    // 鴨鴨家族（family-kit）：偵測/一鍵安裝同一家的其他 app；IPC 只信任主視窗
+    try {
+        const family = createFamily({
+            selfId: 'revid',
+            cacheDir: path.join(app.getPath('userData'), 'family-kit'),
+            shell,
+            fetch: (url, init) => net.fetch(url, init),
+            userAgent: `ReVid/${app.getVersion()}`,
+            log: (...a) => console.warn('[family]', ...a),
+        });
+        family.registerIpc(ipcMain, {
+            prefix: 'family',
+            isTrusted: (sender) => !!mainWindow && !mainWindow.isDestroyed() && sender === mainWindow.webContents,
+        });
+    } catch (e) {
+        console.warn('[family] init failed:', e.message);
+    }
+
     // Renderer signals it has mounted and wired its IPC listeners — open the
     // launch file immediately (no fixed delay) instead of guessing with a timer.
     ipcMain.on('renderer-ready', (e) => {
