@@ -35,9 +35,31 @@ export const TranscriptSearch = ({ folder, onPick, onClose }) => {
     const [query, setQuery] = useState('');
     const [scope, setScope] = useState('folder');
     const [state, setState] = useState({ results: [], busy: false, ran: false });
+    const [guide, setGuide] = useState({ busy: false, msg: '' });
     const inputRef = useRef(null);
 
     useEffect(() => { inputRef.current?.focus(); }, []);
+
+    // Wikipedia names shows in English; the folder is usually named in
+    // whatever language the files were downloaded in, so it is only a hint.
+    const importGuide = async () => {
+        const api = getElectronAPI();
+        if (!api?.importEpisodeGuide || guide.busy) return;
+        const suggested = folder.split(/[\\/]/).filter(Boolean).slice(-2, -1)[0] || '';
+        const show = window.prompt(t('guideAskShow'), suggested);
+        if (!show) return;
+
+        setGuide({ busy: true, msg: '' });
+        const r = await api.importEpisodeGuide(folder, show.trim());
+        setGuide({
+            busy: false,
+            msg: r.success
+                ? `${t('guideImported')} ${r.matched}/${r.episodes} · ${r.page}`
+                : r.error
+        });
+        // Re-run whatever is typed so the new synopses are included.
+        setQuery(q => `${q} `.trimEnd());
+    };
 
     useEffect(() => {
         const onKey = (e) => { if (e.key === 'Escape') onClose(); };
@@ -66,6 +88,7 @@ export const TranscriptSearch = ({ folder, onPick, onClose }) => {
                 searched: r.searched,
                 folders: r.folders,
                 truncated: r.truncated,
+                episodesDropped: r.episodesDropped,
                 error: r.error
             });
         }, 220);
@@ -134,14 +157,32 @@ export const TranscriptSearch = ({ folder, onPick, onClose }) => {
                 </div>
 
                 <div style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
                     padding: '0 16px 8px', fontSize: 11, color: theme.textTertiary,
                     borderBottom: `1px solid ${theme.border}`, minHeight: 18
                 }}>
-                    {state.error ? state.error
-                        : state.busy ? t('searching')
-                            : state.ran
-                                ? `${state.results.length}${state.truncated ? '+' : ''} · ${state.searched} ${t('searchedVideos')}`
-                                : t('searchHint')}
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                        {guide.msg ? guide.msg
+                            : state.error ? state.error
+                                : state.busy ? t('searching')
+                                    : state.ran
+                                        ? `${state.results.length}${state.truncated ? '+' : ''} · ${state.searched} ${t('searchedVideos')}`
+                                        + (state.episodesDropped ? ` · ${t('searchTooCommon')}` : '')
+                                        : t('searchHint')}
+                    </span>
+                    <button
+                        onClick={importGuide}
+                        disabled={guide.busy}
+                        title={t('guideImportHint')}
+                        style={{
+                            flex: 'none', fontSize: 11, padding: '3px 8px', borderRadius: 5,
+                            cursor: guide.busy ? 'default' : 'pointer',
+                            background: theme.inputBg, color: theme.textSecondary,
+                            opacity: guide.busy ? 0.5 : 1
+                        }}
+                    >
+                        {guide.busy ? t('guideImporting') : t('guideImport')}
+                    </button>
                 </div>
 
                 <div style={{ flex: 1, overflowY: 'auto', padding: '6px 8px' }}>
@@ -176,14 +217,27 @@ export const TranscriptSearch = ({ folder, onPick, onClose }) => {
                                         flex: 'none', fontSize: 11, color: theme.accent,
                                         fontVariantNumeric: 'tabular-nums', paddingTop: 1
                                     }}>
-                                        {fmt(hit.start)}
+                                        {hit.kind === 'episode' ? t('guideBadge') : fmt(hit.start)}
                                     </span>
                                     <span style={{ flex: 1, minWidth: 0, fontSize: 13, lineHeight: 1.45 }}>
-                                        <Highlighted text={hit.text} query={query.trim()} color={theme.accent} />
-                                        {hit.zh && (
-                                            <div style={{ fontSize: 12, color: theme.textTertiary, marginTop: 2 }}>
-                                                <Highlighted text={hit.zh} query={query.trim()} color={theme.accent} />
-                                            </div>
+                                        {hit.kind === 'episode' ? (
+                                            <>
+                                                <span style={{ fontWeight: 600, color: theme.text }}>
+                                                    <Highlighted text={hit.title} query={query.trim()} color={theme.accent} />
+                                                </span>
+                                                <div style={{ fontSize: 12, color: theme.textTertiary, marginTop: 3 }}>
+                                                    <Highlighted text={hit.summary} query={query.trim()} color={theme.accent} />
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Highlighted text={hit.text} query={query.trim()} color={theme.accent} />
+                                                {hit.zh && (
+                                                    <div style={{ fontSize: 12, color: theme.textTertiary, marginTop: 2 }}>
+                                                        <Highlighted text={hit.zh} query={query.trim()} color={theme.accent} />
+                                                    </div>
+                                                )}
+                                            </>
                                         )}
                                     </span>
                                 </button>

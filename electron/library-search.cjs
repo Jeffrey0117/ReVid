@@ -46,6 +46,42 @@ function matchCues(cues, query) {
     return hits.sort((a, b) => b.score - a.score || a.start - b.start);
 }
 
+// Scored the same way as a line, but it answers a different question: not
+// "who said that" but "which episode was the one about X" — which the
+// dialogue itself never states.
+function matchGuide(guide, query) {
+    if (!guide || (!guide.title && !guide.summary)) return null;
+    const phrase = typeof query === 'string' ? query.trim().toLowerCase() : '';
+    if (!phrase) return null;
+
+    const hay = `${guide.title || ''}\n${guide.summary || ''}`.toLowerCase();
+    const terms = termsOf(phrase);
+
+    let score = 0;
+    if (hay.includes(phrase)) score = PHRASE;
+    else if (terms.length > 1 && terms.every(t => hay.includes(t))) score = TERMS;
+    if (!score) return null;
+
+    return {
+        kind: 'episode',
+        score,
+        episode: guide.episode,
+        title: guide.title || '',
+        summary: guide.summary || '',
+        airDate: guide.airDate || ''
+    };
+}
+
+// Past this many, an episode match means the words are common rather than
+// that the query is about an episode — so drop them all and leave the lines.
+const MAX_EPISODE_HITS = 8;
+
+function capEpisodeHits(results) {
+    const episodes = results.filter(r => r.kind === 'episode');
+    if (episodes.length <= MAX_EPISODE_HITS) return results;
+    return results.filter(r => r.kind !== 'episode');
+}
+
 // The folder being viewed can arrive with forward slashes (from a path built
 // in the renderer) while readdir yields backslashes, and Windows does not care
 // about case. Compare on a single normal form or the same folder gets searched
@@ -94,29 +130,45 @@ function search({ folder, query, scope = 'folder', limit = 200 }) {
         if (!lib?.videos) continue;
 
         for (const [name, entry] of Object.entries(lib.videos)) {
-            if (!VIDEO_RE.test(name) || !Array.isArray(entry.subs)) continue;
+            if (!VIDEO_RE.test(name)) continue;
+            const where = { folder: dir, name, videoPath: path.join(dir, name) };
+
+            // An episode match comes first: it names the episode, where a
+            // line match only names a moment inside one.
+            const guideHit = matchGuide(entry.guide, phrase);
+            if (guideHit) results.push({ ...guideHit, ...where, start: 0 });
+
+            if (!Array.isArray(entry.subs)) continue;
             searched += 1;
             const cues = entry.subs.map(library.unpackCue);
             for (const hit of matchCues(cues, phrase)) {
-                results.push({
-                    ...hit,
-                    folder: dir,
-                    name,
-                    videoPath: path.join(dir, name)
-                });
+                results.push({ kind: 'line', ...hit, ...where });
                 if (results.length >= limit * 4) break;
             }
         }
     }
 
-    results.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name) || a.start - b.start);
+    const kept = capEpisodeHits(results);
+    const episodesDropped = results.length - kept.length;
+
+    // Episode matches lead: "which episode" is the bigger answer, and the
+    // line matches below it say where inside.
+    const rank = (r) => (r.kind === 'episode' ? 1 : 0);
+    kept.sort((a, b) =>
+        rank(b) - rank(a) || b.score - a.score
+        || a.name.localeCompare(b.name) || a.start - b.start);
     return {
         success: true,
-        results: results.slice(0, limit),
-        truncated: results.length > limit,
+        results: kept.slice(0, limit),
+        truncated: kept.length > limit,
+        // Never silently: the UI says the words were too common to narrow by.
+        episodesDropped,
         searched,
         folders: folders.length
     };
 }
 
-module.exports = { matchCues, search, foldersInScope, PHRASE, TERMS };
+module.exports = {
+    matchCues, matchGuide, search, foldersInScope, capEpisodeHits,
+    PHRASE, TERMS, MAX_EPISODE_HITS
+};

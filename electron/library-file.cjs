@@ -152,6 +152,20 @@ function setProgress(videoPath, progress) {
     return write(folder, lib);
 }
 
+// What an episode is about, which the dialogue never states out loud. Written
+// in one pass for a whole folder so the file is not rewritten 24 times.
+function setEpisodeGuide(folder, byName) {
+    const lib = read(folder);
+    let applied = 0;
+    for (const [name, guide] of Object.entries(byName)) {
+        if (!guide) continue;
+        lib.videos[name] = { ...(lib.videos[name] || { name }), guide };
+        applied += 1;
+    }
+    const r = write(folder, lib);
+    return r.success ? { ...r, applied } : r;
+}
+
 // Bring a folder's library up to date on open: create it if missing, pull in
 // any sidecars written before the library existed.
 function ensureLibrary(folder) {
@@ -178,6 +192,7 @@ module.exports = {
     setTranslation,
     clearSubtitles,
     setProgress,
+    setEpisodeGuide,
     packCue,
     unpackCue
 };

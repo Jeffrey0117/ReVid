@@ -36,6 +36,7 @@ const reelRunner = () => (remotionRunner ||= createRemotionRunner());
 const library = require('./library-file.cjs');
 const srt = require('./srt.cjs');
 const librarySearch = require('./library-search.cjs');
+const wikiEpisodes = require('./wiki-episodes.cjs');
 const { registerTheaterStore, drainTheaterSaves } = require('./theater-store.cjs');
 const { registerSyncClient, drainSyncRequests } = require('./sync-client.cjs');
 const { registerLocalVideoProtocol } = require('./local-video-protocol.cjs');
@@ -1383,6 +1384,64 @@ function setupIpcHandlers() {
         } catch (e) {
             return { success: false, error: e.message, results: [] };
         }
+    });
+
+    // Pull a season's synopses from Wikipedia into the folder's library, so
+    // "which episode was the one about the heist" is searchable even though
+    // nobody in the episode ever says that.
+    ipcMain.handle('import-episode-guide', async (_event, { folder, show } = {}) => {
+        if (!folder || !show) return { success: false, error: 'Need a folder and a show name' };
+
+        let names;
+        try {
+            names = fs.readdirSync(folder).filter(n => /\.(mp4|webm|mov|avi|mkv|m4v)$/i.test(n));
+        } catch (e) {
+            return { success: false, error: `Cannot read ${folder}` };
+        }
+
+        // The season comes from the files themselves rather than being asked
+        // for; whichever season they mostly say they are is the one.
+        const tally = new Map();
+        const parsed = new Map();
+        for (const name of names) {
+            const se = wikiEpisodes.episodeFromName(name);
+            if (!se) continue;
+            parsed.set(name, se);
+            tally.set(se.season, (tally.get(se.season) || 0) + 1);
+        }
+        if (parsed.size === 0) {
+            return { success: false, error: 'No file here is named with a season and episode (S01E02).' };
+        }
+        const season = [...tally.entries()].sort((a, b) => b[1] - a[1])[0][0];
+
+        let found;
+        try {
+            found = await wikiEpisodes.fetchSeason(show, season);
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+
+        const byEpisode = new Map(found.episodes.map(e => [e.episode, e]));
+        const byName = {};
+        let matched = 0;
+        for (const [name, se] of parsed) {
+            if (se.season !== season) continue;
+            const ep = byEpisode.get(se.episode);
+            if (!ep) continue;
+            byName[name] = ep;
+            matched += 1;
+        }
+        if (matched === 0) {
+            return { success: false, error: `"${found.page}" lists no episode matching these files.` };
+        }
+
+        const stored = library.setEpisodeGuide(folder, byName);
+        if (!stored.success) return stored;
+        return {
+            success: true, matched, season,
+            page: found.page, episodes: found.episodes.length,
+            unmatched: parsed.size - matched
+        };
     });
 
     ipcMain.handle('reel-renderer-status', () => ({

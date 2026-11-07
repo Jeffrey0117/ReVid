@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 
 // Tests the real main-process module rather than a copy of it.
 const require = createRequire(import.meta.url);
-const { matchCues, foldersInScope, PHRASE, TERMS } = require('../../electron/library-search.cjs');
+const { matchCues, matchGuide, foldersInScope, PHRASE, TERMS } = require('../../electron/library-search.cjs');
 const os = require('node:os');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -93,6 +93,51 @@ test('the current folder is not listed twice when its separators differ', () => 
     } finally {
         fs.rmSync(root, { recursive: true, force: true });
     }
+});
+
+// The dialogue never says "this is the Halloween heist episode" out loud, so
+// the synopsis is the only place that question can be answered.
+const guide = {
+    episode: 4,
+    title: 'Halloween II',
+    summary: 'Jake and Captain Holt make another bet over whether Jake can steal something.',
+    airDate: '2014-10-19'
+};
+
+test('an episode is found by what it is about, not only by its lines', () => {
+    const hit = matchGuide(guide, 'halloween');
+    assert.ok(hit);
+    assert.equal(hit.score, PHRASE);
+});
+
+test('the synopsis is searched, not just the title', () => {
+    assert.ok(matchGuide(guide, 'steal'));
+    assert.ok(matchGuide(guide, 'bet holt'));
+});
+
+test('an unrelated query does not match an episode', () => {
+    assert.equal(matchGuide(guide, 'spaceship'), null);
+});
+
+test('a video with no guide is simply skipped', () => {
+    assert.equal(matchGuide(null, 'halloween'), null);
+    assert.equal(matchGuide({}, 'halloween'), null);
+});
+
+// A lead character's name appears in every synopsis, so "Jake" matched all
+// 24 episodes and pushed every line match off the first screen. Past a few,
+// the episode signal says nothing and the lines are what was wanted.
+test('a query matching most episodes stops reporting them as episode hits', () => {
+    const { capEpisodeHits, MAX_EPISODE_HITS } = require('../../electron/library-search.cjs');
+    const many = Array.from({ length: 24 }, (_, i) => ({ kind: 'episode', name: `e${i}`, score: 2, start: 0 }));
+    const lines = [{ kind: 'line', name: 'e0', score: 2, start: 5 }];
+
+    const kept = capEpisodeHits([...many, ...lines]);
+    assert.equal(kept.filter(r => r.kind === 'episode').length, 0);
+    assert.equal(kept.filter(r => r.kind === 'line').length, 1);
+
+    const few = many.slice(0, MAX_EPISODE_HITS);
+    assert.equal(capEpisodeHits([...few, ...lines]).filter(r => r.kind === 'episode').length, few.length);
 });
 
 test('a regex-looking query is treated as text, not a pattern', () => {
