@@ -8,7 +8,7 @@ import { parseSubtitles, findActiveCueIndex } from '../../utils/subtitles';
 import { TranscriptPanel } from './TranscriptPanel';
 import { WordbookPanel } from './WordbookPanel';
 import { BookMarked } from '../../components/icons';
-import { SubtitleSettings, readSubtitleStyle } from './SubtitleSettings';
+import { SubtitleSettings, readSubtitleStyle, subtitleTextStyle } from './SubtitleSettings';
 import {
     WordCard, ClickableText, readDifficulty, writeDifficulty, readKnownWords
 } from './WordLookup';
@@ -838,13 +838,12 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                         background: `rgba(0,0,0,${subStyle.bgOpacity})`,
                         borderRadius: 8,
                         textAlign: 'center', whiteSpace: 'pre-wrap',
-                        textShadow: '0 1px 2px rgba(0,0,0,0.8)',
                         pointerEvents: 'none',
                         backdropFilter: subStyle.bgOpacity > 0 ? 'blur(2px)' : 'none'
                     }}>
                         {showOrig && (
                             <div style={{
-                                color: subStyle.color,
+                                ...subtitleTextStyle(subStyle),
                                 fontSize: subStyle.fontSize, lineHeight: 1.4,
                                 pointerEvents: 'auto' // words are clickable
                             }}>
@@ -858,7 +857,7 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                         )}
                         {showZh && activeCue.zh && (
                             <div style={{
-                                color: subStyle.color,
+                                ...subtitleTextStyle(subStyle),
                                 opacity: showOrig ? 0.78 : 1,
                                 fontSize: showOrig
                                     ? Math.round(subStyle.fontSize * 0.78)

@@ -22,8 +22,35 @@ export const DEFAULT_SUBTITLE_STYLE = {
     bgOpacity: 0.72,
     position: 'bottom', // bottom | top
     offset: 76,         // px from that edge
-    timeShift: 0        // seconds added to every cue time
+    timeShift: 0,       // seconds added to every cue time
+    strokeWidth: 0,     // px; 0 = no outline
+    strokeColor: '#000000',
+    shadow: 0.6         // 0..1 drop-shadow strength
 };
+
+// Ready-made looks. Values follow the presets in the user's subtitle
+// projects, where they were tuned against real footage.
+export const SUBTITLE_PRESETS = [
+    { id: 'plain', name: 'Clean', style: { bgOpacity: 0.72, strokeWidth: 0, shadow: 0.6, color: '#ffffff' } },
+    { id: 'outline', name: 'Outlined', style: { bgOpacity: 0, strokeWidth: 3, strokeColor: '#000000', shadow: 0.5, color: '#ffffff' } },
+    { id: 'bold', name: 'Bold yellow', style: { bgOpacity: 0, strokeWidth: 4, strokeColor: '#000000', shadow: 0.55, color: '#ffe082' } },
+    { id: 'netflix', name: 'Soft shadow', style: { bgOpacity: 0, strokeWidth: 0, shadow: 0.9, color: '#ffffff' } }
+];
+
+// An outline needs the stroke painted BEHIND the fill, otherwise the glyph
+// eats its inner half and the border looks half as thick as requested.
+export function subtitleTextStyle(style) {
+    const css = { color: style.color };
+    if (style.strokeWidth > 0) {
+        css.WebkitTextStroke = `${style.strokeWidth}px ${style.strokeColor}`;
+        css.paintOrder = 'stroke fill';
+    }
+    if (style.shadow > 0) {
+        const a = style.shadow;
+        css.textShadow = `0 2px 4px rgba(0,0,0,${a}), 0 0 2px rgba(0,0,0,${a * 0.8})`;
+    }
+    return css;
+}
 
 export function readSubtitleStyle() {
     try {
@@ -89,6 +116,23 @@ export const SubtitleSettings = ({
                 <button onClick={onClose} style={{ color: theme.textTertiary, fontSize: 15 }}>{'✕'}</button>
             </div>
 
+            <Row label={t('subStylePreset')}>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    {SUBTITLE_PRESETS.map(p => (
+                        <button
+                            key={p.id}
+                            onClick={() => set(p.style)}
+                            style={{
+                                flex: '1 0 46%', padding: '5px 0', borderRadius: 5, fontSize: 11,
+                                background: theme.inputBg, color: theme.textSecondary
+                            }}
+                        >
+                            {t(`subPreset_${p.id}`)}
+                        </button>
+                    ))}
+                </div>
+            </Row>
+
             <Row label={t('subStyleSize')}>
                 <div style={{ display: 'flex', gap: 4 }}>
                     {SIZES.map((s, i) => (
@@ -130,6 +174,40 @@ export const SubtitleSettings = ({
                     type="range" min="0" max="100" step="5"
                     value={Math.round(style.bgOpacity * 100)}
                     onChange={(e) => set({ bgOpacity: Number(e.target.value) / 100 })}
+                    style={{ width: '100%', accentColor: theme.accent }}
+                />
+            </Row>
+
+            <Row label={`${t('subStyleStroke')} ${style.strokeWidth}px`}>
+                <input
+                    type="range" min="0" max="8" step="0.5"
+                    value={style.strokeWidth}
+                    onChange={(e) => set({ strokeWidth: Number(e.target.value) })}
+                    style={{ width: '100%', accentColor: theme.accent }}
+                />
+                {style.strokeWidth > 0 && (
+                    <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                        {['#000000', '#1a237e', '#4a148c', '#b71c1c', '#ffffff'].map(c => (
+                            <button
+                                key={c}
+                                onClick={() => set({ strokeColor: c })}
+                                style={{
+                                    width: 26, height: 20, borderRadius: 4, background: c,
+                                    border: style.strokeColor === c
+                                        ? `2px solid ${theme.accent}`
+                                        : `1px solid ${theme.borderSecondary}`
+                                }}
+                            />
+                        ))}
+                    </div>
+                )}
+            </Row>
+
+            <Row label={`${t('subStyleShadow')} ${Math.round(style.shadow * 100)}%`}>
+                <input
+                    type="range" min="0" max="100" step="5"
+                    value={Math.round(style.shadow * 100)}
+                    onChange={(e) => set({ shadow: Number(e.target.value) / 100 })}
                     style={{ width: '100%', accentColor: theme.accent }}
                 />
             </Row>
