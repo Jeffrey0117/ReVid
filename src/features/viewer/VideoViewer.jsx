@@ -283,17 +283,10 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
             const idx = findActiveCueIndex(cuesRef.current, tNow - subShiftRef.current);
             setActiveCueIndex((prev) => (prev === idx ? prev : idx));
 
-            // Sentence drill takes precedence over the A-B loop: repeat the
-            // chosen cue until it is switched off.
-            const drill = loopCueRef.current;
-            if (drill >= 0) {
-                const cue = cuesRef.current[drill];
-                if (cue) {
-                    const from = cue.start + subShiftRef.current;
-                    const to = cue.end + subShiftRef.current;
-                    if (tNow >= to || tNow < from - 0.3) video.currentTime = from;
-                }
-            } else {
+            // A-B loop. The sentence drill loops on its own rAF ticker —
+            // timeupdate only fires ~4x a second, which is too coarse to cut
+            // cleanly at the end of a sentence.
+            if (loopCueRef.current < 0) {
                 const ab = abRef.current;
                 if (ab && ab.b != null && tNow >= ab.b) {
                     video.currentTime = ab.a;
@@ -542,6 +535,25 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
 
     // Switching video must not leave a drill pointing at a stale cue index.
     useEffect(() => { setLoopCueIndex(-1); }, [videoPath]);
+
+    // Frame-accurate sentence loop: check every frame so the line repeats on
+    // its own end instead of spilling into the next one.
+    useEffect(() => {
+        if (loopCueIndex < 0) return;
+        let raf = 0;
+        const tick = () => {
+            const v = videoElRef.current;
+            const cue = cuesRef.current[loopCueIndex];
+            if (v && cue && !v.paused) {
+                const from = cue.start + subShiftRef.current;
+                const to = cue.end + subShiftRef.current;
+                if (v.currentTime >= to || v.currentTime < from - 0.3) v.currentTime = from;
+            }
+            raf = requestAnimationFrame(tick);
+        };
+        raf = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(raf);
+    }, [loopCueIndex]);
 
     // Discard this video's subtitles and run them again.
     const retranscribe = useCallback(async () => {
