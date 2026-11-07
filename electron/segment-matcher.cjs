@@ -196,4 +196,25 @@ function findSegmentOffset(targetEnv, templateEnv) {
     };
 }
 
-module.exports = { extractEnvelope, findSegmentOffset, MATCH_THRESHOLD, FRAMES_PER_SECOND };
+// ffmpeg prints Duration while reading the header and then exits because it
+// was given no output — which makes this near-instant, unlike decoding the
+// file to find out how long it is.
+function probeDuration(filePath) {
+    return new Promise((resolve) => {
+        const proc = spawn(ffmpegPath, ['-hide_banner', '-i', filePath]);
+        let err = '';
+        proc.stderr.on('data', (d) => { err += d.toString(); });
+        proc.stdout.on('data', () => {});
+        proc.on('error', () => resolve(0));
+        proc.on('close', () => {
+            const m = /Duration:\s*(\d+):(\d\d):(\d\d(?:\.\d+)?)/.exec(err);
+            if (!m) { resolve(0); return; }
+            resolve(Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]));
+        });
+    });
+}
+
+module.exports = {
+    extractEnvelope, findSegmentOffset, probeDuration,
+    MATCH_THRESHOLD, FRAMES_PER_SECOND
+};

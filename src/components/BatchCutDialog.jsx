@@ -8,7 +8,10 @@ const getElectronAPI = () => window.electronAPI || null;
 
 // Matches below this score are shown but not auto-selected: an irreversible
 // bulk cut should only pre-check hits that are near-certain.
-const AUTO_SELECT_SCORE = 0.85;
+// The segment is literally the same footage in every episode, so a match
+// that clears half is the thing, not a coincidence. 0.85 left anything
+// slightly noisy unticked and those episodes got missed.
+const AUTO_SELECT_SCORE = 0.5;
 
 // Batch cut: the user marked a "fixed segment" in one video (the template).
 // Scan every file in the folder for the same audio, show where it was found,
@@ -19,9 +22,11 @@ export const BatchCutDialog = ({ files, template, onClose }) => {
 
     const templateLen = template.end - template.start;
 
-    const [rows, setRows] = useState(() => files.map((p) => ({
+    const makeRow = (p) => ({
         path: p,
         name: p.split(/[\\/]/).pop(),
+        // The season it came from, shown once a whole show is in the list.
+        season: p.split(/[\\/]/).slice(-2, -1)[0] || '',
         status: 'pending', // pending | scanning | found | notfound | cutting | done | failed
         matchStart: 0,
         score: 0,
@@ -30,7 +35,29 @@ export const BatchCutDialog = ({ files, template, onClose }) => {
         // same flag means "cut this file".
         selected: true,
         error: null
-    })));
+    });
+
+    const [rows, setRows] = useState(() => files.map(makeRow));
+    const [wholeShow, setWholeShow] = useState(false);
+
+    // The same opening or ending runs through every season, so scanning one
+    // folder at a time means doing this eight times for one show.
+    const addWholeShow = useCallback(() => {
+        const api = getElectronAPI();
+        if (!api?.listSubfoldersWithVideos || files.length === 0) return;
+        const season = api.path.dirname(files[0]);
+        const show = api.path.dirname(season);
+        const folders = api.listSubfoldersWithVideos(show);
+        if (folders.length === 0) return;
+
+        const all = folders.flatMap(f => api.getFilesInDirectory(f) || []);
+        setRows((prev) => {
+            const have = new Set(prev.map(r => r.path));
+            const added = all.filter(p => !have.has(p)).map(makeRow);
+            return added.length ? [...prev, ...added] : prev;
+        });
+        setWholeShow(true);
+    }, [files]);
     const lastClickedRef = useRef(-1);
     const [phase, setPhase] = useState('setup'); // setup | scanning | review | cutting | done
     const [cutFrom, setCutFrom] = useState('start'); // start = delete segment too; end = keep it
@@ -260,6 +287,17 @@ export const BatchCutDialog = ({ files, template, onClose }) => {
                                 readOnly
                                 style={{ accentColor: theme.accent, pointerEvents: 'none' }}
                             />
+                            {/* Every season has an episode 1, so the name
+                                alone stops identifying a row once the whole
+                                show is in the list. */}
+                            {wholeShow && row.season && (
+                                <span style={{
+                                    flex: 'none', minWidth: 26, fontSize: 11,
+                                    color: theme.textTertiary
+                                }}>
+                                    {row.season}
+                                </span>
+                            )}
                             <span style={{
                                 flex: 1, fontSize: 13, color: theme.textSecondary,
                                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
@@ -340,13 +378,20 @@ export const BatchCutDialog = ({ files, template, onClose }) => {
                             </button>
                         )}
                         {phase === 'setup' && (
-                            <button
-                                className="btn btn-primary"
-                                disabled={scanTargets.length === 0}
-                                onClick={handleScan}
-                            >
-                                {t('batchCutScanBtn')} ({scanTargets.length})
-                            </button>
+                            <>
+                                {!wholeShow && (
+                                    <button className="btn btn-ghost" onClick={addWholeShow}>
+                                        {t('batchCutWholeShow')}
+                                    </button>
+                                )}
+                                <button
+                                    className="btn btn-primary"
+                                    disabled={scanTargets.length === 0}
+                                    onClick={handleScan}
+                                >
+                                    {t('batchCutScanBtn')} ({scanTargets.length})
+                                </button>
+                            </>
                         )}
                         {phase === 'scanning' && (
                             <span style={{ fontSize: 12, color: theme.textTertiary, alignSelf: 'center' }}>
