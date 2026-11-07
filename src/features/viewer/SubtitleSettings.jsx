@@ -74,14 +74,19 @@ function Row({ label, children }) {
     );
 }
 
-// Small popover for subtitle appearance. Values apply live and persist.
+const CC_CHOICES = ['off', 'orig', 'zh', 'both'];
+
+// Two pages, because everything on one was a scroll the length of the window.
+// The front page is what gets changed mid-episode; the rest lives one tap in.
 export const SubtitleSettings = ({
+    ccMode, onCcMode,
     style, onChange, onClose, onRetranscribe, onExportSrt,
     difficulty, onDifficultyChange, knownCount = 0, onForgetKnown
 }) => {
     const { t } = useI18n();
     const { theme } = useTheme();
 
+    const [page, setPage] = useState('main');
     const [translate, setTranslateState] = useState(readTranslateSettings);
 
     const set = (patch) => {
@@ -98,21 +103,93 @@ export const SubtitleSettings = ({
         setTranslateState(next);
     };
 
-    return (
+    const shell = (children) => (
         <div
             onClick={(e) => e.stopPropagation()}
             style={{
-                width: 250, padding: 14,
+                width: 250, padding: 14, maxHeight: '70vh', overflowY: 'auto',
                 background: theme.dialogBg, color: theme.text,
                 border: `1px solid ${theme.border}`, borderRadius: 10,
                 boxShadow: '0 10px 32px rgba(0,0,0,0.4)'
             }}
         >
+            {children}
+        </div>
+    );
+
+    if (page === 'main') {
+        return shell(
+            <>
+                <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    marginBottom: 10
+                }}>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>{t('subMenuTitle')}</span>
+                    <button onClick={onClose} style={{ color: theme.textTertiary, fontSize: 15 }}>{'✕'}</button>
+                </div>
+
+                {CC_CHOICES.map((mode) => (
+                    <button
+                        key={mode}
+                        onClick={() => onCcMode?.(mode)}
+                        style={{
+                            display: 'block', width: '100%', textAlign: 'left',
+                            padding: '7px 8px', borderRadius: 6, fontSize: 13, cursor: 'pointer',
+                            background: ccMode === mode ? theme.accentBg : 'transparent',
+                            color: ccMode === mode ? theme.accent : theme.textSecondary,
+                            fontWeight: ccMode === mode ? 600 : 400
+                        }}
+                    >
+                        {t(`cc_${mode}`)}
+                    </button>
+                ))}
+
+                <div style={{ height: 1, background: theme.border, margin: '10px 0' }} />
+
+                <label style={{
+                    display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+                    padding: '7px 8px', fontSize: 13, color: theme.textSecondary
+                }}>
+                    <input
+                        type="checkbox"
+                        checked={translate.auto}
+                        onChange={(e) => setTranslate({ auto: e.target.checked })}
+                        style={{ accentColor: theme.accent }}
+                    />
+                    {t('translateAuto')}
+                </label>
+
+                <button
+                    onClick={() => setPage('settings')}
+                    style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        width: '100%', padding: '7px 8px', borderRadius: 6, cursor: 'pointer',
+                        fontSize: 13, color: theme.textSecondary
+                    }}
+                >
+                    {t('subStyleTitle')}
+                    <span style={{ color: theme.textTertiary }}>{'›'}</span>
+                </button>
+            </>
+        );
+    }
+
+    return shell(
+        <>
             <div style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 marginBottom: 12
             }}>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>{t('subStyleTitle')}</span>
+                <button
+                    onClick={() => setPage('main')}
+                    style={{
+                        display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer',
+                        fontSize: 13, fontWeight: 600, color: theme.text
+                    }}
+                >
+                    <span style={{ color: theme.textTertiary }}>{'‹'}</span>
+                    {t('subStyleTitle')}
+                </button>
                 <button onClick={onClose} style={{ color: theme.textTertiary, fontSize: 15 }}>{'✕'}</button>
             </div>
 
@@ -318,19 +395,6 @@ export const SubtitleSettings = ({
                 </Row>
             )}
 
-            <label style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                fontSize: 12, color: theme.textSecondary, cursor: 'pointer'
-            }}>
-                <input
-                    type="checkbox"
-                    checked={translate.auto}
-                    onChange={(e) => setTranslate({ auto: e.target.checked })}
-                    style={{ accentColor: theme.accent }}
-                />
-                {t('translateAuto')}
-            </label>
-
             {onDifficultyChange && (
                 <>
                     <div style={{ height: 1, background: theme.border, margin: '12px 0' }} />
@@ -392,6 +456,6 @@ export const SubtitleSettings = ({
                     {t('retranscribe')}
                 </button>
             )}
-        </div>
+        </>
     );
 };

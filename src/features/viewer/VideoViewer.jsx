@@ -16,7 +16,7 @@ import {
     WordCard, ClickableText, readDifficulty, writeDifficulty, readKnownWords, clearKnownWords
 } from './WordLookup';
 import {
-    BookMarked, Captions, ListVideo, Lock, PanelRight, Sliders
+    BookMarked, Captions, ListVideo, Lock, PanelRight
 } from '../../components/icons';
 import { setAudioSlot, setAudioSlotProvider, setPlayerBridge } from '../plugins/pluginRuntime';
 import { PluginPanelHost } from '../plugins/PluginPanelHost';
@@ -565,12 +565,9 @@ export const VideoViewer = ({
         else setWhisperMissing(true);
     }, []);
 
-    const cycleCc = useCallback(() => {
-        setCcMode(prev => {
-            const next = CC_MODES[(CC_MODES.indexOf(prev) + 1) % CC_MODES.length];
-            localStorage.setItem(CC_KEY, next);
-            return next;
-        });
+    const pickCc = useCallback((next) => {
+        localStorage.setItem(CC_KEY, next);
+        setCcMode(next);
     }, []);
 
     // Translate the loaded cues to Chinese and keep the result on each cue.
@@ -1158,24 +1155,19 @@ export const VideoViewer = ({
                                 {t('shadow')}
                             </button>
                         )}
+                        {/* One subtitle button: it shows the current mode and
+                            opens the menu that changes it, style and all. */}
                         <button
-                            title={t('ccToggle')}
-                            onClick={(e) => { e.stopPropagation(); cycleCc(); }}
-                            style={barBtn(ccMode !== 'off')}
-                        >
-                            <Captions size={15} />
-                            {CC_LABEL[ccMode]}
-                        </button>
-                        <button
-                            title={t('subStyleTitle')}
+                            title={t('subMenuTitle')}
                             onClick={(e) => {
                                 e.stopPropagation();
                                 setEpisodesOpen(false);
                                 setStyleOpen(o => !o);
                             }}
-                            style={barBtn(styleOpen)}
+                            style={barBtn(styleOpen || ccMode !== 'off')}
                         >
-                            <Sliders size={15} />
+                            <Captions size={15} />
+                            {CC_LABEL[ccMode]}
                         </button>
                     </>,
                     controlsSlot
@@ -1193,6 +1185,8 @@ export const VideoViewer = ({
                 {styleOpen && (
                     <div style={{ position: 'absolute', bottom: 64, right: 12, zIndex: 6 }}>
                         <SubtitleSettings
+                            ccMode={ccMode}
+                            onCcMode={pickCc}
                             style={subStyle}
                             onChange={setSubStyle}
                             onClose={() => setStyleOpen(false)}
