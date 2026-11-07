@@ -38,10 +38,22 @@ export const TranscriptSearch = ({ folder, onPick, onClose }) => {
     // episode is about, which no amount of word matching reaches.
     const [mode, setMode] = useState('text');
     const [state, setState] = useState({ results: [], busy: false, ran: false });
-    const [guide, setGuide] = useState({ busy: false, msg: '' });
+    const [guide, setGuide] = useState({ busy: false, msg: '', have: 0 });
     const inputRef = useRef(null);
 
     useEffect(() => { inputRef.current?.focus(); }, []);
+
+    // Offering to fetch what is already here reads as "nothing happened last
+    // time", so the button has to know the answer before it is pressed.
+    useEffect(() => {
+        const api = getElectronAPI();
+        if (!api?.libraryGuides || !folder) return;
+        let dropped = false;
+        api.libraryGuides(folder).then(r => {
+            if (!dropped) setGuide(g => ({ ...g, have: r.withGuide || 0 }));
+        });
+        return () => { dropped = true; };
+    }, [folder]);
 
     // Wikipedia names shows in English; the folder is usually named in
     // whatever language the files were downloaded in, so it is only a hint.
@@ -52,10 +64,11 @@ export const TranscriptSearch = ({ folder, onPick, onClose }) => {
         const show = window.prompt(t('guideAskShow'), suggested);
         if (!show) return;
 
-        setGuide({ busy: true, msg: '' });
+        setGuide(g => ({ ...g, busy: true, msg: '' }));
         const r = await api.importEpisodeGuide(folder, show.trim());
         setGuide({
             busy: false,
+            have: r.success ? r.matched : guide.have,
             msg: r.success
                 ? `${t('guideImported')} ${r.matched}/${r.episodes} · ${r.page}`
                 : r.error
@@ -223,7 +236,9 @@ export const TranscriptSearch = ({ folder, onPick, onClose }) => {
                             opacity: guide.busy ? 0.5 : 1
                         }}
                     >
-                        {guide.busy ? t('guideImporting') : t('guideImport')}
+                        {guide.busy ? t('guideImporting')
+                            : guide.have ? `${t('guideHave')} ${guide.have} · ${t('guideRefetch')}`
+                                : t('guideImport')}
                     </button>
                 </div>
 

@@ -41,7 +41,8 @@ import { PluginsDialog } from './features/plugins/PluginsDialog';
 import { StudyExportDialog } from './features/export/StudyExportDialog';
 import { ShareDialog } from './features/share/ShareDialog';
 import { TranscriptSearch } from './features/search/TranscriptSearch';
-import { Search as SearchIcon } from './components/icons';
+import { ShowBrowser } from './features/show/ShowBrowser';
+import { Search as SearchIcon, Tv } from './components/icons';
 import { reloadPlugins } from './features/plugins/pluginRuntime';
 import { validateRevidFile } from './utils/revidFile';
 import { detectPlatform } from './utils/platformDetect';
@@ -611,7 +612,7 @@ export default function App() {
                     } else {
                         setViewMode('grid');
                     }
-                } else if (viewMode === 'viewer') {
+                } else if (viewMode === 'viewer' || viewMode === 'show') {
                     setViewMode('grid');
                 }
             }
@@ -963,6 +964,21 @@ export default function App() {
                                     <rect width="18" height="18" x="3" y="3" rx="2" />
                                 </svg>
                             )}
+                        </button>
+                    )}
+
+                    {files.length > 0 && (
+                        <button
+                            className="btn btn-ghost"
+                            onClick={() => setViewMode(prev => prev === 'show' ? 'grid' : 'show')}
+                            title={t('showMode')}
+                            style={{
+                                padding: 7, borderRadius: 8, display: 'flex',
+                                color: viewMode === 'show' ? theme.accent : undefined,
+                                background: viewMode === 'show' ? theme.accentBg : undefined
+                            }}
+                        >
+                            <Tv size={18} />
                         </button>
                     )}
 
@@ -2028,6 +2044,13 @@ export default function App() {
                                     {t('openFolder')}
                                 </button>
                             </div>
+                        ) : viewMode === 'show' ? (
+                            <ShowBrowser
+                                files={gridFiles}
+                                folder={currentPath}
+                                currentIndex={gridFiles.indexOf(currentVideo)}
+                                onSelectVideo={handleSelectVideoFromGrid}
+                            />
                         ) : viewMode === 'grid' ? (
                             <VideoThumbnailGrid
                                 files={gridFiles}

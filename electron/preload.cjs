@@ -333,6 +333,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     searchSubtitles: (params) => ipcRenderer.invoke('search-subtitles', params),
     importEpisodeGuide: (folder, show) => ipcRenderer.invoke('import-episode-guide', { folder, show }),
     askEpisodes: (params) => ipcRenderer.invoke('ask-episodes', params),
+    libraryGuides: (folder) => ipcRenderer.invoke('library-guides', { folder }),
 
     saveSubtitles: (videoPath, cues, translated) =>
         ipcRenderer.invoke('save-subtitles', { videoPath, cues, translated }),

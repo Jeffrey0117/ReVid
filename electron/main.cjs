@@ -1458,6 +1458,26 @@ function setupIpcHandlers() {
         }
     });
 
+    // What the folder already knows about itself: which episodes have a
+    // synopsis, which have subtitles. Drives the show browser, and stops the
+    // guide button from offering work that is already done.
+    ipcMain.handle('library-guides', (_event, { folder } = {}) => {
+        if (!folder) return { success: false, error: 'No folder' };
+        try {
+            const lib = library.read(folder);
+            const byName = {};
+            let withGuide = 0;
+            let withSubs = 0;
+            for (const [name, entry] of Object.entries(lib?.videos || {})) {
+                if (entry.guide) { byName[name] = entry.guide; withGuide += 1; }
+                if (Array.isArray(entry.subs) && entry.subs.length) withSubs += 1;
+            }
+            return { success: true, byName, withGuide, withSubs };
+        } catch (e) {
+            return { success: false, error: e.message, byName: {} };
+        }
+    });
+
     ipcMain.handle('reel-renderer-status', () => ({
         available: Boolean(findRemotionDir()),
         dir: findRemotionDir()
