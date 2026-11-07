@@ -1,0 +1,145 @@
+import { useI18n } from '../../i18n.jsx';
+import { useTheme } from '../../theme.jsx';
+
+export const SUBTITLE_STYLE_KEY = 'revid-subtitle-style';
+
+export const DEFAULT_SUBTITLE_STYLE = {
+    fontSize: 18,
+    color: '#ffffff',
+    bgOpacity: 0.72,
+    position: 'bottom', // bottom | top
+    offset: 76          // px from that edge
+};
+
+export function readSubtitleStyle() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(SUBTITLE_STYLE_KEY));
+        return saved ? { ...DEFAULT_SUBTITLE_STYLE, ...saved } : { ...DEFAULT_SUBTITLE_STYLE };
+    } catch {
+        return { ...DEFAULT_SUBTITLE_STYLE };
+    }
+}
+
+const COLORS = ['#ffffff', '#ffe082', '#aed581', '#81d4fa', '#f48fb1'];
+const SIZES = [14, 18, 24, 30, 38];
+
+function Row({ label, children }) {
+    const { theme } = useTheme();
+    return (
+        <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11, color: theme.textTertiary, marginBottom: 5 }}>{label}</div>
+            {children}
+        </div>
+    );
+}
+
+// Small popover for subtitle appearance. Values apply live and persist.
+export const SubtitleSettings = ({ style, onChange, onClose }) => {
+    const { t } = useI18n();
+    const { theme } = useTheme();
+
+    const set = (patch) => {
+        const next = { ...style, ...patch };
+        localStorage.setItem(SUBTITLE_STYLE_KEY, JSON.stringify(next));
+        onChange(next);
+    };
+
+    return (
+        <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+                width: 250, padding: 14,
+                background: theme.dialogBg, color: theme.text,
+                border: `1px solid ${theme.border}`, borderRadius: 10,
+                boxShadow: '0 10px 32px rgba(0,0,0,0.4)'
+            }}
+        >
+            <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                marginBottom: 12
+            }}>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>{t('subStyleTitle')}</span>
+                <button onClick={onClose} style={{ color: theme.textTertiary, fontSize: 15 }}>{'✕'}</button>
+            </div>
+
+            <Row label={t('subStyleSize')}>
+                <div style={{ display: 'flex', gap: 4 }}>
+                    {SIZES.map((s, i) => (
+                        <button
+                            key={s}
+                            onClick={() => set({ fontSize: s })}
+                            style={{
+                                flex: 1, padding: '5px 0', borderRadius: 5,
+                                fontSize: 10 + i * 2, lineHeight: 1,
+                                background: style.fontSize === s ? theme.accent : theme.inputBg,
+                                color: style.fontSize === s ? '#fff' : theme.textSecondary
+                            }}
+                        >
+                            A
+                        </button>
+                    ))}
+                </div>
+            </Row>
+
+            <Row label={t('subStyleColor')}>
+                <div style={{ display: 'flex', gap: 6 }}>
+                    {COLORS.map((c) => (
+                        <button
+                            key={c}
+                            onClick={() => set({ color: c })}
+                            style={{
+                                width: 28, height: 24, borderRadius: 5, background: c,
+                                border: style.color === c
+                                    ? `2px solid ${theme.accent}`
+                                    : `1px solid ${theme.borderSecondary}`
+                            }}
+                        />
+                    ))}
+                </div>
+            </Row>
+
+            <Row label={`${t('subStyleBg')} ${Math.round(style.bgOpacity * 100)}%`}>
+                <input
+                    type="range" min="0" max="100" step="5"
+                    value={Math.round(style.bgOpacity * 100)}
+                    onChange={(e) => set({ bgOpacity: Number(e.target.value) / 100 })}
+                    style={{ width: '100%', accentColor: theme.accent }}
+                />
+            </Row>
+
+            <Row label={t('subStylePosition')}>
+                <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+                    {['bottom', 'top'].map((p) => (
+                        <button
+                            key={p}
+                            onClick={() => set({ position: p })}
+                            style={{
+                                flex: 1, padding: '5px 0', borderRadius: 5, fontSize: 12,
+                                background: style.position === p ? theme.accent : theme.inputBg,
+                                color: style.position === p ? '#fff' : theme.textSecondary
+                            }}
+                        >
+                            {p === 'bottom' ? t('subStyleBottom') : t('subStyleTop')}
+                        </button>
+                    ))}
+                </div>
+                <input
+                    type="range" min="8" max="240" step="4"
+                    value={style.offset}
+                    onChange={(e) => set({ offset: Number(e.target.value) })}
+                    style={{ width: '100%', accentColor: theme.accent }}
+                />
+            </Row>
+
+            <button
+                onClick={() => set({ ...DEFAULT_SUBTITLE_STYLE })}
+                style={{
+                    width: '100%', padding: '6px 0', borderRadius: 6, fontSize: 12,
+                    background: theme.inputBg, color: theme.textSecondary
+                }}
+            >
+                {t('subStyleReset')}
+            </button>
+        </div>
+    );
+};

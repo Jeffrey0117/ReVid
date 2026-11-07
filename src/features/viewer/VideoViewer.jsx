@@ -5,7 +5,8 @@ import { useI18n } from '../../i18n.jsx';
 import { getCachedThumbnail } from '../../utils/videoThumbnails';
 import { parseSubtitles, findActiveCueIndex } from '../../utils/subtitles';
 import { TranscriptPanel } from './TranscriptPanel';
-import { Captions, PanelRight } from '../../components/icons';
+import { SubtitleSettings, readSubtitleStyle } from './SubtitleSettings';
+import { Captions, PanelRight, Sliders } from '../../components/icons';
 
 const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 // Gain multipliers for volume boost (1 = native 100%, >1 amplifies past it).
@@ -77,6 +78,8 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
     const [cues, setCues] = useState([]);
     const [activeCueIndex, setActiveCueIndex] = useState(-1);
     const [ccVisible, setCcVisible] = useState(() => readBool(CC_KEY, true));
+    const [subStyle, setSubStyle] = useState(readSubtitleStyle);
+    const [styleOpen, setStyleOpen] = useState(false);
     const [transcriptOpen, setTranscriptOpen] = useState(() => readBool(TRANSCRIPT_KEY, false));
     const [transcribing, setTranscribing] = useState(null); // { pct } | null
     const [whisperMissing, setWhisperMissing] = useState(false);
@@ -487,6 +490,19 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
         return () => window.removeEventListener('keydown', onKey);
     }, []);
 
+    // Close the subtitle-style popover on outside click / Escape.
+    useEffect(() => {
+        if (!styleOpen) return;
+        const close = () => setStyleOpen(false);
+        const onKey = (e) => { if (e.key === 'Escape') setStyleOpen(false); };
+        window.addEventListener('click', close);
+        window.addEventListener('keydown', onKey);
+        return () => {
+            window.removeEventListener('click', close);
+            window.removeEventListener('keydown', onKey);
+        };
+    }, [styleOpen]);
+
     // Close the context menu on outside click / Escape.
     useEffect(() => {
         if (!menu) return;
@@ -536,14 +552,17 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                 {/* CC subtitle overlay */}
                 {ccVisible && activeCue && (
                     <div style={{
-                        position: 'absolute', left: '50%', bottom: 76, zIndex: 4,
+                        position: 'absolute', left: '50%', zIndex: 4,
+                        [subStyle.position]: subStyle.offset,
                         transform: 'translateX(-50%)',
                         maxWidth: '82%', padding: '7px 16px',
-                        background: 'rgba(0,0,0,0.72)', color: '#fff',
-                        borderRadius: 8, fontSize: 18, lineHeight: 1.45,
+                        background: `rgba(0,0,0,${subStyle.bgOpacity})`,
+                        color: subStyle.color,
+                        borderRadius: 8, fontSize: subStyle.fontSize, lineHeight: 1.45,
                         textAlign: 'center', whiteSpace: 'pre-wrap',
                         textShadow: '0 1px 2px rgba(0,0,0,0.8)',
-                        pointerEvents: 'none', backdropFilter: 'blur(2px)'
+                        pointerEvents: 'none',
+                        backdropFilter: subStyle.bgOpacity > 0 ? 'blur(2px)' : 'none'
                     }}>
                         {activeCue.text}
                     </div>
@@ -578,6 +597,13 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                         <Captions size={16} />
                     </button>
                     <button
+                        title={t('subStyleTitle')}
+                        onClick={(e) => { e.stopPropagation(); setStyleOpen(o => !o); }}
+                        style={iconBtn(styleOpen)}
+                    >
+                        <Sliders size={16} />
+                    </button>
+                    <button
                         title={t('transcriptToggle')}
                         onClick={toggleTranscript}
                         style={iconBtn(transcriptOpen)}
@@ -585,6 +611,16 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                         <PanelRight size={16} />
                     </button>
                 </div>
+
+                {styleOpen && (
+                    <div style={{ position: 'absolute', top: 48, right: 12, zIndex: 6 }}>
+                        <SubtitleSettings
+                            style={subStyle}
+                            onChange={setSubStyle}
+                            onClose={() => setStyleOpen(false)}
+                        />
+                    </div>
+                )}
 
                 {/* Bottom-left: resume prompt + A-B loop pill */}
                 <div style={{
