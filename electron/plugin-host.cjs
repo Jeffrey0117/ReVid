@@ -173,6 +173,20 @@ function installPluginFromFolder(sourceDir) {
     return { success: true, id: folderName };
 }
 
+// fs.cpSync cannot read out of an asar archive — it throws ENOENT, which is
+// how bundled plugins silently failed to install in packaged builds while
+// working fine in development. readdir/readFile/writeFile are asar-aware, so
+// the copy is done by hand.
+function copyTreeOutOfAsar(from, to) {
+    fs.mkdirSync(to, { recursive: true });
+    for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+        const src = path.join(from, entry.name);
+        const dest = path.join(to, entry.name);
+        if (entry.isDirectory()) copyTreeOutOfAsar(src, dest);
+        else fs.writeFileSync(dest, fs.readFileSync(src));
+    }
+}
+
 // Semver-ish compare, enough for "is the bundled copy newer".
 function isNewer(a, b) {
     const pa = String(a).split('.').map(n => parseInt(n, 10) || 0);
@@ -220,13 +234,15 @@ function seedBundledPlugins(appRoot) {
 
         try {
             if (fs.existsSync(to)) fs.rmSync(to, { recursive: true, force: true });
-            fs.cpSync(from, to, { recursive: true });
+            copyTreeOutOfAsar(from, to);
             // Build artifacts, not part of the plugin.
             for (const junk of ['_vendor.js', '_plugin.js']) {
                 try { fs.unlinkSync(path.join(to, junk)); } catch (e) { /* absent */ }
             }
             (installedVersion === null ? seeded : updated).push(dirent.name);
-        } catch (e) { /* skip this one */ }
+        } catch (e) {
+            console.error(`[plugins] could not seed ${dirent.name}:`, e?.message || e);
+        }
     }
     return { seeded, updated };
 }

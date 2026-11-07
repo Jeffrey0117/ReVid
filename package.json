@@ -54,7 +54,10 @@
     ],
     "files": [
       "dist/**/*",
-      "electron/**/*"
+      "electron/**/*",
+      "plugins/**/*",
+      "!plugins/*/_vendor.js",
+      "!plugins/*/_plugin.js"
     ],
     "fileAssociations": [
       {
