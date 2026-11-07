@@ -38,6 +38,7 @@ import { SpeedControl } from './components/SpeedControl';
 import { InfoPanel } from './components/InfoPanel';
 import { BatchCutDialog } from './components/BatchCutDialog';
 import { PluginsDialog } from './features/plugins/PluginsDialog';
+import { StudyExportDialog } from './features/export/StudyExportDialog';
 import { reloadPlugins } from './features/plugins/pluginRuntime';
 import { validateRevidFile } from './utils/revidFile';
 import { detectPlatform } from './utils/platformDetect';
@@ -102,6 +103,7 @@ export default function App() {
     const [showPinnedOnly, setShowPinnedOnly] = useState(false);
     const [showSettingsMenu, setShowSettingsMenu] = useState(false);
     const [showPlugins, setShowPlugins] = useState(false);
+    const [showStudyExport, setShowStudyExport] = useState(false);
     const [showAbout, setShowAbout] = useState(false);
     const [toast, setToast] = useState(null);
     const [alertModal, setAlertModal] = useState(null); // { message }
@@ -1412,6 +1414,23 @@ export default function App() {
                                         </svg>
                                         <span>{t('pluginsTitle')}</span>
                                     </button>
+                                    {/* 匯出 PDF:逐字稿成冊 / 學習講義 */}
+                                    <button
+                                        onClick={() => { setShowStudyExport(true); setShowSettingsMenu(false); }}
+                                        style={{
+                                            width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+                                            padding: '8px 12px', fontSize: 13, color: theme.textSecondary,
+                                            transition: 'background 0.1s'
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.background = theme.hoverBg}
+                                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                    >
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z" />
+                                            <path d="M14 2v5h5M9 13h6M9 17h4" />
+                                        </svg>
+                                        <span>{t('exportStudyTitle')}</span>
+                                    </button>
                                     <button
                                         onClick={() => { setShowSyncSettings(true); setShowSettingsMenu(false); }}
                                         style={{
@@ -2228,6 +2247,14 @@ export default function App() {
             <FamilyDialog isOpen={showFamily} onClose={() => setShowFamily(false)} />
 
             {showPlugins && <PluginsDialog onClose={() => setShowPlugins(false)} />}
+
+            {showStudyExport && (
+                <StudyExportDialog
+                    files={gridFiles}
+                    currentVideo={currentVideo}
+                    onClose={() => setShowStudyExport(false)}
+                />
+            )}
             <SyncSettingsDialog
                 isOpen={showSyncSettings}
                 onClose={() => setShowSyncSettings(false)}

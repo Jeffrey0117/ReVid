@@ -295,6 +295,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     dictMarkDifficult: (lines, options) => ipcRenderer.invoke('dict-mark-difficult', { lines, options }),
     dictWordBank: (cues, options) => ipcRenderer.invoke('dict-word-bank', { cues, options }),
 
+    savePdf: (data, defaultName) => ipcRenderer.invoke('save-pdf', { data, defaultName }),
+    revealInFolder: (target) => ipcRenderer.invoke('open-path', { target }),
+
     // --- Plugins ---
 
     pluginsList: () => ipcRenderer.invoke('plugins-list'),

@@ -1152,6 +1152,29 @@ function setupIpcHandlers() {
         }
     });
 
+    // Write a PDF the renderer produced. react-pdf runs there (it is ESM and
+    // its browser build fetches fonts over http), so main only persists the
+    // bytes and shows the save dialog.
+    ipcMain.handle('save-pdf', async (_event, { data, defaultName }) => {
+        if (!mainWindow) return { success: false, error: 'No window' };
+        const picked = await dialog.showSaveDialog(mainWindow, {
+            defaultPath: defaultName || 'revid-export.pdf',
+            filters: [{ name: 'PDF', extensions: ['pdf'] }]
+        });
+        if (picked.canceled || !picked.filePath) return { success: false, canceled: true };
+        try {
+            await fs.promises.writeFile(picked.filePath, Buffer.from(data));
+            return { success: true, path: picked.filePath };
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    });
+
+    ipcMain.handle('open-path', (_event, { target }) => {
+        shell.showItemInFolder(target);
+        return { success: true };
+    });
+
     // --- Plugins ---
 
     ipcMain.handle('plugins-list', () => {
