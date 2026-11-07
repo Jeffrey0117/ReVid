@@ -1,7 +1,20 @@
+import { useState } from 'react';
 import { useI18n } from '../../i18n.jsx';
 import { useTheme } from '../../theme.jsx';
 
 export const SUBTITLE_STYLE_KEY = 'revid-subtitle-style';
+
+const TRANSLATE_ENGINE_KEY = 'revid-translate-engine';
+const GEMINI_KEY = 'revid-gemini-key';
+const AUTO_TRANSLATE_KEY = 'revid-auto-translate';
+
+function readTranslateSettings() {
+    return {
+        engine: localStorage.getItem(TRANSLATE_ENGINE_KEY) || 'google',
+        apiKey: localStorage.getItem(GEMINI_KEY) || '',
+        auto: localStorage.getItem(AUTO_TRANSLATE_KEY) === 'on'
+    };
+}
 
 export const DEFAULT_SUBTITLE_STYLE = {
     fontSize: 18,
@@ -38,10 +51,20 @@ export const SubtitleSettings = ({ style, onChange, onClose }) => {
     const { t } = useI18n();
     const { theme } = useTheme();
 
+    const [translate, setTranslateState] = useState(readTranslateSettings);
+
     const set = (patch) => {
         const next = { ...style, ...patch };
         localStorage.setItem(SUBTITLE_STYLE_KEY, JSON.stringify(next));
         onChange(next);
+    };
+
+    const setTranslate = (patch) => {
+        const next = { ...translate, ...patch };
+        localStorage.setItem(TRANSLATE_ENGINE_KEY, next.engine);
+        localStorage.setItem(GEMINI_KEY, next.apiKey);
+        localStorage.setItem(AUTO_TRANSLATE_KEY, next.auto ? 'on' : 'off');
+        setTranslateState(next);
     };
 
     return (
@@ -140,6 +163,55 @@ export const SubtitleSettings = ({ style, onChange, onClose }) => {
             >
                 {t('subStyleReset')}
             </button>
+
+            <div style={{ height: 1, background: theme.border, margin: '14px 0 12px' }} />
+
+            <Row label={t('translateEngine')}>
+                <div style={{ display: 'flex', gap: 4 }}>
+                    {[['google', 'Google'], ['gemini', 'Gemini']].map(([id, label]) => (
+                        <button
+                            key={id}
+                            onClick={() => setTranslate({ engine: id })}
+                            style={{
+                                flex: 1, padding: '5px 0', borderRadius: 5, fontSize: 12,
+                                background: translate.engine === id ? theme.accent : theme.inputBg,
+                                color: translate.engine === id ? '#fff' : theme.textSecondary
+                            }}
+                        >
+                            {label}
+                        </button>
+                    ))}
+                </div>
+            </Row>
+
+            {translate.engine === 'gemini' && (
+                <Row label={t('translateApiKey')}>
+                    <input
+                        type="password"
+                        value={translate.apiKey}
+                        placeholder="AIza..."
+                        onChange={(e) => setTranslate({ apiKey: e.target.value })}
+                        style={{
+                            width: '100%', padding: '5px 8px', borderRadius: 5, fontSize: 12,
+                            background: theme.inputBg, color: theme.text,
+                            border: `1px solid ${theme.borderSecondary}`
+                        }}
+                    />
+                </Row>
+            )}
+
+            <label style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                fontSize: 12, color: theme.textSecondary, cursor: 'pointer'
+            }}>
+                <input
+                    type="checkbox"
+                    checked={translate.auto}
+                    onChange={(e) => setTranslate({ auto: e.target.checked })}
+                    style={{ accentColor: theme.accent }}
+                />
+                {t('translateAuto')}
+            </label>
         </div>
     );
 };

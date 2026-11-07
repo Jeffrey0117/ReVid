@@ -216,6 +216,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return null;
     },
 
+    // Previously translated sidecar (<video>.zh.srt), if any.
+    readTranslatedSubtitles: (videoPath) => {
+        try {
+            const p = `${videoPath.replace(/\.[^.]+$/, '')}.zh.srt`;
+            if (fs.existsSync(p)) {
+                return { path: p, format: 'srt', content: fs.readFileSync(p, 'utf8') };
+            }
+        } catch (e) { /* unreadable */ }
+        return null;
+    },
+
+    translateSubtitles: async (params, onProgress) => {
+        const handler = (_event, p) => {
+            if (p.videoPath === params.videoPath) onProgress(p.pct);
+        };
+        ipcRenderer.on('translate-progress', handler);
+        try {
+            return await ipcRenderer.invoke('translate-subtitles', params);
+        } finally {
+            ipcRenderer.removeListener('translate-progress', handler);
+        }
+    },
+
     startDrag: (filePath) => {
         ipcRenderer.send('start-drag', filePath);
     },

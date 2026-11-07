@@ -62,11 +62,23 @@ export const TranscriptPanel = ({ cues, activeIndex, onSeekTo, onClose, transcri
                         }}>
                             {fmt(cue.start)}
                         </span>
-                        <span style={{
-                            fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap',
-                            color: i === activeIndex ? theme.text : theme.textSecondary
-                        }}>
-                            {cue.text}
+                        <span style={{ minWidth: 0 }}>
+                            <span style={{
+                                display: 'block',
+                                fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap',
+                                color: i === activeIndex ? theme.text : theme.textSecondary
+                            }}>
+                                {cue.text}
+                            </span>
+                            {cue.zh && (
+                                <span style={{
+                                    display: 'block', marginTop: 2,
+                                    fontSize: 12, lineHeight: 1.5, whiteSpace: 'pre-wrap',
+                                    color: theme.textTertiary
+                                }}>
+                                    {cue.zh}
+                                </span>
+                            )}
                         </span>
                     </div>
                 ))}

@@ -15,7 +15,14 @@ const BOOST_OPTIONS = [1, 1.5, 2, 3];
 // Volume boost persists (it's a "my speakers are quiet" preference); speed does
 // NOT — each new video should start at the natural 1x.
 const BOOST_KEY = 'revid-viewer-boost';
-const CC_KEY = 'revid-cc-visible';
+const CC_KEY = 'revid-cc-mode';
+const TRANSLATE_ENGINE_KEY = 'revid-translate-engine';
+const GEMINI_KEY = 'revid-gemini-key';
+const GEMINI_MODEL_KEY = 'revid-gemini-model';
+const AUTO_TRANSLATE_KEY = 'revid-auto-translate';
+
+// Subtitle display modes, cycled by the CC button.
+const CC_MODES = ['both', 'orig', 'zh', 'off'];
 const TRANSCRIPT_KEY = 'revid-transcript-open';
 const GLOW_KEY = 'revid-glow';
 const AUTO_SUBS_KEY = 'revid-auto-subs';
@@ -77,9 +84,14 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
     // Subtitles / transcript
     const [cues, setCues] = useState([]);
     const [activeCueIndex, setActiveCueIndex] = useState(-1);
-    const [ccVisible, setCcVisible] = useState(() => readBool(CC_KEY, true));
+    const [ccMode, setCcMode] = useState(() => {
+        const saved = localStorage.getItem(CC_KEY);
+        return CC_MODES.includes(saved) ? saved : 'both';
+    });
     const [subStyle, setSubStyle] = useState(readSubtitleStyle);
     const [styleOpen, setStyleOpen] = useState(false);
+    const [translating, setTranslating] = useState(null); // { pct } | null
+    const [translateError, setTranslateError] = useState(null);
     const [transcriptOpen, setTranscriptOpen] = useState(() => readBool(TRANSCRIPT_KEY, false));
     const [transcribing, setTranscribing] = useState(null); // { pct } | null
     const [whisperMissing, setWhisperMissing] = useState(false);
@@ -366,9 +378,19 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
         const api = getElectronAPI();
         if (!api || !videoPath) return;
 
+        // Merge any previously translated sidecar onto the source cues so a
+        // video is never re-translated.
+        const withTranslations = (base) => {
+            const zh = api.readTranslatedSubtitles?.(videoPath);
+            if (!zh) return base;
+            const zhCues = parseSubtitles(zh.content, 'srt');
+            if (zhCues.length !== base.length) return base; // misaligned sidecar
+            return base.map((c, i) => ({ ...c, zh: zhCues[i].text }));
+        };
+
         const sub = api.readSubtitles(videoPath);
         if (sub) {
-            setCues(parseSubtitles(sub.content, sub.format));
+            setCues(withTranslations(parseSubtitles(sub.content, sub.format)));
             return;
         }
         if (!autoSubsRef.current) return;
@@ -396,7 +418,7 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
             setTranscribing(null);
             if (result.success) {
                 const finished = api.readSubtitles(videoPath);
-                if (finished) setCues(parseSubtitles(finished.content, finished.format));
+                if (finished) setCues(withTranslations(parseSubtitles(finished.content, finished.format)));
             }
         })();
 
@@ -419,12 +441,55 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
         else setWhisperMissing(true);
     }, []);
 
-    const toggleCc = useCallback(() => {
-        setCcVisible(prev => {
-            localStorage.setItem(CC_KEY, prev ? 'off' : 'on');
-            return !prev;
+    const cycleCc = useCallback(() => {
+        setCcMode(prev => {
+            const next = CC_MODES[(CC_MODES.indexOf(prev) + 1) % CC_MODES.length];
+            localStorage.setItem(CC_KEY, next);
+            return next;
         });
     }, []);
+
+    // Translate the loaded cues to Chinese and keep the result on each cue.
+    // The main process also writes a .zh.srt so this happens once per video.
+    const translateCues = useCallback(async () => {
+        const api = getElectronAPI();
+        const current = cuesRef.current;
+        if (!api || !videoPath || current.length === 0 || translating) return;
+
+        if (typeof api.translateSubtitles !== 'function') {
+            setTranslateError(t('translateRestartNeeded'));
+            return;
+        }
+
+        setTranslateError(null);
+        setTranslating({ pct: 0 });
+        let result;
+        try {
+            result = await api.translateSubtitles({
+                videoPath,
+                cues: current.map(c => ({ start: c.start, end: c.end, text: c.text })),
+                engine: localStorage.getItem(TRANSLATE_ENGINE_KEY) || 'google',
+                apiKey: localStorage.getItem(GEMINI_KEY) || '',
+                model: localStorage.getItem(GEMINI_MODEL_KEY) || ''
+            }, (pct) => setTranslating({ pct }));
+        } catch (err) {
+            result = { success: false, error: err.message || String(err) };
+        }
+        setTranslating(null);
+
+        if (result.success) {
+            setCues(prev => prev.map((c, i) => ({ ...c, zh: result.translations[i] || c.zh })));
+        } else if (!result.cancelled) {
+            setTranslateError(result.needsKey ? t('translateNeedsKey') : result.error);
+        }
+    }, [videoPath, translating, t]);
+
+    // Auto-translate once subtitles exist, if enabled and not already done.
+    useEffect(() => {
+        if (localStorage.getItem(AUTO_TRANSLATE_KEY) !== 'on') return;
+        if (cues.length === 0 || cues.some(c => c.zh) || translating || transcribing) return;
+        translateCues();
+    }, [cues, translating, transcribing, translateCues]);
 
     const toggleTranscript = useCallback(() => {
         setTranscriptOpen(prev => {
@@ -528,6 +593,10 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
     }, []);
 
     const activeCue = activeCueIndex >= 0 ? cues[activeCueIndex] : null;
+    const showOrig = ccMode === 'both' || ccMode === 'orig';
+    const showZh = ccMode === 'both' || ccMode === 'zh';
+    const hasTranslation = cues.some(c => c.zh);
+    const CC_LABEL = { both: '中/EN', orig: 'EN', zh: '中', off: 'off' };
 
     return (
         <div style={{ width: '100%', height: '100%', display: 'flex', background: '#000' }}>
@@ -549,22 +618,41 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                 />
                 <div ref={wrapperRef} style={{ position: 'absolute', inset: 0, zIndex: 1 }} />
 
-                {/* CC subtitle overlay */}
-                {ccVisible && activeCue && (
+                {/* CC subtitle overlay — original on top, translation below */}
+                {ccMode !== 'off' && activeCue && (showOrig || showZh) && (
                     <div style={{
                         position: 'absolute', left: '50%', zIndex: 4,
                         [subStyle.position]: subStyle.offset,
                         transform: 'translateX(-50%)',
                         maxWidth: '82%', padding: '7px 16px',
                         background: `rgba(0,0,0,${subStyle.bgOpacity})`,
-                        color: subStyle.color,
-                        borderRadius: 8, fontSize: subStyle.fontSize, lineHeight: 1.45,
+                        borderRadius: 8,
                         textAlign: 'center', whiteSpace: 'pre-wrap',
                         textShadow: '0 1px 2px rgba(0,0,0,0.8)',
                         pointerEvents: 'none',
                         backdropFilter: subStyle.bgOpacity > 0 ? 'blur(2px)' : 'none'
                     }}>
-                        {activeCue.text}
+                        {showOrig && (
+                            <div style={{
+                                color: subStyle.color,
+                                fontSize: subStyle.fontSize, lineHeight: 1.4
+                            }}>
+                                {activeCue.text}
+                            </div>
+                        )}
+                        {showZh && activeCue.zh && (
+                            <div style={{
+                                color: subStyle.color,
+                                opacity: showOrig ? 0.78 : 1,
+                                fontSize: showOrig
+                                    ? Math.round(subStyle.fontSize * 0.78)
+                                    : subStyle.fontSize,
+                                lineHeight: 1.4,
+                                marginTop: showOrig ? 2 : 0
+                            }}>
+                                {activeCue.zh}
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -589,12 +677,26 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                             {t('whisperSetupNeeded')}
                         </button>
                     )}
+                    {translating && (
+                        <span style={pill}>{t('translating')} {translating.pct}%</span>
+                    )}
+                    {translateError && (
+                        <span style={{ ...pill, color: '#f87171', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {translateError}
+                        </span>
+                    )}
+                    {cues.length > 0 && !hasTranslation && !translating && (
+                        <button onClick={translateCues} style={{ ...pill, cursor: 'pointer' }}>
+                            {t('translateToZh')}
+                        </button>
+                    )}
                     <button
                         title={t('ccToggle')}
-                        onClick={toggleCc}
-                        style={iconBtn(ccVisible)}
+                        onClick={cycleCc}
+                        style={{ ...iconBtn(ccMode !== 'off'), width: 'auto', padding: '0 8px', gap: 5 }}
                     >
                         <Captions size={16} />
+                        <span style={{ fontSize: 10, fontWeight: 600 }}>{CC_LABEL[ccMode]}</span>
                     </button>
                     <button
                         title={t('subStyleTitle')}

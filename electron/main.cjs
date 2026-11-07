@@ -18,6 +18,7 @@ const {
 } = require('./ffmpeg-runner.cjs');
 const { extractEnvelope, findSegmentOffset, FRAMES_PER_SECOND } = require('./segment-matcher.cjs');
 const { getWhisperStatus, ensureWhisper, transcribeVideo, DEFAULT_MODEL } = require('./whisper-runner.cjs');
+const { translateLines } = require('./translator.cjs');
 const { registerTheaterStore, drainTheaterSaves } = require('./theater-store.cjs');
 const { registerSyncClient, drainSyncRequests } = require('./sync-client.cjs');
 const { registerLocalVideoProtocol } = require('./local-video-protocol.cjs');
@@ -985,16 +986,68 @@ function setupIpcHandlers() {
                 }
             );
             if (getCancelEpoch('whisper') !== epoch) {
-                // Cancelled mid-run: a partial .srt may exist — remove it so the
-                // next visit transcribes cleanly instead of loading half a file.
-                try { await fs.promises.unlink(`${base}.srt`); } catch (e) { /* none */ }
-                return { success: false, cancelled: true, error: 'Cancelled' };
+                // Cancelled. Only discard the .srt if the run did NOT finish:
+                // a completed transcription is valid work and must survive a
+                // cancel that merely raced the finish (switching videos, a
+                // remount) — deleting it would silently redo minutes of work.
+                if (!result.success) {
+                    try { await fs.promises.unlink(`${base}.srt`); } catch (e) { /* none */ }
+                    return { success: false, cancelled: true, error: 'Cancelled' };
+                }
             }
             send({ type: 'done', success: result.success, srtPath: result.srtPath, error: result.error });
             return result;
         } finally {
             whisperBusy = false;
         }
+    });
+
+    // Translate a cue list and persist it as a <video>.zh.srt sidecar, so the
+    // work is done once per video. Cancellable by starting another request.
+    let translateToken = 0;
+    ipcMain.handle('translate-subtitles', async (_event, params) => {
+        const { videoPath, cues, engine, apiKey, model } = params;
+        if (!Array.isArray(cues) || cues.length === 0) {
+            return { success: false, error: 'No subtitles to translate' };
+        }
+        if (engine === 'gemini' && !apiKey) {
+            return { success: false, needsKey: true, error: 'Gemini API key not set' };
+        }
+
+        const token = ++translateToken;
+        const result = await translateLines(
+            cues.map(c => c.text),
+            { engine, apiKey, model },
+            (pct) => {
+                if (token !== translateToken) return;
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send('translate-progress', { videoPath, pct });
+                }
+            }
+        );
+        if (token !== translateToken) return { success: false, cancelled: true, error: 'Superseded' };
+        if (!result.success) return result;
+
+        // Persist beside the video in the same SRT shape as the source.
+        const toStamp = (s) => {
+            const h = String(Math.floor(s / 3600)).padStart(2, '0');
+            const m = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+            const sec = String(Math.floor(s % 60)).padStart(2, '0');
+            const ms = String(Math.round((s - Math.floor(s)) * 1000)).padStart(3, '0');
+            return `${h}:${m}:${sec},${ms}`;
+        };
+        const srt = cues.map((c, i) =>
+            `${i + 1}\n${toStamp(c.start)} --> ${toStamp(c.end)}\n${result.translations[i]}\n`
+        ).join('\n');
+
+        const zhPath = `${videoPath.replace(/\.[^.]+$/, '')}.zh.srt`;
+        try {
+            await fs.promises.writeFile(zhPath, srt, 'utf8');
+        } catch (e) {
+            // Translation still usable in-session even if the sidecar fails.
+            return { success: true, translations: result.translations, saveError: e.message };
+        }
+        return { success: true, translations: result.translations, zhPath };
     });
 
     // --- Mini Player IPC Handlers ---

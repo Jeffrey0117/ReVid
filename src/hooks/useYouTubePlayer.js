@@ -73,6 +73,13 @@ export const useYouTubePlayer = ({
   loopRef.current = loop;
   const onTitleRef = useRef(onTitle);
   onTitleRef.current = onTitle;
+  // Volume persists across track changes (music mode). The player is recreated
+  // per track, so the user's chosen level is held in a ref and re-applied to
+  // each new player instead of being overwritten by its default. userSetVolume
+  // stays false until the user actually touches the control, so the very first
+  // track can still reflect the player's real starting volume.
+  const volumeRef = useRef(100);
+  const userSetVolumeRef = useRef(false);
   const [status, setStatus] = useState('loading'); // loading | ready | error
   const [effectiveRate, setEffectiveRate] = useState(playbackRate);
   const [errorCode, setErrorCode] = useState(null);
@@ -130,10 +137,25 @@ export const useYouTubePlayer = ({
               event.target.setPlaybackRate(clampedRate);
               setEffectiveRate(clampedRate);
 
-              // Surface the player's real starting volume so the slider matches.
+              // Volume handling on (re)create:
+              // - If the user has set a level, re-apply it so it stays fixed
+              //   across tracks in music mode (the new player defaults to 100).
+              // - Otherwise surface the player's real starting volume so the
+              //   slider matches on first load.
               try {
-                const v = event.target.getVolume?.();
-                if (typeof v === 'number') setVolumeState(event.target.isMuted?.() ? 0 : v);
+                if (userSetVolumeRef.current) {
+                  const v = volumeRef.current;
+                  event.target.setVolume?.(v);
+                  if (v === 0) event.target.mute?.();
+                  else event.target.unMute?.();
+                } else {
+                  const v = event.target.getVolume?.();
+                  if (typeof v === 'number') {
+                    const shown = event.target.isMuted?.() ? 0 : v;
+                    volumeRef.current = shown;
+                    setVolumeState(shown);
+                  }
+                }
               } catch { /* not ready */ }
 
               onVideoDetected?.({
@@ -271,6 +293,9 @@ export const useYouTubePlayer = ({
   //     because the embed lives in a cross-origin iframe we can't tap into. ---
   const setVolume = useCallback((vol) => {
     const clamped = Math.max(0, Math.min(100, Math.round(vol)));
+    // Remember the user's choice so it survives track changes (see onReady).
+    userSetVolumeRef.current = true;
+    volumeRef.current = clamped;
     setVolumeState(clamped);
     const player = playerRef.current;
     try {
