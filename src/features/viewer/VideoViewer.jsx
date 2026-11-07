@@ -7,6 +7,8 @@ import { getCachedThumbnail } from '../../utils/videoThumbnails';
 import { findActiveCueIndex } from '../../utils/subtitles';
 import { TranscriptPanel } from './TranscriptPanel';
 import { WordbookPanel } from './WordbookPanel';
+import { EpisodePicker } from './EpisodePicker';
+import { ListVideo } from '../../components/icons';
 import { BookMarked, Lock } from '../../components/icons';
 import { hasFeature, FEATURES } from '../licensing/entitlements';
 import { SubtitleSettings, readSubtitleStyle, subtitleTextStyle } from './SubtitleSettings';
@@ -80,7 +82,10 @@ function fmtTime(s) {
     return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
-export const VideoViewer = ({ src, videoPath, timeRef, onExportStudy, onUpgrade }) => {
+export const VideoViewer = ({
+    src, videoPath, timeRef, onExportStudy, onUpgrade,
+    files = [], currentIndex = -1, onSelectVideo
+}) => {
     const { t } = useI18n();
     const { theme } = useTheme();
     const wrapperRef = useRef(null);
@@ -132,6 +137,7 @@ export const VideoViewer = ({ src, videoPath, timeRef, onExportStudy, onUpgrade 
     const editMode = viewerMode === 'edit';
     const [transcriptOpen, setTranscriptOpen] = useState(() => readBool(TRANSCRIPT_KEY, false));
     const [wordbookOpen, setWordbookOpen] = useState(false);
+    const [episodesOpen, setEpisodesOpen] = useState(false);
     const [cutting, setCutting] = useState(null); // { pct } | null
     const [transcribing, setTranscribing] = useState(null); // { pct } | null
     const [whisperMissing, setWhisperMissing] = useState(false);
@@ -1054,11 +1060,29 @@ export const VideoViewer = ({ src, videoPath, timeRef, onExportStudy, onUpgrade 
                     </button>
                     <button
                         title={t('subStyleTitle')}
-                        onClick={(e) => { e.stopPropagation(); setStyleOpen(o => !o); }}
+                        onClick={(e) => { e.stopPropagation(); setEpisodesOpen(false); setStyleOpen(o => !o); }}
                         style={iconBtn(styleOpen)}
                     >
                         <Sliders size={16} />
                     </button>
+                    {files.length > 1 && (
+                        <button
+                            title={t('episodes')}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                // Shares the top-right slot with the subtitle panel.
+                                setStyleOpen(false);
+                                setEpisodesOpen(o => !o);
+                            }}
+                            style={{ ...iconBtn(episodesOpen), width: 'auto', padding: '0 9px', gap: 5 }}
+                        >
+                            <ListVideo size={15} />
+                            <span style={{ fontSize: 11, fontWeight: 600 }}>
+                                {currentIndex + 1}/{files.length}
+                            </span>
+                        </button>
+                    )}
+
                     {/* One switch instead of scattered toggles: browse is a
                         plain player, the other two add their own affordances. */}
                     <div style={{
@@ -1114,6 +1138,15 @@ export const VideoViewer = ({ src, videoPath, timeRef, onExportStudy, onUpgrade 
                     </button>
                     <PluginPanelHost />
                 </div>
+
+                {episodesOpen && (
+                    <EpisodePicker
+                        files={files}
+                        currentIndex={currentIndex}
+                        onPick={(i) => onSelectVideo?.(i)}
+                        onClose={() => setEpisodesOpen(false)}
+                    />
+                )}
 
                 {styleOpen && (
                     <div style={{ position: 'absolute', top: 48, right: 12, zIndex: 6 }}>

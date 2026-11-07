@@ -93,6 +93,7 @@ export default function App() {
     const [viewerKey, setViewerKey] = useState(0);
     // Folder-wide background transcription: { running, pending, done }.
     const [subsQueue, setSubsQueue] = useState(null);
+    const [subsCollapsed, setSubsCollapsed] = useState(false);
     const [showScreenshots, setShowScreenshots] = useState(false);
     const [showGif, setShowGif] = useState(false);
     const [showBatchCrop, setShowBatchCrop] = useState(false);
@@ -1999,6 +2000,9 @@ export default function App() {
                                         videoPath={currentVideo}
                                         timeRef={viewerTimeRef}
                                         onExportStudy={() => setShowStudyExport(true)}
+                                        files={gridFiles}
+                                        currentIndex={gridFiles.indexOf(currentVideo)}
+                                        onSelectVideo={handleSelectVideoFromGrid}
                                     />
                                 )
                         ) : null}
@@ -2130,35 +2134,53 @@ export default function App() {
                 />
             )}
 
-            {/* Folder-wide transcription progress (above the export toast) */}
-            {subsQueue && (
-                <div style={{
-                    position: 'fixed', right: 16, bottom: exportJob ? 108 : 16, zIndex: 399,
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '8px 12px', maxWidth: 300,
-                    background: theme.dialogBg, border: `1px solid ${theme.border}`,
-                    borderRadius: 10, boxShadow: '0 8px 30px rgba(0,0,0,0.35)'
-                }}>
-                    <span style={{
-                        flex: 1, fontSize: 12, color: theme.textSecondary,
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+            {/* Background transcription progress. It reports on work the user
+                did not start, so it must never sit on top of what they did —
+                it shrinks to a pill while editing, where the bottom-right
+                corner holds the export buttons. */}
+            {subsQueue && (() => {
+                const done = subsQueue.done + (subsQueue.running ? 1 : 0);
+                const total = done + subsQueue.pending;
+                const collapsed = isEditing || subsCollapsed;
+                const place = isEditing
+                    ? { top: 46, left: '50%', transform: 'translateX(-50%)' }
+                    : { right: 16, bottom: exportJob ? 108 : 16 };
+                return (
+                    <div style={{
+                        position: 'fixed', zIndex: 399, ...place,
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: collapsed ? '5px 10px' : '8px 12px',
+                        maxWidth: collapsed ? 160 : 300,
+                        background: theme.dialogBg, border: `1px solid ${theme.border}`,
+                        borderRadius: 999, boxShadow: '0 8px 30px rgba(0,0,0,0.35)',
+                        opacity: collapsed ? 0.85 : 1
                     }}>
-                        {t('subsQueueRunning')} {subsQueue.done + (subsQueue.running ? 1 : 0)}
-                        /{subsQueue.done + (subsQueue.running ? 1 : 0) + subsQueue.pending}
-                        {subsQueue.running && ` — ${subsQueue.running.split(/[\\/]/).pop()}`}
-                    </span>
-                    <button
-                        title={t('cancel')}
-                        onClick={() => {
-                            getElectronAPI()?.clearTranscriptionQueue?.();
-                            setSubsQueue(null);
-                        }}
-                        style={{ color: theme.textTertiary, fontSize: 14, padding: '0 4px' }}
-                    >
-                        {'✕'}
-                    </button>
-                </div>
-            )}
+                        <span
+                            onClick={() => setSubsCollapsed(c => !c)}
+                            title={subsQueue.running || ''}
+                            style={{
+                                flex: 1, fontSize: collapsed ? 11 : 12, color: theme.textSecondary,
+                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            {collapsed
+                                ? `${t('subsQueueShort')} ${done}/${total}`
+                                : `${t('subsQueueRunning')} ${done}/${total}${subsQueue.running ? ` — ${subsQueue.running.split(/[\\/]/).pop()}` : ''}`}
+                        </span>
+                        <button
+                            title={t('cancel')}
+                            onClick={() => {
+                                getElectronAPI()?.clearTranscriptionQueue?.();
+                                setSubsQueue(null);
+                            }}
+                            style={{ color: theme.textTertiary, fontSize: 13, padding: '0 2px' }}
+                        >
+                            {'✕'}
+                        </button>
+                    </div>
+                );
+            })()}
 
             {/* Background export progress toast (bottom-right) */}
             {exportJob && (
