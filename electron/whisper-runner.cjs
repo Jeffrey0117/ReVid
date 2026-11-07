@@ -170,6 +170,15 @@ async function ensureWhisper({ flavor = 'cuda', model = DEFAULT_MODEL }, sendPro
     return status;
 }
 
+// Best-effort: a restricted account may refuse, and losing the nudge only
+// costs some smoothness, so never let it take the job down.
+function deprioritise(proc) {
+    if (!proc?.pid) return;
+    try {
+        os.setPriority(proc.pid, os.constants.priority.PRIORITY_BELOW_NORMAL);
+    } catch (e) { /* not permitted here */ }
+}
+
 const CUE_RE = /^\[(\d{2}):(\d{2}):(\d{2})[.,](\d{3})\s+-->\s+(\d{2}):(\d{2}):(\d{2})[.,](\d{3})\]\s*(.*)$/;
 
 function cueTime(h, m, s, ms) {
@@ -307,6 +316,9 @@ async function transcribeVideo({ videoPath, exePath, fallbackExePath, modelPath:
 
     // 2. Run whisper. -osrt writes <of>.srt; stdout prints timed segments as
     // they are decoded (live cues); -pp prints progress on stderr.
+    // It takes every thread it is handed and runs for minutes, so it must
+    // never out-rank the video being watched — below-normal still gets all
+    // the idle cycles, it just yields the moment the foreground wants them.
     const threads = Math.max(2, Math.min(8, os.cpus().length - 2));
     const runWhisper = (exe) => new Promise((resolve) => {
         const proc = spawn(exe, [
@@ -318,6 +330,7 @@ async function transcribeVideo({ videoPath, exePath, fallbackExePath, modelPath:
             '-pp'
         ], { cwd: path.dirname(exe) });
         trackFfmpegProc(op, proc);
+        deprioritise(proc);
 
         let stdoutBuf = '';
         proc.stdout.on('data', (d) => {

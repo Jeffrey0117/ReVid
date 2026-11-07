@@ -66,6 +66,20 @@ button {
     88%, 100% { transform: translateX(var(--marquee-shift, 0)); }
 }
 
+/* Quiet "still working" breath for the background-transcription dot */
+@keyframes revid-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.25; }
+}
+
+.revid-pulse {
+    animation: revid-pulse 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .revid-pulse { animation: none; }
+}
+
 /* Hide scrollbar for sidebar */
 ::-webkit-scrollbar { width: 0; height: 0; }
 

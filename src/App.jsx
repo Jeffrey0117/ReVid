@@ -93,9 +93,8 @@ export default function App() {
     const [viewerKey, setViewerKey] = useState(0);
     // Folder-wide background transcription: { running, pending, done }.
     const [subsQueue, setSubsQueue] = useState(null);
-    const [subsCollapsed, setSubsCollapsed] = useState(false);
     // The viewer's transcript/wordbook panel takes real width on the right, so
-    // the toast has to step aside or it lands on the lines being read.
+    // toasts have to step aside or they land on the lines being read.
     const [rightPanelWidth, setRightPanelWidth] = useState(0);
     const [showScreenshots, setShowScreenshots] = useState(false);
     const [showGif, setShowGif] = useState(false);
@@ -884,6 +883,36 @@ export default function App() {
                             }
                         </span>
                     )}
+
+                    {/* Background transcription. It reports on work the user
+                        did not start, so it lives in the toolbar rather than
+                        floating over what they are actually watching. */}
+                    {subsQueue && (() => {
+                        const done = subsQueue.done + (subsQueue.running ? 1 : 0);
+                        const total = done + subsQueue.pending;
+                        return (
+                            <button
+                                className="btn btn-ghost"
+                                title={`${t('subsQueueRunning')} ${done}/${total}${subsQueue.running ? ` — ${subsQueue.running.split(/[\\/]/).pop()}` : ''}\n${t('subsQueueStop')}`}
+                                onClick={() => {
+                                    getElectronAPI()?.clearTranscriptionQueue?.();
+                                    setSubsQueue(null);
+                                }}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: 6,
+                                    padding: '4px 8px', borderRadius: 7,
+                                    fontSize: 11, color: theme.textTertiary,
+                                    fontVariantNumeric: 'tabular-nums'
+                                }}
+                            >
+                                <span className="revid-pulse" style={{
+                                    width: 6, height: 6, borderRadius: '50%',
+                                    background: theme.accent, flexShrink: 0
+                                }} />
+                                {`${t('subsQueueShort')} ${done}/${total}`}
+                            </button>
+                        );
+                    })()}
 
                     {files.length > 0 && (
                         <button
@@ -2138,58 +2167,10 @@ export default function App() {
                 />
             )}
 
-            {/* Background transcription progress. It reports on work the user
-                did not start, so it must never sit on top of what they did —
-                it shrinks to a pill while editing, where the bottom-right
-                corner holds the export buttons. */}
-            {subsQueue && (() => {
-                const done = subsQueue.done + (subsQueue.running ? 1 : 0);
-                const total = done + subsQueue.pending;
-                const collapsed = isEditing || subsCollapsed;
-                const place = isEditing
-                    ? { top: 46, left: '50%', transform: 'translateX(-50%)' }
-                    : { right: 16 + rightPanelWidth, bottom: exportJob ? 108 : 16 };
-                return (
-                    <div style={{
-                        position: 'fixed', zIndex: 399, ...place,
-                        display: 'flex', alignItems: 'center', gap: 8,
-                        padding: collapsed ? '5px 10px' : '8px 12px',
-                        maxWidth: collapsed ? 160 : 300,
-                        background: theme.dialogBg, border: `1px solid ${theme.border}`,
-                        borderRadius: 999, boxShadow: '0 8px 30px rgba(0,0,0,0.35)',
-                        opacity: collapsed ? 0.85 : 1
-                    }}>
-                        <span
-                            onClick={() => setSubsCollapsed(c => !c)}
-                            title={subsQueue.running || ''}
-                            style={{
-                                flex: 1, fontSize: collapsed ? 11 : 12, color: theme.textSecondary,
-                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                cursor: 'pointer'
-                            }}
-                        >
-                            {collapsed
-                                ? `${t('subsQueueShort')} ${done}/${total}`
-                                : `${t('subsQueueRunning')} ${done}/${total}${subsQueue.running ? ` — ${subsQueue.running.split(/[\\/]/).pop()}` : ''}`}
-                        </span>
-                        <button
-                            title={t('cancel')}
-                            onClick={() => {
-                                getElectronAPI()?.clearTranscriptionQueue?.();
-                                setSubsQueue(null);
-                            }}
-                            style={{ color: theme.textTertiary, fontSize: 13, padding: '0 2px' }}
-                        >
-                            {'✕'}
-                        </button>
-                    </div>
-                );
-            })()}
-
             {/* Background export progress toast (bottom-right) */}
             {exportJob && (
                 <div style={{
-                    position: 'fixed', right: 16, bottom: 16, zIndex: 400,
+                    position: 'fixed', right: 16 + rightPanelWidth, bottom: 16, zIndex: 400,
                     width: 300, padding: '12px 14px',
                     background: theme.dialogBg, border: `1px solid ${theme.border}`,
                     borderRadius: 10, boxShadow: '0 8px 30px rgba(0,0,0,0.35)'
