@@ -12,7 +12,7 @@ function readTranslateSettings() {
     return {
         engine: localStorage.getItem(TRANSLATE_ENGINE_KEY) || 'google',
         apiKey: localStorage.getItem(GEMINI_KEY) || '',
-        auto: localStorage.getItem(AUTO_TRANSLATE_KEY) === 'on'
+        auto: localStorage.getItem(AUTO_TRANSLATE_KEY) !== 'off'
     };
 }
 

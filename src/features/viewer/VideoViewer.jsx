@@ -484,9 +484,10 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
         }
     }, [videoPath, translating, t]);
 
-    // Auto-translate once subtitles exist, if enabled and not already done.
+    // Auto-translate once subtitles exist. Like transcription this runs in the
+    // background while the user watches — on by default, off via settings.
     useEffect(() => {
-        if (localStorage.getItem(AUTO_TRANSLATE_KEY) !== 'on') return;
+        if (localStorage.getItem(AUTO_TRANSLATE_KEY) === 'off') return;
         if (cues.length === 0 || cues.some(c => c.zh) || translating || transcribing) return;
         translateCues();
     }, [cues, translating, transcribing, translateCues]);

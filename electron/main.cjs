@@ -17,7 +17,9 @@ const {
     ffmpegFailure
 } = require('./ffmpeg-runner.cjs');
 const { extractEnvelope, findSegmentOffset, FRAMES_PER_SECOND } = require('./segment-matcher.cjs');
-const { getWhisperStatus, ensureWhisper, transcribeVideo, DEFAULT_MODEL } = require('./whisper-runner.cjs');
+const {
+    getWhisperStatus, ensureWhisper, transcribeVideo, cleanupWhisperTemp, DEFAULT_MODEL
+} = require('./whisper-runner.cjs');
 const { translateLines } = require('./translator.cjs');
 const { registerTheaterStore, drainTheaterSaves } = require('./theater-store.cjs');
 const { registerSyncClient, drainSyncRequests } = require('./sync-client.cjs');
@@ -1917,6 +1919,10 @@ app.whenReady().then(async () => {
 
     // Warm the hardware-encoder probe so the first export doesn't stall on it.
     getH264Encoder();
+
+    // Reclaim transcription temp files abandoned by a crash or a hard kill
+    // (an interrupted run leaves a wav of ~2MB per minute of video).
+    cleanupWhisperTemp();
 
     // After the window loads, open any file passed on the command line (Windows/
     // Linux) or queued from a macOS open-file event before the window existed.

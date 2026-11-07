@@ -177,10 +177,60 @@ function cueTime(h, m, s, ms) {
 // Transcribe one video to <video>.srt (saved beside it). Streams live cues via
 // onCue and percentage via onProgress. Both the wav extraction and the whisper
 // process are tracked under the given op so cancel-ffmpeg can kill them.
+// whisper-cli receives argv as ANSI on Windows, so any non-ASCII path is
+// mangled: it exits 0 and silently writes nothing. Everything handed to it
+// must therefore live at an ASCII path. Node's own fs handles Unicode fine,
+// so the result is moved to the real (possibly CJK) filename afterwards.
+const isAscii = (s) => /^[\x20-\x7E]*$/.test(s);
+
+function asciiWorkDir() {
+    const tmp = os.tmpdir();
+    if (isAscii(tmp)) return tmp;
+    // Non-ASCII username: fall back to a root-level directory.
+    const root = path.parse(process.execPath).root;
+    const dir = path.join(root, 'revid-whisper-tmp');
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+}
+
+const TEMP_PREFIX = 'revid-whisper-';
+
+// Windows won't unlink a file a just-killed process still holds open, so the
+// delete is retried briefly. An abandoned wav is ~2MB per minute of video.
+async function removeWithRetry(filePath) {
+    for (let i = 0; i < 6; i++) {
+        try {
+            await fs.promises.unlink(filePath);
+            return true;
+        } catch (e) {
+            if (e.code === 'ENOENT') return true;
+            await new Promise((r) => setTimeout(r, 250));
+        }
+    }
+    return false;
+}
+
+// Sweep temp files left behind by a crash or a kill that lost the race.
+function cleanupWhisperTemp() {
+    for (const dir of new Set([os.tmpdir(), asciiWorkDir()])) {
+        let entries;
+        try { entries = fs.readdirSync(dir); } catch (e) { continue; }
+        for (const name of entries) {
+            if (!name.startsWith(TEMP_PREFIX)) continue;
+            try { fs.unlinkSync(path.join(dir, name)); } catch (e) { /* in use */ }
+        }
+    }
+}
+
 async function transcribeVideo({ videoPath, exePath, fallbackExePath, modelPath: mPath, op = 'whisper' }, { onCue, onProgress } = {}) {
     const base = videoPath.replace(/\.[^.]+$/, '');
     const srtPath = `${base}.srt`;
-    const wavPath = path.join(os.tmpdir(), `revid-whisper-${Date.now()}.wav`);
+    const workDir = asciiWorkDir();
+    const stamp = `${Date.now()}-${Math.floor(process.hrtime()[1] / 1000)}`;
+    const wavPath = path.join(workDir, `revid-whisper-${stamp}.wav`);
+    // whisper writes <outBase>.srt; kept ASCII, then moved to srtPath.
+    const outBase = path.join(workDir, `revid-whisper-${stamp}`);
+    const tmpSrtPath = `${outBase}.srt`;
 
     // 1. Extract 16kHz mono wav (whisper's expected input).
     const ffOk = await new Promise((resolve) => {
@@ -193,7 +243,7 @@ async function transcribeVideo({ videoPath, exePath, fallbackExePath, modelPath:
         proc.on('close', (code) => resolve(code === 0));
     });
     if (!ffOk || !fs.existsSync(wavPath)) {
-        try { fs.unlinkSync(wavPath); } catch (e) { /* none */ }
+        await removeWithRetry(wavPath);
         return { success: false, error: 'No decodable audio track' };
     }
 
@@ -206,7 +256,7 @@ async function transcribeVideo({ videoPath, exePath, fallbackExePath, modelPath:
             '-f', wavPath,
             '-l', 'auto',
             '-t', String(threads),
-            '-osrt', '-of', base,
+            '-osrt', '-of', outBase,
             '-pp'
         ], { cwd: path.dirname(exe) });
         trackFfmpegProc(op, proc);
@@ -246,14 +296,23 @@ async function transcribeVideo({ videoPath, exePath, fallbackExePath, modelPath:
         result = await runWhisper(fallbackExePath);
     }
 
-    try { fs.unlinkSync(wavPath); } catch (e) { /* already gone */ }
+    await removeWithRetry(wavPath);
 
     if (result.code !== 0) {
+        await removeWithRetry(tmpSrtPath);
         const lastLine = (result.stderrTail || '').trim().split('\n').filter(Boolean).pop() || '';
         return { success: false, error: result.error || `whisper exited with code ${result.code}: ${lastLine}` };
     }
-    if (!fs.existsSync(srtPath)) {
+    if (!fs.existsSync(tmpSrtPath)) {
         return { success: false, error: 'whisper produced no subtitle file' };
+    }
+
+    // Move to the real filename via fs, which handles non-ASCII correctly.
+    try {
+        await fs.promises.copyFile(tmpSrtPath, srtPath);
+        await removeWithRetry(tmpSrtPath);
+    } catch (e) {
+        return { success: false, error: `Could not save subtitles: ${e.message}` };
     }
     return { success: true, srtPath };
 }
@@ -263,6 +322,7 @@ module.exports = {
     getWhisperStatus,
     ensureWhisper,
     transcribeVideo,
+    cleanupWhisperTemp,
     // exported for tests
     findWhisperExe,
     downloadFile,
