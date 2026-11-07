@@ -2,10 +2,12 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import Plyr from 'plyr';
 import 'plyr/dist/plyr.css';
 import { useI18n } from '../../i18n.jsx';
+import { useTheme } from '../../theme.jsx';
 import { getCachedThumbnail } from '../../utils/videoThumbnails';
 import { parseSubtitles, findActiveCueIndex } from '../../utils/subtitles';
 import { TranscriptPanel } from './TranscriptPanel';
 import { SubtitleSettings, readSubtitleStyle } from './SubtitleSettings';
+import { WordCard, ClickableText, readDifficulty } from './WordLookup';
 import { Captions, PanelRight, Sliders } from '../../components/icons';
 import { setAudioSlot, setAudioSlotProvider, setPlayerBridge } from '../plugins/pluginRuntime';
 import { PluginPanelHost } from '../plugins/PluginPanelHost';
@@ -67,6 +69,7 @@ function fmtTime(s) {
 
 export const VideoViewer = ({ src, videoPath, timeRef }) => {
     const { t } = useI18n();
+    const { theme } = useTheme();
     const wrapperRef = useRef(null);
     const plyrRef = useRef(null);
     const videoElRef = useRef(null);
@@ -96,6 +99,9 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
     const [styleOpen, setStyleOpen] = useState(false);
     const [translating, setTranslating] = useState(null); // { pct } | null
     const [translateError, setTranslateError] = useState(null);
+    // Word lookup: { word, example, anchor } | null, and per-cue difficult marks.
+    const [wordCard, setWordCard] = useState(null);
+    const [difficultMarks, setDifficultMarks] = useState({});
     const [transcriptOpen, setTranscriptOpen] = useState(() => readBool(TRANSCRIPT_KEY, false));
     const [transcribing, setTranscribing] = useState(null); // { pct } | null
     const [whisperMissing, setWhisperMissing] = useState(false);
@@ -555,6 +561,43 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
         return () => cancelAnimationFrame(raf);
     }, [loopCueIndex]);
 
+    // Flag words above the learner's level across the whole cue list, in one
+    // round-trip rather than per word.
+    useEffect(() => {
+        const api = getElectronAPI();
+        if (!api?.dictMarkDifficult || cues.length === 0) { setDifficultMarks({}); return; }
+        const settings = readDifficulty();
+        if (!settings.mark) { setDifficultMarks({}); return; }
+        let cancelled = false;
+        api.dictMarkDifficult(cues.map(c => c.text), {
+            tags: settings.tags,
+            minFreqRank: settings.minFreqRank
+        }).then((r) => {
+            if (!cancelled && r.success) setDifficultMarks(r.marks || {});
+        });
+        return () => { cancelled = true; };
+    }, [cues]);
+
+    const openWordCard = useCallback((word, event, example) => {
+        setWordCard({
+            word,
+            example: example || '',
+            anchor: { x: event.clientX, y: event.clientY }
+        });
+    }, []);
+
+    useEffect(() => {
+        if (!wordCard) return;
+        const close = () => setWordCard(null);
+        const onKey = (e) => { if (e.key === 'Escape') setWordCard(null); };
+        window.addEventListener('click', close);
+        window.addEventListener('keydown', onKey);
+        return () => {
+            window.removeEventListener('click', close);
+            window.removeEventListener('keydown', onKey);
+        };
+    }, [wordCard]);
+
     // Discard this video's subtitles and run them again.
     const retranscribe = useCallback(async () => {
         const api = getElectronAPI();
@@ -744,9 +787,15 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                         {showOrig && (
                             <div style={{
                                 color: subStyle.color,
-                                fontSize: subStyle.fontSize, lineHeight: 1.4
+                                fontSize: subStyle.fontSize, lineHeight: 1.4,
+                                pointerEvents: 'auto' // words are clickable
                             }}>
-                                {activeCue.text}
+                                <ClickableText
+                                    text={activeCue.text}
+                                    marks={difficultMarks[activeCueIndex]}
+                                    markColor={theme.pin}
+                                    onWordClick={(w, e) => openWordCard(w, e, activeCue.text)}
+                                />
                             </div>
                         )}
                         {showZh && activeCue.zh && (
@@ -917,6 +966,15 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                 )}
             </div>
 
+            {wordCard && (
+                <WordCard
+                    word={wordCard.word}
+                    example={wordCard.example}
+                    anchor={wordCard.anchor}
+                    onClose={() => setWordCard(null)}
+                />
+            )}
+
             {/* Transcript / language-learning panel */}
             {transcriptOpen && (
                 <TranscriptPanel
@@ -927,6 +985,8 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                     transcribing={Boolean(transcribing)}
                     loopCueIndex={loopCueIndex}
                     onLoopCue={startCueDrill}
+                    difficultMarks={difficultMarks}
+                    onWordClick={openWordCard}
                 />
             )}
         </div>

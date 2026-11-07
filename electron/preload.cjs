@@ -289,6 +289,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
     },
 
+    // --- Offline dictionary ---
+
+    dictLookup: (word) => ipcRenderer.invoke('dict-lookup', { word }),
+    dictMarkDifficult: (lines, options) => ipcRenderer.invoke('dict-mark-difficult', { lines, options }),
+    dictWordBank: (cues, options) => ipcRenderer.invoke('dict-word-bank', { cues, options }),
+
     // --- Plugins ---
 
     pluginsList: () => ipcRenderer.invoke('plugins-list'),

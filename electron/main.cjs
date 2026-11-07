@@ -24,6 +24,7 @@ const {
 const { translateLines } = require('./translator.cjs');
 const { createWhisperQueue } = require('./whisper-queue.cjs');
 const pluginHost = require('./plugin-host.cjs');
+const dictionary = require('./dictionary.cjs');
 const { registerTheaterStore, drainTheaterSaves } = require('./theater-store.cjs');
 const { registerSyncClient, drainSyncRequests } = require('./sync-client.cjs');
 const { registerLocalVideoProtocol } = require('./local-video-protocol.cjs');
@@ -1113,6 +1114,41 @@ function setupIpcHandlers() {
             } catch (e2) {
                 return { success: true, translations: result.translations, saveError: e.message };
             }
+        }
+    });
+
+    // --- Offline dictionary (ECDICT) ---
+
+    ipcMain.handle('dict-lookup', (_event, { word }) => {
+        try {
+            return { success: true, entry: dictionary.lookup(word) };
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    });
+
+    // Difficult words for a batch of lines, keyed by line index so the
+    // renderer can highlight without a round-trip per word.
+    ipcMain.handle('dict-mark-difficult', (_event, { lines, options }) => {
+        try {
+            const result = {};
+            (lines || []).forEach((text, i) => {
+                const hits = dictionary.markDifficult(text || '', options || {});
+                if (hits.length) {
+                    result[i] = hits.map(h => ({ word: h.word, base: h.base, start: h.start, end: h.end }));
+                }
+            });
+            return { success: true, marks: result };
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    });
+
+    ipcMain.handle('dict-word-bank', (_event, { cues, options }) => {
+        try {
+            return { success: true, words: dictionary.buildWordBank(cues || [], options || {}) };
+        } catch (e) {
+            return { success: false, error: e.message };
         }
     });
 

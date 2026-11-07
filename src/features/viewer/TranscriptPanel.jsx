@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useI18n } from '../../i18n.jsx';
 import { useTheme } from '../../theme.jsx';
 import { Repeat } from '../../components/icons';
+import { ClickableText } from './WordLookup';
 
 function fmt(s) {
     const m = Math.floor(s / 60);
@@ -13,7 +14,8 @@ function fmt(s) {
 // being spoken highlighted and kept in view, click to jump there, and a
 // per-line repeat for drilling one sentence.
 export const TranscriptPanel = ({
-    cues, activeIndex, onSeekTo, onClose, transcribing, loopCueIndex, onLoopCue
+    cues, activeIndex, onSeekTo, onClose, transcribing, loopCueIndex, onLoopCue,
+    difficultMarks, onWordClick
 }) => {
     const { t } = useI18n();
     const { theme } = useTheme();
@@ -70,13 +72,17 @@ export const TranscriptPanel = ({
                             {fmt(cue.start)}
                         </span>
                         <span style={{ minWidth: 0 }}>
-                            <span style={{
-                                display: 'block',
-                                fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap',
-                                color: i === activeIndex ? theme.text : theme.textSecondary
-                            }}>
-                                {cue.text}
-                            </span>
+                            <ClickableText
+                                text={cue.text}
+                                marks={difficultMarks?.[i]}
+                                markColor={theme.pin}
+                                onWordClick={(w, e) => onWordClick?.(w, e, cue.text)}
+                                style={{
+                                    display: 'block',
+                                    fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap',
+                                    color: i === activeIndex ? theme.text : theme.textSecondary
+                                }}
+                            />
                             {cue.zh && (
                                 <span style={{
                                     display: 'block', marginTop: 2,
