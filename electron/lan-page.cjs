@@ -47,22 +47,54 @@ exports.render = (token) => `<!doctype html>
   #player { position: fixed; inset: 0; z-index: 10; background: #000; display: none; }
   #player.on { display: block; }
   video { width: 100%; height: 100%; background: #000; }
-  #back {
-    position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 10px; z-index: 12;
-    padding: 9px 15px; border: 0; border-radius: 20px;
+  .topbtn {
+    position: absolute; top: calc(10px + env(safe-area-inset-top)); z-index: 12;
+    min-width: 44px; min-height: 40px; padding: 0 14px; border: 0; border-radius: 20px;
     background: rgba(0,0,0,0.6); color: #fff; font-size: 14px;
     backdrop-filter: blur(4px);
   }
+  #back { left: 10px; }
+  #ccBtn { right: 62px; font-weight: 600; font-size: 12px; }
+  #gear { right: 10px; font-size: 17px; }
   #cc {
-    position: absolute; left: 50%; bottom: 14%; z-index: 11;
-    transform: translateX(-50%); max-width: 90%;
-    padding: 7px 14px; border-radius: 8px;
-    background: rgba(0,0,0,0.65); text-align: center;
-    pointer-events: none; white-space: pre-wrap;
+    position: absolute; left: 50%; z-index: 11;
+    transform: translateX(-50%); max-width: 92%;
+    padding: 6px 14px; border-radius: 8px;
+    text-align: center; pointer-events: none; white-space: pre-wrap;
   }
   #cc:empty { display: none; }
-  #cc .en { font-size: 17px; line-height: 1.35; }
-  #cc .zh { font-size: 13px; line-height: 1.35; color: rgba(255,255,255,0.8); margin-top: 2px; }
+  #cc .zh { opacity: 0.85; margin-top: 2px; }
+
+  /* Settings slide up from the bottom, where a thumb is. */
+  #sheet {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 13;
+    transform: translateY(102%); transition: transform 0.22s ease;
+    background: #16161a; border-radius: 16px 16px 0 0;
+    padding: 16px 18px calc(22px + env(safe-area-inset-bottom));
+    box-shadow: 0 -8px 30px rgba(0,0,0,0.5);
+  }
+  #sheet.on { transform: translateY(0); }
+  #sheet h3 { margin: 0 0 14px; font-size: 14px; font-weight: 600; }
+  .row { margin-bottom: 15px; }
+  .row label {
+    display: flex; justify-content: space-between;
+    font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 7px;
+  }
+  /* Chunky enough to hit without aiming. */
+  input[type=range] { width: 100%; height: 30px; accent-color: #3b82f6; }
+  .seg { display: flex; gap: 6px; }
+  .seg button {
+    flex: 1; min-height: 38px; border: 0; border-radius: 8px;
+    background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.75); font-size: 13px;
+  }
+  .seg button.on { background: #3b82f6; color: #fff; font-weight: 600; }
+  .swatches { display: flex; gap: 8px; }
+  .swatches button { flex: 1; height: 34px; border-radius: 8px; border: 2px solid transparent; }
+  .swatches button.on { border-color: #3b82f6; }
+  #sheetClose {
+    width: 100%; min-height: 40px; margin-top: 4px; border: 0; border-radius: 8px;
+    background: rgba(255,255,255,0.1); color: #fff; font-size: 14px;
+  }
   #empty { padding: 40px 16px; text-align: center; color: rgba(255,255,255,0.4); }
 </style>
 </head>
@@ -72,9 +104,36 @@ exports.render = (token) => `<!doctype html>
 <div id="empty" hidden>這個資料夾裡沒有影片。</div>
 
 <div id="player">
-  <button id="back">← 返回</button>
+  <button id="back" class="topbtn">← 返回</button>
+  <button id="ccBtn" class="topbtn">中/EN</button>
+  <button id="gear" class="topbtn">⚙</button>
   <video id="v" controls playsinline preload="metadata"></video>
   <div id="cc"></div>
+
+  <div id="sheet">
+    <h3>字幕設定</h3>
+    <div class="row">
+      <label><span>字體大小</span><span id="vSize"></span></label>
+      <input id="size" type="range" min="12" max="34" step="1">
+    </div>
+    <div class="row">
+      <label><span>垂直位置</span><span id="vPos"></span></label>
+      <input id="pos" type="range" min="2" max="45" step="1">
+    </div>
+    <div class="row">
+      <label><span>背景深淺</span><span id="vBg"></span></label>
+      <input id="bg" type="range" min="0" max="100" step="5">
+    </div>
+    <div class="row">
+      <label><span>外框</span><span id="vStroke"></span></label>
+      <input id="stroke" type="range" min="0" max="6" step="0.5">
+    </div>
+    <div class="row">
+      <label><span>文字顏色</span></label>
+      <div class="swatches" id="colors"></div>
+    </div>
+    <button id="sheetClose">完成</button>
+  </div>
 </div>
 
 <script>
@@ -82,14 +141,63 @@ const K = ${JSON.stringify(token)};
 const q = (p, extra = {}) => p + '?k=' + encodeURIComponent(K) +
   Object.entries(extra).map(([a, b]) => '&' + a + '=' + encodeURIComponent(b)).join('');
 
-const list = document.getElementById('list');
-const player = document.getElementById('player');
-const video = document.getElementById('v');
-const cc = document.getElementById('cc');
+const $ = (id) => document.getElementById(id);
+const list = $('list'), player = $('player'), video = $('v'), cc = $('cc'), sheet = $('sheet');
 
 const fmtSize = (n) => (n > 1073741824 ? (n / 1073741824).toFixed(1) + ' GB' : Math.round(n / 1048576) + ' MB');
 
-// Minimal SRT parse — the desktop writes these, so the shape is known.
+// --- subtitle preferences, kept on the phone -----------------------------
+const COLORS = ['#ffffff', '#ffe082', '#aed581', '#81d4fa'];
+const CC_MODES = ['both', 'en', 'zh', 'off'];
+const CC_LABEL = { both: '中/EN', en: 'EN', zh: '中', off: 'OFF' };
+const DEFAULTS = { size: 17, pos: 14, bg: 65, stroke: 0, color: '#ffffff', mode: 'both' };
+
+let prefs = { ...DEFAULTS };
+try { prefs = { ...DEFAULTS, ...JSON.parse(localStorage.getItem('revid-mobile-subs') || '{}') }; } catch (e) {}
+const savePrefs = () => { try { localStorage.setItem('revid-mobile-subs', JSON.stringify(prefs)); } catch (e) {} };
+
+function applyPrefs() {
+  cc.style.bottom = prefs.pos + '%';
+  cc.style.background = 'rgba(0,0,0,' + (prefs.bg / 100) + ')';
+  cc.style.fontSize = prefs.size + 'px';
+  cc.style.color = prefs.color;
+  if (prefs.stroke > 0) {
+    // paint-order puts the stroke behind the glyph, so the requested width
+    // is what you actually see instead of half of it.
+    cc.style.webkitTextStroke = prefs.stroke + 'px #000';
+    cc.style.paintOrder = 'stroke fill';
+  } else {
+    cc.style.webkitTextStroke = '';
+  }
+  cc.style.textShadow = '0 1px 3px rgba(0,0,0,0.85)';
+  $('vSize').textContent = prefs.size + 'px';
+  $('vPos').textContent = prefs.pos + '%';
+  $('vBg').textContent = prefs.bg + '%';
+  $('vStroke').textContent = prefs.stroke + 'px';
+  $('ccBtn').textContent = CC_LABEL[prefs.mode];
+  $('size').value = prefs.size; $('pos').value = prefs.pos;
+  $('bg').value = prefs.bg; $('stroke').value = prefs.stroke;
+  [...$('colors').children].forEach((b) => b.classList.toggle('on', b.dataset.c === prefs.color));
+  render();
+}
+
+COLORS.forEach((c) => {
+  const b = document.createElement('button');
+  b.style.background = c; b.dataset.c = c;
+  b.onclick = () => { prefs.color = c; savePrefs(); applyPrefs(); };
+  $('colors').appendChild(b);
+});
+for (const [id, key] of [['size','size'], ['pos','pos'], ['bg','bg'], ['stroke','stroke']]) {
+  $(id).oninput = (e) => { prefs[key] = Number(e.target.value); savePrefs(); applyPrefs(); };
+}
+$('gear').onclick = () => sheet.classList.add('on');
+$('sheetClose').onclick = () => sheet.classList.remove('on');
+$('ccBtn').onclick = () => {
+  prefs.mode = CC_MODES[(CC_MODES.indexOf(prefs.mode) + 1) % CC_MODES.length];
+  savePrefs(); applyPrefs();
+};
+
+// --- subtitles -----------------------------------------------------------
 function parseSrt(text) {
   const out = [];
   for (const block of text.replace(/\\r/g, '').split(/\\n{2,}/)) {
@@ -105,16 +213,36 @@ function parseSrt(text) {
   return out;
 }
 
-let cues = [];
-let zhCues = [];
+let cues = [], zhCues = [], shown = -1;
 
 async function loadSubs(name, hasSubs, hasZh) {
-  cues = []; zhCues = []; cc.innerHTML = '';
+  cues = []; zhCues = []; shown = -1; cc.innerHTML = '';
   if (hasSubs) {
     try { cues = parseSrt(await (await fetch(q('/api/subs', { name }))).text()); } catch (e) {}
   }
   if (hasZh) {
-    try { zhCues = parseSrt(await (await fetch(q('/api/subs', { name, lang: 'zh' })))?.text()); } catch (e) {}
+    try { zhCues = parseSrt(await (await fetch(q('/api/subs', { name, lang: 'zh' }))).text()); } catch (e) {}
+  }
+}
+
+function render() {
+  if (prefs.mode === 'off' || shown < 0) { cc.innerHTML = ''; return; }
+  const en = cues[shown]?.text;
+  const zh = zhCues[shown]?.text;
+  const wantEn = prefs.mode === 'both' || prefs.mode === 'en';
+  const wantZh = prefs.mode === 'both' || prefs.mode === 'zh';
+  cc.innerHTML = '';
+  if (wantEn && en) {
+    const d = document.createElement('div');
+    d.textContent = en;
+    cc.appendChild(d);
+  }
+  if (wantZh && zh) {
+    const d = document.createElement('div');
+    d.className = 'zh';
+    d.style.fontSize = Math.round(prefs.size * (wantEn && en ? 0.8 : 1)) + 'px';
+    d.textContent = zh;
+    cc.appendChild(d);
   }
 }
 
@@ -122,19 +250,15 @@ video.addEventListener('timeupdate', () => {
   if (!cues.length) return;
   const t = video.currentTime;
   const i = cues.findIndex(c => t >= c.start && t <= c.end);
-  if (i < 0) { cc.innerHTML = ''; return; }
-  const zh = zhCues[i]?.text;
-  cc.innerHTML = '<div class="en"></div>' + (zh ? '<div class="zh"></div>' : '');
-  cc.firstChild.textContent = cues[i].text;
-  if (zh) cc.lastChild.textContent = zh;
+  if (i !== shown) { shown = i; render(); }
 });
 
+// --- library -------------------------------------------------------------
 function open(file) {
   loadSubs(file.name, file.hasSubs, file.hasZh);
   video.src = q('/api/video', { name: file.name });
   player.classList.add('on');
   video.play().catch(() => {});
-  // Back button leaves the player instead of the site.
   history.pushState({ playing: true }, '');
 }
 
@@ -143,15 +267,16 @@ function close() {
   video.removeAttribute('src');
   video.load();
   player.classList.remove('on');
+  sheet.classList.remove('on');
   cc.innerHTML = '';
 }
 
-document.getElementById('back').onclick = () => history.back();
+$('back').onclick = () => history.back();
 window.addEventListener('popstate', close);
 
 fetch(q('/api/library')).then(r => r.json()).then(({ files, folder }) => {
-  document.getElementById('folder').textContent = folder || '';
-  if (!files.length) { document.getElementById('empty').hidden = false; return; }
+  $('folder').textContent = folder || '';
+  if (!files.length) { $('empty').hidden = false; return; }
   files.forEach((f, i) => {
     const li = document.createElement('li');
     li.innerHTML = '<div class="idx"></div><div class="meta"><div class="name"></div><div class="sub"></div></div>';
@@ -159,11 +284,18 @@ fetch(q('/api/library')).then(r => r.json()).then(({ files, folder }) => {
     li.querySelector('.name').textContent = f.name;
     const sub = li.querySelector('.sub');
     sub.textContent = fmtSize(f.size);
-    if (f.hasSubs) { const s = document.createElement('span'); s.className = 'tag'; s.textContent = f.hasZh ? '中/EN' : 'EN'; sub.appendChild(s); }
+    if (f.hasSubs) {
+      const s = document.createElement('span');
+      s.className = 'tag';
+      s.textContent = f.hasZh ? '中/EN' : 'EN';
+      sub.appendChild(s);
+    }
     li.onclick = () => open(f);
     list.appendChild(li);
   });
-}).catch(() => { document.getElementById('empty').hidden = false; });
+}).catch(() => { $('empty').hidden = false; });
+
+applyPrefs();
 </script>
 </body>
 </html>`;

@@ -173,20 +173,36 @@ function start({ folder, port = 31848 }) {
 
     return new Promise((resolve) => {
         server = http.createServer(handle);
-        server.on('error', (err) => {
-            server = null;
-            resolve({ success: false, error: err.message });
-        });
-        // 0.0.0.0 is the point — this is for other devices.
-        server.listen(port, '0.0.0.0', () => {
-            boundPort = server.address().port;
-            resolve({
-                success: true,
-                url: `http://${lanAddress()}:${boundPort}/?k=${token}`,
-                port: boundPort,
-                folder
+
+        // The preferred port can be taken — by another app, or by a previous
+        // share whose socket has not finished closing. Walk forward instead
+        // of failing, the way the renderer server does.
+        const tryListen = (p, attemptsLeft) => {
+            const onError = (err) => {
+                if (err.code === 'EADDRINUSE' && attemptsLeft > 0) {
+                    server.removeListener('error', onError);
+                    tryListen(p + 1, attemptsLeft - 1);
+                    return;
+                }
+                server = null;
+                token = null;
+                servedRoot = null;
+                resolve({ success: false, error: err.message });
+            };
+            server.once('error', onError);
+            // 0.0.0.0 is the point — this is for other devices.
+            server.listen(p, '0.0.0.0', () => {
+                server.removeListener('error', onError);
+                boundPort = server.address().port;
+                resolve({
+                    success: true,
+                    url: `http://${lanAddress()}:${boundPort}/?k=${token}`,
+                    port: boundPort,
+                    folder
+                });
             });
-        });
+        };
+        tryListen(port, 9);
     });
 }
 
