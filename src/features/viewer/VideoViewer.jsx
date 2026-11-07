@@ -642,6 +642,20 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
         };
     }, [wordCard]);
 
+    // Correct a mis-transcribed line and write it back to the .srt, so the
+    // fix survives and everything downstream of the transcript uses it.
+    const editCue = useCallback((index, text) => {
+        setCues(prev => {
+            const next = prev.map((c, i) => (i === index ? { ...c, text } : c));
+            getElectronAPI()?.saveSubtitles?.(
+                videoPath,
+                next.map(c => ({ start: c.start, end: c.end, text: c.text })),
+                false
+            );
+            return next;
+        });
+    }, [videoPath]);
+
     // Discard this video's subtitles and run them again.
     const retranscribe = useCallback(async () => {
         const api = getElectronAPI();
@@ -1065,6 +1079,7 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                     onLoopCue={startCueDrill}
                     difficultMarks={difficultMarks}
                     onWordClick={openWordCard}
+                    onEditCue={editCue}
                 />
             )}
         </div>

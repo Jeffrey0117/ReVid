@@ -1170,6 +1170,40 @@ function setupIpcHandlers() {
         }
     });
 
+    // Overwrite a video's subtitles after the user corrects them. Whisper
+    // mishears names and jargon, and a wrong transcript poisons the
+    // translation, the word list and every export built from it.
+    ipcMain.handle('save-subtitles', async (_event, { videoPath, cues, translated }) => {
+        if (!videoPath || !Array.isArray(cues) || cues.length === 0) {
+            return { success: false, error: 'Nothing to save' };
+        }
+        const toStamp = (s) => {
+            const h = String(Math.floor(s / 3600)).padStart(2, '0');
+            const m = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+            const sec = String(Math.floor(s % 60)).padStart(2, '0');
+            const ms = String(Math.round((s - Math.floor(s)) * 1000)).padStart(3, '0');
+            return `${h}:${m}:${sec},${ms}`;
+        };
+        const body = cues.map((c, i) =>
+            `${i + 1}\n${toStamp(c.start)} --> ${toStamp(c.end)}\n${c.text}\n`
+        ).join('\n');
+
+        const suffix = translated ? '.zh.srt' : '.srt';
+        const target = `${videoPath.replace(/\.[^.]+$/, '')}${suffix}`;
+        try {
+            await fs.promises.writeFile(target, body, 'utf8');
+            return { success: true, path: target };
+        } catch (e) {
+            try {
+                const cached = cachedSubtitlePath(videoPath, suffix);
+                await fs.promises.writeFile(cached, body, 'utf8');
+                return { success: true, path: cached, cached: true };
+            } catch (e2) {
+                return { success: false, error: e.message };
+            }
+        }
+    });
+
     // Generic byte writer for exports that aren't PDFs (word list CSV).
     ipcMain.handle('save-text-file', async (_event, { data, defaultName }) => {
         if (!mainWindow) return { success: false, error: 'No window' };

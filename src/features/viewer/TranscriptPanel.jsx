@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../i18n.jsx';
 import { useTheme } from '../../theme.jsx';
-import { Repeat } from '../../components/icons';
+import { Repeat, Pencil } from '../../components/icons';
 import { ClickableText } from './WordLookup';
 
 function fmt(s) {
@@ -15,16 +15,32 @@ function fmt(s) {
 // per-line repeat for drilling one sentence.
 export const TranscriptPanel = ({
     cues, activeIndex, onSeekTo, onClose, transcribing, loopCueIndex, onLoopCue,
-    difficultMarks, onWordClick
+    difficultMarks, onWordClick, onEditCue
 }) => {
     const { t } = useI18n();
     const { theme } = useTheme();
     const listRef = useRef(null);
     const activeRef = useRef(null);
+    const [editing, setEditing] = useState(-1);
+    const [draft, setDraft] = useState('');
 
     useEffect(() => {
+        // Following the playhead while typing would yank the field away.
+        if (editing >= 0) return;
         activeRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    }, [activeIndex]);
+    }, [activeIndex, editing]);
+
+    const beginEdit = (i, text) => {
+        setEditing(i);
+        setDraft(text);
+    };
+
+    const commit = () => {
+        if (editing >= 0 && draft.trim() && draft !== cues[editing]?.text) {
+            onEditCue?.(editing, draft.trim());
+        }
+        setEditing(-1);
+    };
 
     return (
         <div style={{
@@ -72,17 +88,40 @@ export const TranscriptPanel = ({
                             {fmt(cue.start)}
                         </span>
                         <span style={{ minWidth: 0 }}>
-                            <ClickableText
-                                text={cue.text}
-                                marks={difficultMarks?.[i]}
-                                markColor={theme.pin}
-                                onWordClick={(w, e) => onWordClick?.(w, e, cue.text)}
-                                style={{
-                                    display: 'block',
-                                    fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap',
-                                    color: i === activeIndex ? theme.text : theme.textSecondary
-                                }}
-                            />
+                            {editing === i ? (
+                                <textarea
+                                    autoFocus
+                                    value={draft}
+                                    onChange={(e) => setDraft(e.target.value)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onBlur={commit}
+                                    onKeyDown={(e) => {
+                                        e.stopPropagation();
+                                        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commit(); }
+                                        if (e.key === 'Escape') setEditing(-1);
+                                    }}
+                                    rows={Math.max(2, Math.ceil(draft.length / 34))}
+                                    style={{
+                                        display: 'block', width: '100%', resize: 'vertical',
+                                        fontSize: 13, lineHeight: 1.5, fontFamily: 'inherit',
+                                        padding: '4px 6px', borderRadius: 4,
+                                        background: theme.inputBg, color: theme.text,
+                                        border: `1px solid ${theme.accent}`
+                                    }}
+                                />
+                            ) : (
+                                <ClickableText
+                                    text={cue.text}
+                                    marks={difficultMarks?.[i]}
+                                    markColor={theme.pin}
+                                    onWordClick={(w, e) => onWordClick?.(w, e, cue.text)}
+                                    style={{
+                                        display: 'block',
+                                        fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap',
+                                        color: i === activeIndex ? theme.text : theme.textSecondary
+                                    }}
+                                />
+                            )}
                             {cue.zh && (
                                 <span style={{
                                     display: 'block', marginTop: 2,
@@ -93,6 +132,24 @@ export const TranscriptPanel = ({
                                 </span>
                             )}
                         </span>
+
+                        {/* Whisper mishears names and jargon, and a wrong line
+                            poisons the translation, the word list and every
+                            export built from it. */}
+                        {onEditCue && editing !== i && (
+                            <button
+                                title={t('transcriptEdit')}
+                                onClick={(e) => { e.stopPropagation(); beginEdit(i, cue.text); }}
+                                style={{
+                                    flexShrink: 0, alignSelf: 'flex-start',
+                                    width: 22, height: 22, borderRadius: 4,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    background: 'transparent', color: theme.textTertiary, opacity: 0.65
+                                }}
+                            >
+                                <Pencil size={12} />
+                            </button>
+                        )}
 
                         {/* Drill one sentence: repeat it until switched off. */}
                         <button

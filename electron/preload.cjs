@@ -297,6 +297,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     savePdf: (data, defaultName) => ipcRenderer.invoke('save-pdf', { data, defaultName }),
     saveTextFile: (data, defaultName) => ipcRenderer.invoke('save-text-file', { data, defaultName }),
+    saveSubtitles: (videoPath, cues, translated) =>
+        ipcRenderer.invoke('save-subtitles', { videoPath, cues, translated }),
     revealInFolder: (target) => ipcRenderer.invoke('open-path', { target }),
 
     // --- Plugins ---
