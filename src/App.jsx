@@ -1965,7 +1965,15 @@ export default function App() {
                                         {!isEditing && t('viewerUpdating')}
                                     </div>
                                 )
-                                : <VideoViewer key={viewerKey} src={videoSrc} videoPath={currentVideo} timeRef={viewerTimeRef} />
+                                : (
+                                    <VideoViewer
+                                        key={viewerKey}
+                                        src={videoSrc}
+                                        videoPath={currentVideo}
+                                        timeRef={viewerTimeRef}
+                                        onExportStudy={() => setShowStudyExport(true)}
+                                    />
+                                )
                         ) : null}
 
                         {/* Floating music player — single persistent YT instance.

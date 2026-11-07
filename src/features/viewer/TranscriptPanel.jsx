@@ -15,7 +15,7 @@ function fmt(s) {
 // per-line repeat for drilling one sentence.
 export const TranscriptPanel = ({
     cues, activeIndex, onSeekTo, onClose, transcribing, loopCueIndex, onLoopCue,
-    difficultMarks, onWordClick, onEditCue, onCutSelection
+    difficultMarks, onWordClick, onEditCue, onCutSelection, showRepeat, onExport
 }) => {
     const { t } = useI18n();
     const { theme } = useTheme();
@@ -79,6 +79,20 @@ export const TranscriptPanel = ({
                     {t('transcriptTitle')}
                 </span>
                 <div style={{ flex: 1 }} />
+                {/* The transcript is where the content is, so this is where
+                    turning it into a document belongs. */}
+                {onExport && cues.length > 0 && (
+                    <button
+                        title={t('exportStudyTitle')}
+                        onClick={onExport}
+                        style={{
+                            fontSize: 11, padding: '3px 8px', borderRadius: 4, marginRight: 6,
+                            background: theme.inputBg, color: theme.textSecondary
+                        }}
+                    >
+                        {t('exportShort')}
+                    </button>
+                )}
                 {onCutSelection && cues.length > 0 && (
                     <button
                         title={t('transcriptCutHint')}
@@ -191,20 +205,22 @@ export const TranscriptPanel = ({
                         )}
 
                         {/* Drill one sentence: repeat it until switched off. */}
-                        <button
-                            title={t('transcriptRepeat')}
-                            onClick={(e) => { e.stopPropagation(); onLoopCue(i === loopCueIndex ? -1 : i); }}
-                            style={{
-                                flexShrink: 0, alignSelf: 'flex-start',
-                                width: 22, height: 22, borderRadius: 4,
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                background: i === loopCueIndex ? theme.pin : 'transparent',
-                                color: i === loopCueIndex ? '#fff' : theme.textTertiary,
-                                opacity: i === loopCueIndex ? 1 : 0.65
-                            }}
-                        >
-                            <Repeat size={13} />
-                        </button>
+                        {showRepeat && (
+                            <button
+                                title={t('transcriptRepeat')}
+                                onClick={(e) => { e.stopPropagation(); onLoopCue(i === loopCueIndex ? -1 : i); }}
+                                style={{
+                                    flexShrink: 0, alignSelf: 'flex-start',
+                                    width: 22, height: 22, borderRadius: 4,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    background: i === loopCueIndex ? theme.pin : 'transparent',
+                                    color: i === loopCueIndex ? '#fff' : theme.textTertiary,
+                                    opacity: i === loopCueIndex ? 1 : 0.65
+                                }}
+                            >
+                                <Repeat size={13} />
+                            </button>
+                        )}
                     </div>
                 ))}
                 {transcribing && cues.length > 0 && (

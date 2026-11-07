@@ -31,6 +31,12 @@ const AUTO_TRANSLATE_KEY = 'revid-auto-translate';
 
 // Subtitle display modes, cycled by the CC button.
 const CC_MODES = ['both', 'orig', 'zh', 'off'];
+
+// What the player is being used for right now. Browse is a plain player:
+// learning and editing affordances only appear when asked for, because a
+// transcript covered in pencils and repeat buttons is noise while watching.
+const VIEWER_MODES = ['browse', 'learn', 'edit'];
+const VIEWER_MODE_KEY = 'revid-viewer-mode';
 const TRANSCRIPT_KEY = 'revid-transcript-open';
 const GLOW_KEY = 'revid-glow';
 const AUTO_SUBS_KEY = 'revid-auto-subs';
@@ -73,7 +79,7 @@ function fmtTime(s) {
     return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
-export const VideoViewer = ({ src, videoPath, timeRef }) => {
+export const VideoViewer = ({ src, videoPath, timeRef, onExportStudy }) => {
     const { t } = useI18n();
     const { theme } = useTheme();
     const wrapperRef = useRef(null);
@@ -110,7 +116,12 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
     const [difficultMarks, setDifficultMarks] = useState({});
     const [difficulty, setDifficulty] = useState(readDifficulty);
     const [knownWords, setKnownWords] = useState(readKnownWords);
-    const learnMode = difficulty.mark;
+    const [viewerMode, setViewerMode] = useState(() => {
+        const saved = localStorage.getItem(VIEWER_MODE_KEY);
+        return VIEWER_MODES.includes(saved) ? saved : 'browse';
+    });
+    const learnMode = viewerMode === 'learn';
+    const editMode = viewerMode === 'edit';
     const [transcriptOpen, setTranscriptOpen] = useState(() => readBool(TRANSCRIPT_KEY, false));
     const [wordbookOpen, setWordbookOpen] = useState(false);
     const [cutting, setCutting] = useState(null); // { pct } | null
@@ -615,10 +626,12 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
         return () => { cancelled = true; };
     }, [cues, learnMode, knownWords, difficulty.tags, difficulty.minFreqRank]);
 
-    const toggleLearnMode = useCallback(() => {
-        setDifficulty(prev => {
-            const next = { ...prev, mark: !prev.mark };
-            writeDifficulty(next);
+    const pickMode = useCallback((mode) => {
+        setViewerMode(prev => {
+            // Tapping the active mode returns to plain playback.
+            const next = prev === mode ? 'browse' : mode;
+            localStorage.setItem(VIEWER_MODE_KEY, next);
+            if (next !== 'learn') setWordbookOpen(false);
             return next;
         });
     }, []);
@@ -962,20 +975,36 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                     >
                         <Sliders size={16} />
                     </button>
-                    <button
-                        title={t('learnModeHint')}
-                        onClick={toggleLearnMode}
-                        style={{ ...iconBtn(learnMode), width: 'auto', padding: '0 9px', fontSize: 11, fontWeight: 600 }}
-                    >
-                        {t('learnMode')}
-                    </button>
-                    <button
-                        title={t('wordbookTitle')}
-                        onClick={() => { setWordbookOpen(o => !o); setTranscriptOpen(false); }}
-                        style={iconBtn(wordbookOpen)}
-                    >
-                        <BookMarked size={16} />
-                    </button>
+                    {/* One switch instead of scattered toggles: browse is a
+                        plain player, the other two add their own affordances. */}
+                    <div style={{
+                        display: 'flex', borderRadius: 6, overflow: 'hidden',
+                        border: '1px solid rgba(255,255,255,0.15)'
+                    }}>
+                        {['learn', 'edit'].map((mode) => (
+                            <button
+                                key={mode}
+                                title={t(`mode_${mode}_hint`)}
+                                onClick={() => pickMode(mode)}
+                                style={{
+                                    height: 28, padding: '0 10px', fontSize: 11, fontWeight: 600,
+                                    background: viewerMode === mode ? 'rgba(59,130,246,0.85)' : 'rgba(0,0,0,0.55)',
+                                    color: '#fff'
+                                }}
+                            >
+                                {t(`mode_${mode}`)}
+                            </button>
+                        ))}
+                    </div>
+                    {learnMode && (
+                        <button
+                            title={t('wordbookTitle')}
+                            onClick={() => { setWordbookOpen(o => !o); setTranscriptOpen(false); }}
+                            style={iconBtn(wordbookOpen)}
+                        >
+                            <BookMarked size={16} />
+                        </button>
+                    )}
                     <button
                         title={t('transcriptToggle')}
                         onClick={toggleTranscript}
@@ -1120,8 +1149,10 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                     onLoopCue={startCueDrill}
                     difficultMarks={difficultMarks}
                     onWordClick={openWordCard}
-                    onEditCue={editCue}
-                    onCutSelection={cutSelection}
+                    showRepeat={learnMode}
+                    onEditCue={editMode ? editCue : null}
+                    onCutSelection={editMode ? cutSelection : null}
+                    onExport={onExportStudy}
                 />
             )}
         </div>

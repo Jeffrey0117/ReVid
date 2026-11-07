@@ -8,9 +8,9 @@ const WORDBOOK_KEY = 'revid-wordbook';
 const DIFFICULTY_KEY = 'revid-difficulty';
 const KNOWN_KEY = 'revid-known-words';
 
-// Marking is off by default: underlines everywhere are noise when you are
-// just watching. Learning mode turns them on.
-export const DEFAULT_DIFFICULTY = { tags: [], minFreqRank: 5000, mark: false };
+// Whether marking happens at all is the viewer's mode, not a setting here —
+// these are only the thresholds it uses once learning mode is on.
+export const DEFAULT_DIFFICULTY = { tags: [], minFreqRank: 5000 };
 
 // Words the user says they already know are never marked again.
 export function readKnownWords() {
