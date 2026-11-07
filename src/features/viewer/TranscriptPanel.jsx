@@ -254,9 +254,20 @@ export const TranscriptPanel = ({
                         )}
                     </div>
                 ))}
+                {/* A half-written transcript looks exactly like a finished
+                    one, so the list has to say it is still growing — and
+                    that these lines are being made, not re-fetched. */}
                 {transcribing && cues.length > 0 && (
-                    <div style={{ padding: '10px 14px', fontSize: 12, color: theme.textTertiary }}>
-                        {t('transcriptWaiting')}
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '12px 14px', fontSize: 12, color: theme.accent
+                    }}>
+                        <span className="revid-pulse" style={{
+                            width: 6, height: 6, borderRadius: '50%',
+                            background: theme.accent, flexShrink: 0
+                        }} />
+                        {t('transcriptBuilding')}
+                        {transcribing.pct > 0 && ` ${transcribing.pct}%`}
                     </div>
                 )}
             </div>

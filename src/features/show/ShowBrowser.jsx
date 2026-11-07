@@ -80,16 +80,23 @@ export const ShowBrowser = ({ folder, onOpenEpisode }) => {
         if (stripRef.current) stripRef.current.scrollLeft = 0;
     }, [seasonIdx]);
 
-    const importShow = async () => {
+    // Chinese Wikipedia carries its own synopses, not translated titles, so
+    // the language is a choice about where to read from rather than a filter.
+    const importShow = async (lang) => {
         const api = getElectronAPI();
         if (!api?.importShow || busy) return;
-        const suggested = show?.page || (folder || '').split(/[\\/]/).filter(Boolean).pop() || '';
-        const name = window.prompt(t('guideAskShow'), suggested);
+        const folderName = (folder || '').split(/[\\/]/).filter(Boolean).pop() || '';
+        // The folder is usually named in the language it was downloaded in,
+        // which is the better guess for zh and the worse one for en.
+        const suggested = lang === 'zh'
+            ? (show?.lang === 'zh' ? show.page : folderName)
+            : (show?.lang === 'en' ? show.page : folderName);
+        const name = window.prompt(t(lang === 'zh' ? 'guideAskShowZh' : 'guideAskShow'), suggested);
         if (!name) return;
 
         setBusy(true);
         setMsg('');
-        const r = await api.importShow(folder, name.trim());
+        const r = await api.importShow(folder, name.trim(), lang);
         setBusy(false);
         setMsg(r.success
             ? `${t('guideImported')} ${r.guided} · ${r.seasons} ${t('seasonsWord')}`
@@ -145,17 +152,32 @@ export const ShowBrowser = ({ folder, onOpenEpisode }) => {
                     <span style={{ fontSize: 24, fontWeight: 700, color: theme.text }}>
                         {(folder || '').split(/[\\/]/).filter(Boolean).pop()}
                     </span>
-                    <button
-                        onClick={importShow}
-                        disabled={busy}
-                        style={{
-                            fontSize: 11, padding: '3px 9px', borderRadius: 5,
-                            cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1,
-                            background: theme.inputBg, color: theme.textSecondary
-                        }}
-                    >
-                        {busy ? t('guideImporting') : show ? t('guideRefetch') : t('showGetInfo')}
-                    </button>
+                    <div style={{
+                        display: 'flex', borderRadius: 5, overflow: 'hidden',
+                        border: `1px solid ${theme.border}`
+                    }}>
+                        {[['zh', '中文'], ['en', 'EN']].map(([code, label]) => (
+                            <button
+                                key={code}
+                                onClick={() => importShow(code)}
+                                disabled={busy}
+                                title={t('showLangHint')}
+                                style={{
+                                    fontSize: 11, padding: '3px 9px',
+                                    cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1,
+                                    background: show?.lang === code ? theme.accent : theme.inputBg,
+                                    color: show?.lang === code ? '#fff' : theme.textSecondary
+                                }}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                    {busy && (
+                        <span style={{ fontSize: 11, color: theme.textTertiary }}>
+                            {t('guideImporting')}
+                        </span>
+                    )}
                 </div>
 
                 {facts.length > 0 && (

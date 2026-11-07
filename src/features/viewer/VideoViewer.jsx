@@ -1117,7 +1117,7 @@ export const VideoViewer = ({
                 }}>
                     {transcribing && (
                         <span style={pill}>
-                            {t('transcriptWaiting')} {transcribing.pct}%
+                            {t('transcriptFirstRun')} {transcribing.pct}%
                         </span>
                     )}
                     {installing && (
@@ -1394,7 +1394,7 @@ export const VideoViewer = ({
                     activeIndex={activeCueIndex}
                     onSeekTo={seekTo}
                     onClose={toggleTranscript}
-                    transcribing={Boolean(transcribing)}
+                    transcribing={transcribing}
                     loopCueIndex={loopCueIndex}
                     onLoopCue={startCueDrill}
                     difficultMarks={difficultMarks}

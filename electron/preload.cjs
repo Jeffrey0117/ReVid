@@ -85,6 +85,36 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
     },
 
+    // Enough to walk the tree in place. Re-picking through the OS dialog for
+    // every hop is the thing this replaces.
+    folderNav: (dirPath, extensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v']) => {
+        const hasVideos = (dir) => {
+            try {
+                return fs.readdirSync(dir).some(f => extensions.includes(path.extname(f).toLowerCase()));
+            } catch (e) {
+                return false;
+            }
+        };
+        try {
+            const parent = path.dirname(dirPath);
+            const children = fs.readdirSync(dirPath, { withFileTypes: true })
+                .filter(d => d.isDirectory() && !d.name.startsWith('.'))
+                .map(d => {
+                    const full = path.join(dirPath, d.name);
+                    return { name: d.name, path: full, hasVideos: hasVideos(full) };
+                })
+                .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+            return {
+                current: dirPath,
+                // At a drive root, dirname returns the same path.
+                parent: parent && parent !== dirPath ? parent : null,
+                children
+            };
+        } catch (e) {
+            return { current: dirPath, parent: null, children: [] };
+        }
+    },
+
     getDesktopPath: () => path.join(os.homedir(), 'Desktop'),
 
     getFileSize: (filePath) => {
@@ -356,7 +386,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     askEpisodes: (params) => ipcRenderer.invoke('ask-episodes', params),
     libraryGuides: (folder) => ipcRenderer.invoke('library-guides', { folder }),
     showSeasons: (folder) => ipcRenderer.invoke('show-seasons', { folder }),
-    importShow: (folder, show) => ipcRenderer.invoke('import-show', { folder, show }),
+    importShow: (folder, show, lang) => ipcRenderer.invoke('import-show', { folder, show, lang }),
 
     saveSubtitles: (videoPath, cues, translated) =>
         ipcRenderer.invoke('save-subtitles', { videoPath, cues, translated }),

@@ -4,8 +4,35 @@
 // so the library can hold it alongside the subtitles and be searched together.
 const https = require('https');
 
-const API = 'https://en.wikipedia.org/w/api.php';
 const UA = 'ReVid/0.7 (local media library; episode synopses)';
+
+// Each language has its own Wikipedia, with its own article names and its own
+// synopses — zh carries full Chinese ones, not just translated titles.
+function apiHost(lang) {
+    return `https://${lang === 'zh' ? 'zh' : 'en'}.wikipedia.org/w/api.php`;
+}
+
+const CN_NUM = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
+
+function cnNumber(n) {
+    if (n <= 10) return CN_NUM[n] || String(n);
+    if (n < 20) return `十${CN_NUM[n - 10]}`;
+    const tens = Math.floor(n / 10);
+    const ones = n % 10;
+    return `${CN_NUM[tens]}十${ones ? CN_NUM[ones] : ''}`;
+}
+
+// Article names a season might live under, best guess first.
+function seasonTitles(show, season, lang) {
+    if (lang === 'zh') {
+        return [
+            `${show} (第${cnNumber(season)}季)`,
+            `${show}(第${cnNumber(season)}季)`,
+            `${show} 第${season}季`
+        ];
+    }
+    return [`${show} season ${season}`];
+}
 
 // Wikitext markup, reduced to the sentence a person would read.
 function cleanWikitext(input) {
@@ -22,6 +49,32 @@ function cleanWikitext(input) {
         /\{\{\s*(?:Start|End) date[^}]*?\|\s*(\d{4})\s*\|\s*(\d{1,2})\s*\|\s*(\d{1,2})[^}]*\}\}/gi,
         (_m, y, mo, d) => `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`
     );
+
+    // zh.wikipedia writes both script variants inline and lets the reader's
+    // setting choose: -{zh-hant:繁;zh-hans:简;}-. Nothing downstream does
+    // that, so pick traditional and move on. A bare -{text}- only shields
+    // text from conversion, so keep what it holds.
+    s = s.replace(/-\{([^{}]*)\}-/g, (_m, body) => {
+        const variant = /(?:^|;)\s*zh-(?:hant|tw|hk)\s*:\s*([^;]*)/i.exec(body);
+        if (variant) return variant[1].trim();
+        const first = /(?:^|;)\s*zh[\w-]*\s*:\s*([^;]*)/i.exec(body);
+        return first ? first[1].trim() : body;
+    });
+
+    // {{link-en|中文|English}} names someone with no article in this
+    // language. It has to be unwrapped before the template sweep below, or
+    // the sweep takes the name with it. zh mostly writes the {{le|…}}
+    // shorthand, which is the same thing.
+    s = s.replace(/\{\{\s*(?:link-[a-z]{2}|le)\s*\|\s*([^|}]+)[^}]*\}\}/gi, '$1');
+    // {{tsl|lang|Article|中文}} puts the readable name last instead.
+    s = s.replace(
+        /\{\{\s*tsl\s*\|\s*[a-z-]+\s*\|\s*([^|}]+)(?:\|\s*([^|}]+))?[^}]*\}\}/gi,
+        (_m, article, label) => (label || article).trim()
+    );
+    // {{lang|en|…}}, {{langx|en|…}} and {{lang-en|…}} all wrap the original
+    // title, which is worth keeping — losing it leaves an empty bracket.
+    s = s.replace(/\{\{\s*langx?\s*\|\s*[a-z-]+\s*\|\s*([^|}]*)[^}]*\}\}/gi, '$1');
+    s = s.replace(/\{\{\s*lang-[a-z]{2,3}\s*\|\s*([^|}]*)[^}]*\}\}/gi, '$1');
 
     // Templates can nest; peel until none are left rather than once.
     for (let i = 0; i < 5 && s.includes('{{'); i += 1) {
@@ -112,6 +165,12 @@ function episodeFromName(name) {
 // sit on their own line, so a line-based split cuts them in half. Walk the
 // text counting brace depth instead, and stop at a pipe only at depth zero.
 function infoboxField(article, name) {
+    return cleanWikitext(infoboxFieldRaw(article, name));
+}
+
+// The image field names a file, and cleaning it as a piped link would keep
+// the display size instead ("270px"). Callers that need the markup ask here.
+function infoboxFieldRaw(article, name) {
     const box = article.indexOf('{{Infobox television');
     if (box < 0) return '';
     const re = new RegExp(`\\n\\s*\\|\\s*${name}\\s*=`, 'i');
@@ -132,7 +191,7 @@ function infoboxField(article, name) {
         out += article[i];
         i += 1;
     }
-    return cleanWikitext(unwrapLists(out));
+    return unwrapLists(out).trim();
 }
 
 // A cast or genre is nearly always wrapped in a list template. Stripping it
@@ -156,13 +215,34 @@ function listItems(value) {
 function parseShow(article) {
     const text = typeof article === 'string' ? article : '';
 
-    // The lead sentence is the one-paragraph description a viewer wants;
-    // it starts at the bolded title.
+    // The lead paragraph is the description a viewer wants. en bolds the
+    // title with five quotes; zh uses three around a bracketed title, so
+    // anchoring on five found nothing and the header came up blank. Take the
+    // first real paragraph after the templates instead.
     let description = '';
-    const lead = text.indexOf("'''''");
-    if (lead >= 0) {
-        const para = text.slice(lead).split('\n')[0];
-        description = cleanWikitext(para);
+    const afterBox = (() => {
+        const box = text.indexOf('{{Infobox');
+        if (box < 0) return text;
+        let i = box;
+        let depth = 0;
+        for (; i < text.length; i += 1) {
+            if (text.slice(i, i + 2) === '{{') { depth += 1; i += 1; continue; }
+            if (text.slice(i, i + 2) === '}}') {
+                depth -= 1; i += 1;
+                if (depth === 0) return text.slice(i + 1);
+            }
+        }
+        return text.slice(box);
+    })();
+
+    for (const line of afterBox.split('\n')) {
+        const trimmed = line.trim();
+        // Skip leftover templates, tables, headings and stray markup.
+        if (!trimmed || /^[{|!=*#:[<]/.test(trimmed)) continue;
+        const cleaned = cleanWikitext(trimmed);
+        // Short enough for a dense Chinese sentence to qualify, long enough
+        // to skip a stray caption or a one-word line.
+        if (cleaned.length > 12) { description = cleaned; break; }
     }
 
     const years = description.match(/\b(19|20)\d{2}\b/);
@@ -202,40 +282,41 @@ function getJson(url) {
     });
 }
 
-async function fetchPage(title) {
-    const url = `${API}?action=parse&page=${encodeURIComponent(title)}&prop=wikitext&format=json&formatversion=2`;
+async function fetchPage(title, lang) {
+    const url = `${apiHost(lang)}?action=parse&page=${encodeURIComponent(title)}&prop=wikitext&format=json&formatversion=2`;
     const data = await getJson(url);
     if (data.error) throw new Error(data.error.info || 'Page not found');
     return data.parse?.wikitext || '';
 }
 
-async function searchTitles(query) {
-    const url = `${API}?action=query&list=search&srsearch=${encodeURIComponent(query)}&srlimit=5&format=json&formatversion=2`;
+async function searchTitles(query, lang) {
+    const url = `${apiHost(lang)}?action=query&list=search&srsearch=${encodeURIComponent(query)}&srlimit=5&format=json&formatversion=2`;
     const data = await getJson(url);
     return (data.query?.search || []).map(s => s.title);
 }
 
-// Tries the conventional article name first, then falls back to search, so a
+// Tries the conventional article names first, then falls back to search, so a
 // show whose page is named unusually still resolves.
-async function fetchSeason(show, season) {
-    const direct = `${show} season ${season}`;
-    const attempts = [direct];
+async function fetchSeason(show, season, lang) {
+    const attempts = seasonTitles(show, season, lang);
+    const direct = attempts[0];
 
     let wikitext = '';
     let used = '';
     for (const title of attempts) {
         try {
-            wikitext = await fetchPage(title);
+            wikitext = await fetchPage(title, lang);
             used = title;
             break;
         } catch (e) { /* try the next candidate */ }
     }
 
     if (!wikitext) {
-        const found = await searchTitles(`${show} season ${season} episodes`);
+        const query = lang === 'zh' ? `${show} 第${season}季 劇集` : `${show} season ${season} episodes`;
+        const found = await searchTitles(query, lang);
         for (const title of found) {
             try {
-                wikitext = await fetchPage(title);
+                wikitext = await fetchPage(title, lang);
                 used = title;
                 break;
             } catch (e) { /* keep looking */ }
@@ -286,10 +367,12 @@ function fetchBinary(url) {
 }
 
 // The infobox names a file; this turns that into something displayable.
-async function fetchImage(fileName, width = 900) {
+async function fetchImage(fileName, width = 900, lang) {
     if (!fileName) return null;
-    const title = `File:${fileName.replace(/^File:/i, '')}`;
-    const url = `${API}?action=query&titles=${encodeURIComponent(title)}`
+    // zh infoboxes write the image as a full [[File:x.png|270px]] link.
+    const bare = fileName.replace(/^\[\[/, '').replace(/\]\]$/, '').split('|')[0];
+    const title = `File:${bare.replace(/^(File|檔案|文件):/i, '')}`;
+    const url = `${apiHost(lang)}?action=query&titles=${encodeURIComponent(title)}`
         + `&prop=imageinfo&iiprop=url&iiurlwidth=${width}&format=json&formatversion=2`;
 
     let info;
@@ -310,15 +393,17 @@ async function fetchImage(fileName, width = 900) {
     }
 }
 
-async function fetchShow(title) {
-    const wikitext = await fetchPage(title);
-    const show = { page: title, ...parseShow(wikitext) };
-    // Artwork is a nicety: a show with none still has everything else.
-    show.poster = await fetchImage(infoboxField(wikitext, 'image'));
+async function fetchShow(title, lang) {
+    const wikitext = await fetchPage(title, lang);
+    const show = { page: title, lang: lang === 'zh' ? 'zh' : 'en', ...parseShow(wikitext) };
+    // Artwork is a nicety: a show with none still has everything else. It is
+    // hosted on Commons either way, so English resolves it for both.
+    show.poster = await fetchImage(infoboxFieldRaw(wikitext, 'image'), 900, 'en');
     return show;
 }
 
 module.exports = {
     cleanWikitext, parseEpisodes, episodeFromName, fetchSeason, searchTitles,
-    parseShow, fetchShow, fetchImage, infoboxField, listItems
+    parseShow, fetchShow, fetchImage, infoboxField, infoboxFieldRaw, listItems,
+    apiHost, seasonTitles
 };

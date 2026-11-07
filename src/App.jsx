@@ -42,6 +42,7 @@ import { StudyExportDialog } from './features/export/StudyExportDialog';
 import { ShareDialog } from './features/share/ShareDialog';
 import { TranscriptSearch } from './features/search/TranscriptSearch';
 import { ShowBrowser } from './features/show/ShowBrowser';
+import { FolderNav } from './components/FolderNav';
 import { Search as SearchIcon, Tv } from './components/icons';
 import { reloadPlugins } from './features/plugins/pluginRuntime';
 import { validateRevidFile } from './utils/revidFile';
@@ -100,6 +101,7 @@ export default function App() {
     // toasts have to step aside or they land on the lines being read.
     const [rightPanelWidth, setRightPanelWidth] = useState(0);
     const [showSearch, setShowSearch] = useState(false);
+    const [folderNavOpen, setFolderNavOpen] = useState(false);
     // Bumped on every jump so asking for the same moment twice still seeks.
     const [seekRequest, setSeekRequest] = useState(null);
     const [showScreenshots, setShowScreenshots] = useState(false);
@@ -657,6 +659,17 @@ export default function App() {
         setViewMode('viewer');
     }, [openVideoFile]);
 
+    // Walking the tree without the OS picker. A folder of seasons has no
+    // videos of its own, so it lands in show mode rather than an empty grid.
+    const goToFolder = useCallback((dir) => {
+        const api = getElectronAPI();
+        if (!api || !dir) return;
+        loadFolder(dir);
+        const videos = api.getFilesInDirectory(dir) || [];
+        const seasons = api.listSubfoldersWithVideos?.(dir) || [];
+        setViewMode(videos.length === 0 && seasons.length > 0 ? 'show' : 'grid');
+    }, [loadFolder]);
+
     // An episode picked in show mode usually lives in a season folder one
     // level down from the one being browsed, so this switches folders as
     // well as files — the show view is the only place that can happen.
@@ -893,9 +906,23 @@ export default function App() {
                 borderBottom: `1px solid ${theme.border}`
             }}>
                 {/* Left: Folder + Count + View Toggle */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                    <button className="btn btn-ghost" onClick={handleOpenFolder}
-                        style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, position: 'relative' }}>
+                    {folderNavOpen && currentPath && (
+                        <FolderNav
+                            folder={currentPath}
+                            onNavigate={goToFolder}
+                            onPick={handleOpenFolder}
+                            onClose={() => setFolderNavOpen(false)}
+                        />
+                    )}
+                    <button
+                        className="btn btn-ghost"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (currentPath) setFolderNavOpen(o => !o); else handleOpenFolder();
+                        }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                    >
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
                         </svg>

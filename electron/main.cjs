@@ -1540,12 +1540,12 @@ function setupIpcHandlers() {
 
     // One action for a whole show: its own facts plus every season's
     // synopses, rather than making the user repeat it per folder.
-    ipcMain.handle('import-show', async (_event, { folder, show } = {}) => {
+    ipcMain.handle('import-show', async (_event, { folder, show, lang } = {}) => {
         if (!folder || !show) return { success: false, error: 'Need a folder and a show name' };
 
         let meta;
         try {
-            meta = await wikiEpisodes.fetchShow(show);
+            meta = await wikiEpisodes.fetchShow(show, lang);
         } catch (e) {
             return { success: false, error: e.message };
         }
@@ -1582,7 +1582,7 @@ function setupIpcHandlers() {
 
             let found;
             try {
-                found = await wikiEpisodes.fetchSeason(show, season);
+                found = await wikiEpisodes.fetchSeason(show, season, lang);
             } catch (e) {
                 failures.push(`${path.basename(dir)}: ${e.message}`);
                 continue;
