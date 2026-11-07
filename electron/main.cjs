@@ -1093,8 +1093,7 @@ function setupIpcHandlers() {
         if (!Array.isArray(videoPaths) || videoPaths.length === 0) {
             return { success: false, error: 'No files' };
         }
-        // Opening a folder is not consent to spend an hour of CPU on it. Only
-        // a folder explicitly being followed gets swept.
+        // Swept unless this folder was explicitly switched off.
         const folder = path.dirname(videoPaths[0]);
         if (!library.getFollow(folder)) {
             return { success: true, added: 0, skipped: 'not-followed' };

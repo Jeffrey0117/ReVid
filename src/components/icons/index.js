@@ -20,3 +20,6 @@ export { Lock } from './Lock';
 export { ListVideo } from './ListVideo';
 export { Search } from './Search';
 export { Tv } from './Tv';
+export { ArrowLeft } from './ArrowLeft';
+export { ArrowRight } from './ArrowRight';
+export { ArrowUp } from './ArrowUp';

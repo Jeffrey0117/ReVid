@@ -44,7 +44,9 @@ import { TranscriptSearch } from './features/search/TranscriptSearch';
 import { ShowBrowser } from './features/show/ShowBrowser';
 import { FolderNav } from './components/FolderNav';
 import { useFolderHistory } from './hooks/useFolderHistory';
-import { Search as SearchIcon, Tv, GraduationCap } from './components/icons';
+import {
+    Search as SearchIcon, Tv, GraduationCap, ArrowLeft, ArrowRight, ArrowUp
+} from './components/icons';
 import { reloadPlugins } from './features/plugins/pluginRuntime';
 import { validateRevidFile } from './utils/revidFile';
 import { detectPlatform } from './utils/platformDetect';
@@ -687,11 +689,12 @@ export default function App() {
         if (currentPath) history.record(currentPath);
     }, [currentPath, history]);
 
-    const [follow, setFollow] = useState(false);
+    // Folders are swept unless switched off, so assume on until told.
+    const [follow, setFollow] = useState(true);
 
     useEffect(() => {
         const api = getElectronAPI();
-        if (!api?.getFolderFollow || !currentPath) { setFollow(false); return; }
+        if (!api?.getFolderFollow || !currentPath) { setFollow(true); return; }
         let dropped = false;
         api.getFolderFollow(currentPath).then(r => {
             if (!dropped) setFollow(Boolean(r.follow));
@@ -966,40 +969,45 @@ export default function App() {
                     )}
 
                     {/* Back / forward / up, where a file manager keeps them. */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0,
+                        padding: 2, borderRadius: 8, background: theme.inputBg
+                    }}>
                         {[
-                            { key: 'back', label: '←', on: history.back, enabled: history.canBack, title: t('navBack') },
-                            { key: 'fwd', label: '→', on: history.forward, enabled: history.canForward, title: t('navForward') },
-                            { key: 'up', label: '↑', on: () => goToFolder(parentOf), enabled: Boolean(parentOf), title: t('folderUp') }
-                        ].map(b => (
+                            { key: 'back', Icon: ArrowLeft, on: history.back, enabled: history.canBack, title: t('navBack') },
+                            { key: 'fwd', Icon: ArrowRight, on: history.forward, enabled: history.canForward, title: t('navForward') },
+                            { key: 'up', Icon: ArrowUp, on: () => goToFolder(parentOf), enabled: Boolean(parentOf), title: t('folderUp') }
+                        ].map(({ key, Icon: Arrow, on, enabled, title }) => (
                             <button
-                                key={b.key}
-                                onClick={b.on}
-                                disabled={!b.enabled}
-                                title={b.title}
+                                key={key}
+                                onClick={on}
+                                disabled={!enabled}
+                                title={title}
                                 style={{
-                                    width: 26, height: 26, borderRadius: 6, fontSize: 14,
+                                    width: 26, height: 24, borderRadius: 6,
                                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    cursor: b.enabled ? 'pointer' : 'default',
-                                    color: b.enabled ? theme.textSecondary : theme.textTertiary,
-                                    opacity: b.enabled ? 1 : 0.35,
+                                    cursor: enabled ? 'pointer' : 'default',
+                                    color: theme.textSecondary,
+                                    opacity: enabled ? 1 : 0.28,
                                     background: 'transparent'
                                 }}
                                 onMouseEnter={(e) => {
-                                    if (b.enabled) e.currentTarget.style.background = theme.hoverBg;
+                                    if (enabled) e.currentTarget.style.background = theme.hoverBg;
                                 }}
                                 onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                             >
-                                {b.label}
+                                <Arrow size={15} />
                             </button>
                         ))}
                     </div>
+
+                    {/* The name still opens the picker, as it always did —
+                        replacing that with a panel took away the only way to
+                        go somewhere else. Walking in place is the chevron. */}
                     <button
                         className="btn btn-ghost"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            if (currentPath) setFolderNavOpen(o => !o); else handleOpenFolder();
-                        }}
+                        onClick={handleOpenFolder}
+                        title={t('openFolder')}
                         style={{ display: 'flex', alignItems: 'center', gap: 6 }}
                     >
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1009,6 +1017,21 @@ export default function App() {
                             {folderName || t('openFolder')}
                         </span>
                     </button>
+
+                    {currentPath && (
+                        <button
+                            className="btn btn-ghost"
+                            title={t('folderTree')}
+                            onClick={(e) => { e.stopPropagation(); setFolderNavOpen(o => !o); }}
+                            style={{
+                                marginLeft: -6, padding: '4px 5px', borderRadius: 6,
+                                fontSize: 10, color: theme.textTertiary,
+                                background: folderNavOpen ? theme.hoverBg : undefined
+                            }}
+                        >
+                            {'▾'}
+                        </button>
+                    )}
 
                     {files.length > 0 && (
                         <span style={{ fontSize: 12, color: theme.textTertiary, fontVariantNumeric: 'tabular-nums' }}>

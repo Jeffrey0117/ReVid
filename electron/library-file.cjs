@@ -177,9 +177,10 @@ function setEpisodeGuide(folder, byName) {
     return r.success ? { ...r, applied } : r;
 }
 
-// Transcribing a folder costs real minutes of CPU per episode, so it is
-// something a folder is opted into, not something that happens because it
-// was opened. Stored per folder so the choice survives restarts.
+// Folders are swept by default: subtitles are what every other feature here
+// is built on, and waiting to be asked means they are never there when they
+// are wanted. Opting *out* is what gets recorded, for the folder that is not
+// worth the CPU.
 function setFollow(folder, on) {
     const lib = read(folder);
     lib.follow = Boolean(on);
@@ -187,7 +188,12 @@ function setFollow(folder, on) {
 }
 
 function getFollow(folder) {
-    try { return Boolean(read(folder).follow); } catch (e) { return false; }
+    try {
+        const stored = read(folder).follow;
+        return stored === undefined ? true : Boolean(stored);
+    } catch (e) {
+        return true;
+    }
 }
 
 // Show-level facts live on the folder that holds the seasons, which has no
