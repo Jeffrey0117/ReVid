@@ -33,6 +33,8 @@ const TRANSCRIPT_KEY = 'revid-transcript-open';
 const GLOW_KEY = 'revid-glow';
 const AUTO_SUBS_KEY = 'revid-auto-subs';
 const RESUME_KEY = 'revid-resume-positions';
+// Where playback was a moment ago, within this run of the app.
+const LIVE_POS_KEY = 'revid-live-position';
 const MAX_RESUME_ENTRIES = 300;
 
 const readNum = (key, fallback) => {
@@ -304,6 +306,13 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                 }
             }
 
+            // Position within this app session. Survives a remount — a hot
+            // reload in dev, a view switch, a key bump — so the video picks up
+            // where it was instead of restarting.
+            try {
+                sessionStorage.setItem(LIVE_POS_KEY, JSON.stringify({ src: srcRef.current, time: tNow }));
+            } catch (e) { /* storage disabled */ }
+
             // Cross-restart resume position (throttled).
             const now = Date.now();
             if (now - lastResumeSaveRef.current > 3000 && videoPathRef.current && tNow > 5) {
@@ -387,10 +396,20 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                 if (gain) gain.gain.value = b;
             }
             // Coming back from the editor (or the grid), resume where this
-            // same video last was instead of restarting from zero.
+            // same video last was instead of restarting from zero. The
+            // in-session position is also checked because a remount can
+            // outlive the ref that holds it (App itself reloading in dev).
             const saved = timeRef?.current;
+            let live = null;
+            try {
+                const raw = sessionStorage.getItem(LIVE_POS_KEY);
+                if (raw) live = JSON.parse(raw);
+            } catch (e) { /* storage disabled */ }
+
             if (saved && saved.src === src && Number.isFinite(saved.time) && saved.time > 0) {
                 video.currentTime = saved.time;
+            } else if (live && live.src === src && Number.isFinite(live.time) && live.time > 0) {
+                video.currentTime = live.time;
             } else if (videoPathRef.current) {
                 // Fresh open: offer (not force) the cross-restart position.
                 const stored = readResumeMap()[videoPathRef.current];
