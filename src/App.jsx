@@ -627,7 +627,11 @@ export default function App() {
         const dir = await api.selectDirectory();
         if (dir) {
             loadFolder(dir);
-            setViewMode('grid');
+            // A folder of seasons has nothing for the grid to show, so land
+            // on the view that can actually render it.
+            const seasons = api.listSubfoldersWithVideos?.(dir) || [];
+            const videos = api.getFilesInDirectory(dir) || [];
+            setViewMode(videos.length === 0 && seasons.length > 0 ? 'show' : 'grid');
         }
     }, [loadFolder]);
 
@@ -650,6 +654,15 @@ export default function App() {
         viewerTimeRef.current = { src, time: hit.start };
         setSeekRequest({ src, time: hit.start, nonce: Date.now() });
         openVideoFile(hit.videoPath);
+        setViewMode('viewer');
+    }, [openVideoFile]);
+
+    // An episode picked in show mode usually lives in a season folder one
+    // level down from the one being browsed, so this switches folders as
+    // well as files — the show view is the only place that can happen.
+    const openEpisode = useCallback((videoPath) => {
+        viewerTimeRef.current = null;
+        openVideoFile(videoPath);
         setViewMode('viewer');
     }, [openVideoFile]);
 
@@ -967,7 +980,10 @@ export default function App() {
                         </button>
                     )}
 
-                    {files.length > 0 && (
+                    {/* Not gated on files: the show folder holds seasons, so
+                        it has none of its own and this is exactly where the
+                        show view is wanted. */}
+                    {currentPath && (
                         <button
                             className="btn btn-ghost"
                             onClick={() => setViewMode(prev => prev === 'show' ? 'grid' : 'show')}
@@ -2012,6 +2028,10 @@ export default function App() {
                                 )}
 
                             </div>
+                        ) : viewMode === 'show' ? (
+                            // Before the empty check: a show folder holds
+                            // seasons, not videos, so it looks empty here.
+                            <ShowBrowser folder={currentPath} onOpenEpisode={openEpisode} />
                         ) : files.length === 0 ? (
                             <div style={{
                                 width: '100%', height: '100%',
@@ -2044,13 +2064,6 @@ export default function App() {
                                     {t('openFolder')}
                                 </button>
                             </div>
-                        ) : viewMode === 'show' ? (
-                            <ShowBrowser
-                                files={gridFiles}
-                                folder={currentPath}
-                                currentIndex={gridFiles.indexOf(currentVideo)}
-                                onSelectVideo={handleSelectVideoFromGrid}
-                            />
                         ) : viewMode === 'grid' ? (
                             <VideoThumbnailGrid
                                 files={gridFiles}

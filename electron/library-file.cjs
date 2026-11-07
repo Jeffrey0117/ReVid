@@ -166,6 +166,18 @@ function setEpisodeGuide(folder, byName) {
     return r.success ? { ...r, applied } : r;
 }
 
+// Show-level facts live on the folder that holds the seasons, which has no
+// videos of its own — so this is the one thing in a library not keyed by file.
+function setShow(folder, show) {
+    const lib = read(folder);
+    lib.show = show;
+    return write(folder, lib);
+}
+
+function getShow(folder) {
+    try { return read(folder).show || null; } catch (e) { return null; }
+}
+
 // Bring a folder's library up to date on open: create it if missing, pull in
 // any sidecars written before the library existed.
 function ensureLibrary(folder) {
@@ -193,6 +205,8 @@ module.exports = {
     clearSubtitles,
     setProgress,
     setEpisodeGuide,
+    setShow,
+    getShow,
     packCue,
     unpackCue
 };

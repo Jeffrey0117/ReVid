@@ -1478,6 +1478,128 @@ function setupIpcHandlers() {
         }
     });
 
+    // A show folder holds seasons, not videos, so the normal folder listing
+    // finds nothing in it. This reads one level down and reports what is
+    // there — which is what show mode needs to draw anything at all.
+    const VIDEO_EXT = /\.(mp4|webm|mov|avi|mkv|m4v)$/i;
+
+    const readSeason = (dir) => {
+        let names;
+        try { names = fs.readdirSync(dir).filter(n => VIDEO_EXT.test(n)); } catch (e) { return null; }
+        if (names.length === 0) return null;
+
+        let lib = null;
+        try { lib = library.read(dir); } catch (e) { /* no library yet */ }
+        const episodes = names.map((name) => {
+            const entry = lib?.videos?.[name] || {};
+            return {
+                name,
+                videoPath: path.join(dir, name),
+                guide: entry.guide || null,
+                hasSubs: Array.isArray(entry.subs) && entry.subs.length > 0,
+                progress: entry.progress || null
+            };
+        });
+        // Episode order, not alphabetical: "10" sorts before "2" otherwise.
+        episodes.sort((a, b) => {
+            const ea = a.guide?.episode ?? wikiEpisodes.episodeFromName(a.name)?.episode ?? 1e9;
+            const eb = b.guide?.episode ?? wikiEpisodes.episodeFromName(b.name)?.episode ?? 1e9;
+            return ea - eb || a.name.localeCompare(b.name);
+        });
+        return { name: path.basename(dir), folder: dir, episodes };
+    };
+
+    ipcMain.handle('show-seasons', (_event, { folder } = {}) => {
+        if (!folder) return { success: false, error: 'No folder' };
+        try {
+            const here = readSeason(folder);
+            // The folder itself holds episodes: it is one season, viewed directly.
+            if (here) {
+                return {
+                    success: true, root: path.dirname(folder),
+                    show: library.getShow(path.dirname(folder)) || library.getShow(folder),
+                    seasons: [here], single: true
+                };
+            }
+
+            const seasons = fs.readdirSync(folder, { withFileTypes: true })
+                .filter(d => d.isDirectory())
+                .map(d => readSeason(path.join(folder, d.name)))
+                .filter(Boolean)
+                .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+
+            return {
+                success: true, root: folder,
+                show: library.getShow(folder),
+                seasons, single: false
+            };
+        } catch (e) {
+            return { success: false, error: e.message, seasons: [] };
+        }
+    });
+
+    // One action for a whole show: its own facts plus every season's
+    // synopses, rather than making the user repeat it per folder.
+    ipcMain.handle('import-show', async (_event, { folder, show } = {}) => {
+        if (!folder || !show) return { success: false, error: 'Need a folder and a show name' };
+
+        let meta;
+        try {
+            meta = await wikiEpisodes.fetchShow(show);
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+        library.setShow(folder, meta);
+
+        // Season folders, or this folder if it is itself one season.
+        let dirs;
+        try {
+            dirs = fs.readdirSync(folder, { withFileTypes: true })
+                .filter(d => d.isDirectory())
+                .map(d => path.join(folder, d.name));
+        } catch (e) {
+            dirs = [];
+        }
+        if (dirs.length === 0) dirs = [folder];
+
+        let guided = 0;
+        const failures = [];
+        for (const dir of dirs) {
+            let names;
+            try { names = fs.readdirSync(dir).filter(n => VIDEO_EXT.test(n)); } catch (e) { continue; }
+            if (names.length === 0) continue;
+
+            const parsed = new Map();
+            const tally = new Map();
+            for (const n of names) {
+                const se = wikiEpisodes.episodeFromName(n);
+                if (!se) continue;
+                parsed.set(n, se);
+                tally.set(se.season, (tally.get(se.season) || 0) + 1);
+            }
+            if (parsed.size === 0) { failures.push(`${path.basename(dir)}: no SxxExx`); continue; }
+            const season = [...tally.entries()].sort((a, b) => b[1] - a[1])[0][0];
+
+            let found;
+            try {
+                found = await wikiEpisodes.fetchSeason(show, season);
+            } catch (e) {
+                failures.push(`${path.basename(dir)}: ${e.message}`);
+                continue;
+            }
+            const byEpisode = new Map(found.episodes.map(e => [e.episode, e]));
+            const byName = {};
+            for (const [n, se] of parsed) {
+                const ep = byEpisode.get(se.episode);
+                if (ep) byName[n] = ep;
+            }
+            const stored = library.setEpisodeGuide(dir, byName);
+            if (stored.success) guided += stored.applied;
+        }
+
+        return { success: true, show: meta, guided, seasons: dirs.length, failures };
+    });
+
     ipcMain.handle('reel-renderer-status', () => ({
         available: Boolean(findRemotionDir()),
         dir: findRemotionDir()

@@ -64,6 +64,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
     },
 
+    // Season folders under a show folder. Used to tell "empty" apart from
+    // "holds seasons", which look identical to a video listing.
+    listSubfoldersWithVideos: (dirPath, extensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v']) => {
+        try {
+            return fs.readdirSync(dirPath, { withFileTypes: true })
+                .filter(d => d.isDirectory())
+                .map(d => path.join(dirPath, d.name))
+                .filter(sub => {
+                    try {
+                        return fs.readdirSync(sub)
+                            .some(f => extensions.includes(path.extname(f).toLowerCase()));
+                    } catch (e) {
+                        return false;
+                    }
+                })
+                .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+        } catch (e) {
+            return [];
+        }
+    },
+
     getDesktopPath: () => path.join(os.homedir(), 'Desktop'),
 
     getFileSize: (filePath) => {
@@ -334,6 +355,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     importEpisodeGuide: (folder, show) => ipcRenderer.invoke('import-episode-guide', { folder, show }),
     askEpisodes: (params) => ipcRenderer.invoke('ask-episodes', params),
     libraryGuides: (folder) => ipcRenderer.invoke('library-guides', { folder }),
+    showSeasons: (folder) => ipcRenderer.invoke('show-seasons', { folder }),
+    importShow: (folder, show) => ipcRenderer.invoke('import-show', { folder, show }),
 
     saveSubtitles: (videoPath, cues, translated) =>
         ipcRenderer.invoke('save-subtitles', { videoPath, cues, translated }),

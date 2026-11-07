@@ -108,6 +108,79 @@ function episodeFromName(name) {
     return { season, episode };
 }
 
+// Infobox values are routinely multi-line templates whose own closing braces
+// sit on their own line, so a line-based split cuts them in half. Walk the
+// text counting brace depth instead, and stop at a pipe only at depth zero.
+function infoboxField(article, name) {
+    const box = article.indexOf('{{Infobox television');
+    if (box < 0) return '';
+    const re = new RegExp(`\\n\\s*\\|\\s*${name}\\s*=`, 'i');
+    const found = re.exec(article.slice(box));
+    if (!found) return '';
+
+    let i = box + found.index + found[0].length;
+    let depth = 0;
+    let out = '';
+    while (i < article.length) {
+        const two = article.slice(i, i + 2);
+        if (two === '{{' || two === '[[') { depth += 1; out += two; i += 2; continue; }
+        if (two === '}}' || two === ']]') {
+            if (depth === 0) break;          // the infobox itself ending
+            depth -= 1; out += two; i += 2; continue;
+        }
+        if (depth === 0 && article[i] === '|') break;
+        out += article[i];
+        i += 1;
+    }
+    return cleanWikitext(unwrapLists(out));
+}
+
+// A cast or genre is nearly always wrapped in a list template. Stripping it
+// as a template would take the names with it, so take off the wrapper and
+// keep what it held.
+function unwrapLists(value) {
+    return value.replace(
+        /\{\{\s*(?:Plainlist|Plain list|Unbulleted list|Ubl|ubl|flatlist|hlist)\s*\|([\s\S]*)\}\}/gi,
+        '$1'
+    );
+}
+
+// "* a\n* b" or "a | b" — either way, the names.
+function listItems(value) {
+    if (!value) return [];
+    const bulleted = value.split(/\s*\*\s*/).map(s => s.trim()).filter(Boolean);
+    if (bulleted.length > 1) return bulleted;
+    return value.split(/\s*\|\s*/).map(s => s.trim()).filter(Boolean);
+}
+
+function parseShow(article) {
+    const text = typeof article === 'string' ? article : '';
+
+    // The lead sentence is the one-paragraph description a viewer wants;
+    // it starts at the bolded title.
+    let description = '';
+    const lead = text.indexOf("'''''");
+    if (lead >= 0) {
+        const para = text.slice(lead).split('\n')[0];
+        description = cleanWikitext(para);
+    }
+
+    const years = description.match(/\b(19|20)\d{2}\b/);
+    const seasons = parseInt(infoboxField(text, 'num_seasons'), 10);
+    const episodes = parseInt(infoboxField(text, 'num_episodes'), 10);
+
+    return {
+        description,
+        year: years ? parseInt(years[0], 10) : null,
+        seasons: Number.isFinite(seasons) ? seasons : null,
+        episodes: Number.isFinite(episodes) ? episodes : null,
+        genre: listItems(infoboxField(text, 'genre')),
+        creators: listItems(infoboxField(text, 'creator')),
+        starring: listItems(infoboxField(text, 'starring')),
+        country: infoboxField(text, 'country')
+    };
+}
+
 function getJson(url) {
     return new Promise((resolve, reject) => {
         const req = https.get(url, { headers: { 'User-Agent': UA } }, (res) => {
@@ -176,4 +249,12 @@ async function fetchSeason(show, season) {
     return { page: used, episodes };
 }
 
-module.exports = { cleanWikitext, parseEpisodes, episodeFromName, fetchSeason, searchTitles };
+async function fetchShow(title) {
+    const wikitext = await fetchPage(title);
+    return { page: title, ...parseShow(wikitext) };
+}
+
+module.exports = {
+    cleanWikitext, parseEpisodes, episodeFromName, fetchSeason, searchTitles,
+    parseShow, fetchShow, infoboxField, listItems
+};

@@ -3,156 +3,323 @@ import { useI18n } from '../../i18n.jsx';
 import { useTheme } from '../../theme.jsx';
 import { toLocalVideoUrl } from '../../utils/localVideoUrl';
 import { generateVideoThumbnail, getCachedThumbnail } from '../../utils/videoThumbnails';
+import { getVideoMetadata, getCachedMetadata } from '../../utils/videoMetadata';
 
 const getElectronAPI = () => window.electronAPI || null;
 
-// One hidden <video> per thumbnail, so a season's worth at once would stall
-// the window. Rows are tall, so only a few are ever on screen anyway.
+// Each thumbnail spins up a hidden <video>; a season at once would stall the
+// window, and only a few cards are on screen anyway.
 const MAX_CONCURRENT = 2;
 
-const nameOf = (p) => p.split(/[\\/]/).pop();
-const stemOf = (p) => nameOf(p).replace(/\.[^.]+$/, '');
+const stemOf = (name) => name.replace(/\.[^.]+$/, '');
+const mins = (sec) => (sec > 0 ? `${Math.round(sec / 60)}` : null);
 
-// Browsing by what an episode is, not by what its file is called — the
-// thumbnail of a frame 40 seconds in tells you nothing about the hour.
-export const ShowBrowser = ({ files, folder, currentIndex, onSelectVideo }) => {
+// Browsing a show the way a streaming app does: what it is, which season,
+// and what each episode is about — rather than a wall of frames grabbed
+// forty seconds in, which say nothing about the hour.
+export const ShowBrowser = ({ folder, onOpenEpisode }) => {
     const { t } = useI18n();
     const { theme } = useTheme();
-    const [guides, setGuides] = useState(null);
-    const [thumbs, setThumbs] = useState({});
-    const activeRef = useRef(null);
+    const [data, setData] = useState(null);
+    const [seasonIdx, setSeasonIdx] = useState(0);
+    const [pickerOpen, setPickerOpen] = useState(false);
+    const [media, setMedia] = useState({});
+    const [busy, setBusy] = useState(false);
+    const [msg, setMsg] = useState('');
     const pendingRef = useRef(new Set());
+    const stripRef = useRef(null);
 
-    useEffect(() => {
+    const load = async () => {
         const api = getElectronAPI();
-        if (!api?.libraryGuides || !folder) return;
-        let dropped = false;
-        api.libraryGuides(folder).then(r => {
-            if (!dropped) setGuides(r.byName || {});
-        });
-        return () => { dropped = true; };
-    }, [folder]);
+        if (!api?.showSeasons || !folder) return;
+        const r = await api.showSeasons(folder);
+        setData(r);
+        setSeasonIdx(0);
+    };
 
-    useEffect(() => {
-        activeRef.current?.scrollIntoView({ block: 'center' });
-    }, [guides]);
+    useEffect(() => { load(); }, [folder]);
 
-    // Thumbnails arrive as they are made rather than all at the end, so the
-    // list fills in instead of sitting blank.
+    const season = data?.seasons?.[seasonIdx] || null;
+    const show = data?.show || null;
+
+    // Thumbnails and durations fill in as they are made, so the strip is
+    // usable immediately instead of blank until the last one lands.
     useEffect(() => {
+        if (!season) return;
         let dropped = false;
-        const queue = files.filter(f => !getCachedThumbnail(toLocalVideoUrl(f)));
 
         const run = async () => {
-            for (const file of queue) {
+            for (const ep of season.episodes) {
                 if (dropped) return;
+                const url = toLocalVideoUrl(ep.videoPath);
+                if (getCachedThumbnail(url) && getCachedMetadata(url)) continue;
                 while (pendingRef.current.size >= MAX_CONCURRENT) {
                     await new Promise(r => setTimeout(r, 120));
                     if (dropped) return;
                 }
-                const url = toLocalVideoUrl(file);
                 pendingRef.current.add(url);
-                generateVideoThumbnail(url)
-                    .then(data => {
-                        if (!dropped && data) setThumbs(prev => ({ ...prev, [url]: data }));
+                Promise.all([
+                    generateVideoThumbnail(url).catch(() => null),
+                    getVideoMetadata(url).catch(() => null)
+                ])
+                    .then(([thumb, meta]) => {
+                        if (dropped) return;
+                        setMedia(prev => ({
+                            ...prev,
+                            [url]: { thumb: thumb || prev[url]?.thumb, meta: meta || prev[url]?.meta }
+                        }));
                     })
-                    .catch(() => { /* a frame that will not decode is not fatal */ })
                     .finally(() => pendingRef.current.delete(url));
             }
         };
         run();
         return () => { dropped = true; };
-    }, [files]);
+    }, [season]);
 
-    const rows = useMemo(() => files.map((file, i) => ({
-        file,
-        index: i,
-        guide: guides?.[nameOf(file)] || null
-    })), [files, guides]);
+    useEffect(() => {
+        if (stripRef.current) stripRef.current.scrollLeft = 0;
+    }, [seasonIdx]);
 
-    const withGuide = rows.filter(r => r.guide).length;
+    const importShow = async () => {
+        const api = getElectronAPI();
+        if (!api?.importShow || busy) return;
+        const suggested = show?.page || (folder || '').split(/[\\/]/).filter(Boolean).pop() || '';
+        const name = window.prompt(t('guideAskShow'), suggested);
+        if (!name) return;
+
+        setBusy(true);
+        setMsg('');
+        const r = await api.importShow(folder, name.trim());
+        setBusy(false);
+        setMsg(r.success
+            ? `${t('guideImported')} ${r.guided} · ${r.seasons} ${t('seasonsWord')}`
+              + (r.failures?.length ? ` · ${r.failures.length} ${t('showSeasonFailed')}` : '')
+            : r.error);
+        if (r.success) load();
+    };
+
+    const facts = useMemo(() => {
+        if (!show) return [];
+        return [
+            show.year,
+            data?.seasons?.length ? `${t('showSeasonsCount')} ${data.seasons.length}` : null,
+            show.genre?.slice(0, 2).join(' · ')
+        ].filter(Boolean);
+    }, [show, data, t]);
+
+    if (!data) return null;
+
+    if (!season) {
+        return (
+            <div style={{ padding: 40, color: theme.textTertiary, fontSize: 13 }}>
+                {t('showNothingHere')}
+            </div>
+        );
+    }
 
     return (
         <div style={{ width: '100%', height: '100%', overflowY: 'auto', background: theme.bg }}>
+            {/* Show header */}
             <div style={{
-                padding: '14px 20px 10px', fontSize: 12, color: theme.textTertiary,
-                display: 'flex', alignItems: 'center', gap: 8
+                margin: 16, padding: '20px 24px', borderRadius: 10,
+                background: theme.bgSecondary, border: `1px solid ${theme.border}`
             }}>
-                <span style={{ fontSize: 15, fontWeight: 600, color: theme.text }}>
-                    {folder ? folder.split(/[\\/]/).filter(Boolean).pop() : ''}
-                </span>
-                <span>
-                    {files.length} {t('episodesWord')}
-                    {guides && withGuide < files.length && ` · ${t('showNoGuideYet')}`}
-                </span>
-            </div>
-
-            {rows.map(({ file, index, guide }) => {
-                const url = toLocalVideoUrl(file);
-                const thumb = thumbs[url] || getCachedThumbnail(url);
-                const active = index === currentIndex;
-                return (
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 24, fontWeight: 700, color: theme.text }}>
+                        {(folder || '').split(/[\\/]/).filter(Boolean).pop()}
+                    </span>
                     <button
-                        key={file}
-                        ref={active ? activeRef : undefined}
-                        onClick={() => onSelectVideo(index)}
+                        onClick={importShow}
+                        disabled={busy}
                         style={{
-                            display: 'flex', gap: 14, width: '100%', textAlign: 'left',
-                            padding: '10px 20px', cursor: 'pointer',
-                            background: active ? theme.accentBg : 'transparent',
-                            borderLeft: `3px solid ${active ? theme.accent : 'transparent'}`
-                        }}
-                        onMouseEnter={(e) => {
-                            if (!active) e.currentTarget.style.background = theme.hoverBg;
-                        }}
-                        onMouseLeave={(e) => {
-                            if (!active) e.currentTarget.style.background = 'transparent';
+                            fontSize: 11, padding: '3px 9px', borderRadius: 5,
+                            cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1,
+                            background: theme.inputBg, color: theme.textSecondary
                         }}
                     >
-                        <span style={{
-                            flex: 'none', width: 168, height: 95, borderRadius: 6,
-                            overflow: 'hidden', background: theme.inputBg,
-                            display: 'grid', placeItems: 'center'
-                        }}>
-                            {thumb
-                                ? <img src={thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                : <span style={{ fontSize: 11, color: theme.textTertiary }}>{index + 1}</span>}
-                        </span>
+                        {busy ? t('guideImporting') : show ? t('guideRefetch') : t('showGetInfo')}
+                    </button>
+                </div>
 
-                        <span style={{ flex: 1, minWidth: 0, paddingTop: 2 }}>
+                {facts.length > 0 && (
+                    <div style={{ marginTop: 6, fontSize: 12, color: theme.textTertiary }}>
+                        {facts.join('  ·  ')}
+                    </div>
+                )}
+
+                {msg && (
+                    <div style={{ marginTop: 8, fontSize: 12, color: theme.accent }}>{msg}</div>
+                )}
+
+                {show?.description && (
+                    <div style={{
+                        display: 'flex', gap: 32, marginTop: 14, flexWrap: 'wrap', alignItems: 'flex-start'
+                    }}>
+                        <p style={{
+                            flex: '1 1 380px', margin: 0, maxWidth: 620,
+                            fontSize: 13, lineHeight: 1.65, color: theme.textSecondary
+                        }}>
+                            {show.description}
+                        </p>
+                        <div style={{ flex: '0 1 300px', fontSize: 12, lineHeight: 1.8 }}>
+                            {show.starring?.length > 0 && (
+                                <div style={{ color: theme.textTertiary }}>
+                                    {t('showStarring')}
+                                    <span style={{ color: theme.textSecondary, marginLeft: 6 }}>
+                                        {show.starring.slice(0, 6).join('、')}
+                                    </span>
+                                </div>
+                            )}
+                            {show.creators?.length > 0 && (
+                                <div style={{ color: theme.textTertiary }}>
+                                    {t('showCreators')}
+                                    <span style={{ color: theme.textSecondary, marginLeft: 6 }}>
+                                        {show.creators.join('、')}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Season picker */}
+            <div style={{
+                display: 'flex', alignItems: 'center', gap: 14, padding: '6px 24px 12px'
+            }}>
+                <span style={{ fontSize: 19, fontWeight: 700, color: theme.text }}>
+                    {t('showEpisodes')}
+                </span>
+                {data.seasons.length > 1 && (
+                    <div style={{ position: 'relative' }}>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setPickerOpen(o => !o); }}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: 6,
+                                padding: '5px 12px', borderRadius: 6, cursor: 'pointer',
+                                fontSize: 13, background: theme.inputBg, color: theme.text,
+                                border: `1px solid ${theme.border}`
+                            }}
+                        >
+                            {season.name}
+                            <span style={{ fontSize: 10, color: theme.textTertiary }}>{'▼'}</span>
+                        </button>
+                        {pickerOpen && (
+                            <>
+                                <div
+                                    onClick={() => setPickerOpen(false)}
+                                    style={{ position: 'fixed', inset: 0, zIndex: 10 }}
+                                />
+                                <div style={{
+                                    position: 'absolute', top: 34, left: 0, zIndex: 11,
+                                    minWidth: 150, maxHeight: '50vh', overflowY: 'auto', padding: 4,
+                                    background: theme.dialogBg, borderRadius: 8,
+                                    border: `1px solid ${theme.border}`,
+                                    boxShadow: '0 12px 36px rgba(0,0,0,0.45)'
+                                }}>
+                                    {data.seasons.map((s, i) => (
+                                        <button
+                                            key={s.folder}
+                                            onClick={() => { setSeasonIdx(i); setPickerOpen(false); }}
+                                            style={{
+                                                display: 'flex', justifyContent: 'space-between', gap: 12,
+                                                width: '100%', padding: '7px 10px', borderRadius: 5,
+                                                textAlign: 'left', cursor: 'pointer', fontSize: 13,
+                                                background: i === seasonIdx ? theme.accentBg : 'transparent',
+                                                color: i === seasonIdx ? theme.accent : theme.textSecondary
+                                            }}
+                                        >
+                                            {s.name}
+                                            <span style={{ fontSize: 11, color: theme.textTertiary }}>
+                                                {s.episodes.length}
+                                            </span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* Episode cards */}
+            <div
+                ref={stripRef}
+                style={{
+                    display: 'grid', gap: 16, padding: '0 24px 28px',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))'
+                }}
+            >
+                {season.episodes.map((ep, i) => {
+                    const url = toLocalVideoUrl(ep.videoPath);
+                    const thumb = media[url]?.thumb || getCachedThumbnail(url);
+                    const meta = media[url]?.meta || getCachedMetadata(url);
+                    const length = mins(meta?.duration);
+                    const num = ep.guide?.episode ?? i + 1;
+                    return (
+                        <button
+                            key={ep.videoPath}
+                            onClick={() => onOpenEpisode(ep.videoPath)}
+                            style={{
+                                display: 'flex', flexDirection: 'column', textAlign: 'left',
+                                borderRadius: 8, overflow: 'hidden', cursor: 'pointer',
+                                background: theme.bgSecondary,
+                                border: `1px solid ${theme.border}`
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.borderColor = theme.accent; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.borderColor = theme.border; }}
+                        >
                             <span style={{
-                                display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4
+                                position: 'relative', display: 'block', width: '100%',
+                                aspectRatio: '16 / 9', background: theme.inputBg
                             }}>
-                                <span style={{
-                                    fontSize: 12, fontWeight: 700, color: theme.textTertiary,
-                                    fontVariantNumeric: 'tabular-nums'
-                                }}>
-                                    {guide?.episode != null ? String(guide.episode).padStart(2, '0') : index + 1}
-                                </span>
-                                <span style={{
-                                    fontSize: 14, fontWeight: 600,
-                                    color: active ? theme.accent : theme.text,
-                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-                                }}>
-                                    {guide?.title || stemOf(file)}
-                                </span>
-                                {guide?.airDate && (
-                                    <span style={{ flex: 'none', fontSize: 11, color: theme.textTertiary }}>
-                                        {guide.airDate}
+                                {thumb && (
+                                    <img
+                                        src={thumb}
+                                        alt=""
+                                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                    />
+                                )}
+                                {length && (
+                                    <span style={{
+                                        position: 'absolute', right: 6, bottom: 6,
+                                        padding: '1px 6px', borderRadius: 3, fontSize: 11,
+                                        background: 'rgba(0,0,0,0.75)', color: '#fff'
+                                    }}>
+                                        {length} {t('minutesShort')}
+                                    </span>
+                                )}
+                                {ep.hasSubs && (
+                                    <span style={{
+                                        position: 'absolute', left: 6, bottom: 6,
+                                        padding: '1px 5px', borderRadius: 3, fontSize: 10,
+                                        background: 'rgba(0,0,0,0.75)', color: '#fff'
+                                    }}>
+                                        {t('subMenuTitle')}
                                     </span>
                                 )}
                             </span>
-                            <span style={{
-                                display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical',
-                                overflow: 'hidden', fontSize: 12.5, lineHeight: 1.5,
-                                color: theme.textSecondary
-                            }}>
-                                {guide?.summary || t('showNoSummary')}
+
+                            <span style={{ padding: '10px 12px 13px' }}>
+                                <span style={{
+                                    display: 'block', fontSize: 13.5, fontWeight: 600,
+                                    color: theme.text, marginBottom: 5,
+                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                                }}>
+                                    {`${t('episodeN').replace('{n}', num)}  ${ep.guide?.title || stemOf(ep.name)}`}
+                                </span>
+                                <span style={{
+                                    display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical',
+                                    overflow: 'hidden', fontSize: 12, lineHeight: 1.55,
+                                    color: theme.textTertiary
+                                }}>
+                                    {ep.guide?.summary || t('showNoSummary')}
+                                </span>
                             </span>
-                        </span>
-                    </button>
-                );
-            })}
+                        </button>
+                    );
+                })}
+            </div>
         </div>
     );
 };

@@ -23,9 +23,12 @@ export const useVideoFileSystem = () => {
         setCurrentPath(folderPath);
         localStorage.setItem(LAST_FOLDER_KEY, folderPath);
       } else {
+        // A show folder holds season folders rather than videos. It is still
+        // a real place to be, and still where the app should reopen.
         setFiles([]);
         setCurrentIndex(-1);
         setCurrentPath(folderPath);
+        localStorage.setItem(LAST_FOLDER_KEY, folderPath);
       }
     } catch (err) {
       setFiles([]);
@@ -81,8 +84,12 @@ export const useVideoFileSystem = () => {
         try {
           const lastFolder = localStorage.getItem(LAST_FOLDER_KEY);
           if (lastFolder) {
+            // Reopen it if it holds videos, or if it holds folders that do —
+            // a show folder has none of its own but is where the user was.
             const videoFiles = electronAPI.getFilesInDirectory(lastFolder, VIDEO_EXTENSIONS);
-            if (videoFiles && videoFiles.length > 0) {
+            const hasSeasons = videoFiles?.length === 0
+              && electronAPI.listSubfoldersWithVideos?.(lastFolder)?.length > 0;
+            if ((videoFiles && videoFiles.length > 0) || hasSeasons) {
               loadFolderRef.current(lastFolder);
               return;
             }
