@@ -43,7 +43,8 @@ import { ShareDialog } from './features/share/ShareDialog';
 import { TranscriptSearch } from './features/search/TranscriptSearch';
 import { ShowBrowser } from './features/show/ShowBrowser';
 import { FolderNav } from './components/FolderNav';
-import { Search as SearchIcon, Tv } from './components/icons';
+import { useFolderHistory } from './hooks/useFolderHistory';
+import { Search as SearchIcon, Tv, GraduationCap } from './components/icons';
 import { reloadPlugins } from './features/plugins/pluginRuntime';
 import { validateRevidFile } from './utils/revidFile';
 import { detectPlatform } from './utils/platformDetect';
@@ -661,7 +662,7 @@ export default function App() {
 
     // Walking the tree without the OS picker. A folder of seasons has no
     // videos of its own, so it lands in show mode rather than an empty grid.
-    const goToFolder = useCallback((dir) => {
+    const enterFolder = useCallback((dir) => {
         const api = getElectronAPI();
         if (!api || !dir) return;
         loadFolder(dir);
@@ -669,6 +670,54 @@ export default function App() {
         const seasons = api.listSubfoldersWithVideos?.(dir) || [];
         setViewMode(videos.length === 0 && seasons.length > 0 ? 'show' : 'grid');
     }, [loadFolder]);
+
+    const history = useFolderHistory(enterFolder);
+
+    // Everything that navigates on purpose goes through here so back and
+    // forward know about it; stepping through history calls enterFolder
+    // directly, which is why recording lives outside it.
+    const goToFolder = useCallback((dir) => {
+        enterFolder(dir);
+        history.record(dir);
+    }, [enterFolder, history]);
+
+    // The folder arrived at by startup, the picker or an episode jump still
+    // belongs in history, however it got there.
+    useEffect(() => {
+        if (currentPath) history.record(currentPath);
+    }, [currentPath, history]);
+
+    const [follow, setFollow] = useState(false);
+
+    useEffect(() => {
+        const api = getElectronAPI();
+        if (!api?.getFolderFollow || !currentPath) { setFollow(false); return; }
+        let dropped = false;
+        api.getFolderFollow(currentPath).then(r => {
+            if (!dropped) setFollow(Boolean(r.follow));
+        });
+        return () => { dropped = true; };
+    }, [currentPath]);
+
+    const toggleFollow = useCallback(async () => {
+        const api = getElectronAPI();
+        if (!api?.setFolderFollow || !currentPath) return;
+        const next = !follow;
+        const r = await api.setFolderFollow(currentPath, next);
+        if (r.success) {
+            setFollow(next);
+            // Start immediately rather than waiting for the next folder open.
+            if (next && files.length > 0) api.queueFolderTranscriptions?.(files).catch(() => {});
+            else setSubsQueue(null);
+        }
+    }, [currentPath, follow, files]);
+
+    const parentOf = useMemo(() => {
+        const api = getElectronAPI();
+        if (!api || !currentPath) return null;
+        const up = api.path.dirname(currentPath);
+        return up && up !== currentPath ? up : null;
+    }, [currentPath]);
 
     // An episode picked in show mode usually lives in a season folder one
     // level down from the one being browsed, so this switches folders as
@@ -906,7 +955,7 @@ export default function App() {
                 borderBottom: `1px solid ${theme.border}`
             }}>
                 {/* Left: Folder + Count + View Toggle */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, position: 'relative' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                     {folderNavOpen && currentPath && (
                         <FolderNav
                             folder={currentPath}
@@ -915,6 +964,36 @@ export default function App() {
                             onClose={() => setFolderNavOpen(false)}
                         />
                     )}
+
+                    {/* Back / forward / up, where a file manager keeps them. */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
+                        {[
+                            { key: 'back', label: '←', on: history.back, enabled: history.canBack, title: t('navBack') },
+                            { key: 'fwd', label: '→', on: history.forward, enabled: history.canForward, title: t('navForward') },
+                            { key: 'up', label: '↑', on: () => goToFolder(parentOf), enabled: Boolean(parentOf), title: t('folderUp') }
+                        ].map(b => (
+                            <button
+                                key={b.key}
+                                onClick={b.on}
+                                disabled={!b.enabled}
+                                title={b.title}
+                                style={{
+                                    width: 26, height: 26, borderRadius: 6, fontSize: 14,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    cursor: b.enabled ? 'pointer' : 'default',
+                                    color: b.enabled ? theme.textSecondary : theme.textTertiary,
+                                    opacity: b.enabled ? 1 : 0.35,
+                                    background: 'transparent'
+                                }}
+                                onMouseEnter={(e) => {
+                                    if (b.enabled) e.currentTarget.style.background = theme.hoverBg;
+                                }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                            >
+                                {b.label}
+                            </button>
+                        ))}
+                    </div>
                     <button
                         className="btn btn-ghost"
                         onClick={(e) => {
@@ -940,6 +1019,25 @@ export default function App() {
                                     : `${files.length} ${t('videos')}`
                             }
                         </span>
+                    )}
+
+                    {/* Following a folder is what licences the background
+                        sweep. Visible so it is never a surprise. */}
+                    {currentPath && files.length > 0 && (
+                        <button
+                            className="btn btn-ghost"
+                            title={follow ? t('followOnHint') : t('followOffHint')}
+                            onClick={toggleFollow}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: 5,
+                                padding: '4px 9px', borderRadius: 7, fontSize: 11, fontWeight: 600,
+                                color: follow ? theme.accent : theme.textTertiary,
+                                background: follow ? theme.accentBg : undefined
+                            }}
+                        >
+                            <GraduationCap size={14} />
+                            {follow ? t('followOn') : t('followOff')}
+                        </button>
                     )}
 
                     {currentPath && (

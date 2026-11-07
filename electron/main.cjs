@@ -1090,7 +1090,15 @@ function setupIpcHandlers() {
     ipcMain.handle('ensure-library', (_event, { folder }) => library.ensureLibrary(folder));
 
     ipcMain.handle('queue-folder-transcriptions', async (_event, { videoPaths }) => {
-        if (!Array.isArray(videoPaths)) return { success: false, error: 'No files' };
+        if (!Array.isArray(videoPaths) || videoPaths.length === 0) {
+            return { success: false, error: 'No files' };
+        }
+        // Opening a folder is not consent to spend an hour of CPU on it. Only
+        // a folder explicitly being followed gets swept.
+        const folder = path.dirname(videoPaths[0]);
+        if (!library.getFollow(folder)) {
+            return { success: true, added: 0, skipped: 'not-followed' };
+        }
         const status = getWhisperStatus(DEFAULT_MODEL);
         if (!status.binaryReady || !status.modelReady) {
             return { success: false, notReady: true, error: 'Whisper not set up' };
@@ -1098,6 +1106,20 @@ function setupIpcHandlers() {
         const added = whisperQueue.enqueueFolder(videoPaths.filter(p => fs.existsSync(p)));
         return { success: true, added, ...whisperQueue.status() };
     });
+
+    // Following a folder: subtitles for the whole thing, filled in while the
+    // machine is otherwise idle. Turning it off also drops what is waiting.
+    ipcMain.handle('set-folder-follow', (_event, { folder, on } = {}) => {
+        if (!folder) return { success: false, error: 'No folder' };
+        const r = library.setFollow(folder, on);
+        if (!on) whisperQueue.clearPending();
+        return { ...r, follow: Boolean(on) };
+    });
+
+    ipcMain.handle('get-folder-follow', (_event, { folder } = {}) => ({
+        success: true,
+        follow: folder ? library.getFollow(folder) : false
+    }));
 
     ipcMain.handle('clear-transcription-queue', () => {
         whisperQueue.clearPending();

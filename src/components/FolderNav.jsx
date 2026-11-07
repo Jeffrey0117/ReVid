@@ -52,7 +52,10 @@ export const FolderNav = ({ folder, onNavigate, onPick, onClose }) => {
             ref={ref}
             onClick={(e) => e.stopPropagation()}
             style={{
-                position: 'absolute', top: 36, left: 8, zIndex: 300,
+                // Fixed, not absolute: the toolbar's backdrop-filter makes a
+                // stacking context, so an absolute child is painted under the
+                // content area no matter what z-index it carries.
+                position: 'fixed', top: 84, left: 16, zIndex: 400,
                 width: 360, maxHeight: '70vh', display: 'flex', flexDirection: 'column',
                 background: theme.dialogBg, color: theme.text,
                 border: `1px solid ${theme.border}`, borderRadius: 10,
@@ -98,7 +101,9 @@ export const FolderNav = ({ folder, onNavigate, onPick, onClose }) => {
                     </button>
                 )}
 
-                {nav.children.length === 0 && !nav.parent && (
+                {/* Said whenever there is nothing below, not only at a drive
+                    root — a bare list otherwise reads as "this is broken". */}
+                {nav.children.length === 0 && (
                     <div style={{ padding: '16px 10px', fontSize: 12, color: theme.textTertiary }}>
                         {t('folderNoSub')}
                     </div>

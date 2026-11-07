@@ -177,6 +177,19 @@ function setEpisodeGuide(folder, byName) {
     return r.success ? { ...r, applied } : r;
 }
 
+// Transcribing a folder costs real minutes of CPU per episode, so it is
+// something a folder is opted into, not something that happens because it
+// was opened. Stored per folder so the choice survives restarts.
+function setFollow(folder, on) {
+    const lib = read(folder);
+    lib.follow = Boolean(on);
+    return write(folder, lib);
+}
+
+function getFollow(folder) {
+    try { return Boolean(read(folder).follow); } catch (e) { return false; }
+}
+
 // Show-level facts live on the folder that holds the seasons, which has no
 // videos of its own — so this is the one thing in a library not keyed by file.
 function setShow(folder, show) {
@@ -219,6 +232,8 @@ module.exports = {
     setEpisodeGuide,
     setShow,
     getShow,
+    setFollow,
+    getFollow,
     packCue,
     unpackCue
 };
