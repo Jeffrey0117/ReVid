@@ -980,7 +980,6 @@ export const VideoViewer = ({
     const showOrig = ccMode === 'both' || ccMode === 'orig';
     const showZh = ccMode === 'both' || ccMode === 'zh';
     const hasTranslation = cues.some(c => c.zh);
-    const CC_LABEL = { both: '中/EN', orig: 'EN', zh: '中', off: 'off' };
 
     return (
         <div style={{ width: '100%', height: '100%', display: 'flex', background: '#000' }}>
@@ -1111,13 +1110,22 @@ export const VideoViewer = ({
                         })}
                     </div>
                     {learnMode && (
-                        <button
-                            title={t('wordbookTitle')}
-                            onClick={() => { setWordbookOpen(o => !o); setTranscriptOpen(false); }}
-                            style={iconBtn(wordbookOpen)}
-                        >
-                            <BookMarked size={16} />
-                        </button>
+                        <>
+                            <button
+                                title={t('shadowHint')}
+                                onClick={() => setShadowing(s => !s)}
+                                style={{ ...iconBtn(shadowing), width: 'auto', padding: '0 9px', fontSize: 11, fontWeight: 600 }}
+                            >
+                                {t('shadow')}
+                            </button>
+                            <button
+                                title={t('wordbookTitle')}
+                                onClick={() => { setWordbookOpen(o => !o); setTranscriptOpen(false); }}
+                                style={iconBtn(wordbookOpen)}
+                            >
+                                <BookMarked size={16} />
+                            </button>
+                        </>
                     )}
                     <button
                         title={t('transcriptToggle')}
@@ -1146,17 +1154,9 @@ export const VideoViewer = ({
                                 {`${currentIndex + 1}/${files.length}`}
                             </button>
                         )}
-                        {learnMode && (
-                            <button
-                                title={t('shadowHint')}
-                                onClick={(e) => { e.stopPropagation(); setShadowing(s => !s); }}
-                                style={barBtn(shadowing)}
-                            >
-                                {t('shadow')}
-                            </button>
-                        )}
-                        {/* One subtitle button: it shows the current mode and
-                            opens the menu that changes it, style and all. */}
+                        {/* Named, never lit: subtitles are on nearly always,
+                            so an active tint here would just be permanent
+                            blue. Which track is on is the menu's job to say. */}
                         <button
                             title={t('subMenuTitle')}
                             onClick={(e) => {
@@ -1164,10 +1164,10 @@ export const VideoViewer = ({
                                 setEpisodesOpen(false);
                                 setStyleOpen(o => !o);
                             }}
-                            style={barBtn(styleOpen || ccMode !== 'off')}
+                            style={barBtn(false)}
                         >
                             <Captions size={15} />
-                            {CC_LABEL[ccMode]}
+                            {t('subMenuTitle')}
                         </button>
                     </>,
                     controlsSlot
