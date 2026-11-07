@@ -34,6 +34,9 @@ export const TranscriptSearch = ({ folder, onPick, onClose }) => {
     const { theme } = useTheme();
     const [query, setQuery] = useState('');
     const [scope, setScope] = useState('folder');
+    // 'text' matches the words that were said; 'ask' answers about what an
+    // episode is about, which no amount of word matching reaches.
+    const [mode, setMode] = useState('text');
     const [state, setState] = useState({ results: [], busy: false, ran: false });
     const [guide, setGuide] = useState({ busy: false, msg: '' });
     const inputRef = useRef(null);
@@ -67,9 +70,29 @@ export const TranscriptSearch = ({ folder, onPick, onClose }) => {
         return () => window.removeEventListener('keydown', onKey);
     }, [onClose]);
 
-    // Typing runs the search; the debounce keeps every keystroke from
+    // Asking costs money per question, so it never fires on a keystroke —
+    // only on Enter, and the status line reports what the answer cost.
+    const runAsk = async () => {
+        const api = getElectronAPI();
+        const q = query.trim();
+        if (!api?.askEpisodes || !q || state.busy) return;
+        setState(s => ({ ...s, busy: true, ran: true }));
+        const r = await api.askEpisodes({ folder, question: q, scope });
+        setState({
+            results: r.results || [],
+            busy: false,
+            ran: true,
+            asked: true,
+            considered: r.considered,
+            cost: r.cost,
+            error: r.error === 'NO_GUIDES' ? t('askNeedsGuide') : r.error
+        });
+    };
+
+    // Typing runs the literal search; the debounce keeps every keystroke from
     // re-reading every library file on the disk.
     useEffect(() => {
+        if (mode !== 'text') return;
         const api = getElectronAPI();
         const phrase = query.trim();
         if (!api?.searchSubtitles || !folder || !phrase) {
@@ -93,7 +116,7 @@ export const TranscriptSearch = ({ folder, onPick, onClose }) => {
             });
         }, 220);
         return () => { dropped = true; clearTimeout(timer); };
-    }, [query, scope, folder]);
+    }, [query, scope, folder, mode]);
 
     // One heading per episode keeps thirty hits from reading as a flat wall.
     const grouped = useMemo(() => {
@@ -124,11 +147,28 @@ export const TranscriptSearch = ({ folder, onPick, onClose }) => {
                 }}
             >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 14 }}>
+                    <div style={{ display: 'flex', borderRadius: 7, overflow: 'hidden', border: `1px solid ${theme.border}`, flex: 'none' }}>
+                        {['text', 'ask'].map(m => (
+                            <button
+                                key={m}
+                                onClick={() => { setMode(m); setState({ results: [], busy: false, ran: false }); }}
+                                title={t(`searchMode_${m}_hint`)}
+                                style={{
+                                    padding: '8px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                                    background: mode === m ? theme.accent : 'transparent',
+                                    color: mode === m ? '#fff' : theme.textSecondary
+                                }}
+                            >
+                                {t(`searchMode_${m}`)}
+                            </button>
+                        ))}
+                    </div>
                     <input
                         ref={inputRef}
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
-                        placeholder={t('searchPlaceholder')}
+                        onKeyDown={(e) => { if (mode === 'ask' && e.key === 'Enter') runAsk(); }}
+                        placeholder={mode === 'ask' ? t('askPlaceholder') : t('searchPlaceholder')}
                         style={{
                             flex: 1, padding: '9px 12px', borderRadius: 8, fontSize: 14,
                             background: theme.inputBg, color: theme.text,
@@ -164,11 +204,13 @@ export const TranscriptSearch = ({ folder, onPick, onClose }) => {
                     <span style={{ flex: 1, minWidth: 0 }}>
                         {guide.msg ? guide.msg
                             : state.error ? state.error
-                                : state.busy ? t('searching')
-                                    : state.ran
-                                        ? `${state.results.length}${state.truncated ? '+' : ''} · ${state.searched} ${t('searchedVideos')}`
-                                        + (state.episodesDropped ? ` · ${t('searchTooCommon')}` : '')
-                                        : t('searchHint')}
+                                : state.busy ? (mode === 'ask' ? t('asking') : t('searching'))
+                                    : !state.ran ? (mode === 'ask' ? t('askHint') : t('searchHint'))
+                                        : state.asked
+                                            ? `${state.results.length} · ${state.considered} ${t('searchedVideos')}`
+                                            + (state.cost ? ` · $${state.cost.toFixed(3)}` : '')
+                                            : `${state.results.length}${state.truncated ? '+' : ''} · ${state.searched} ${t('searchedVideos')}`
+                                            + (state.episodesDropped ? ` · ${t('searchTooCommon')}` : '')}
                     </span>
                     <button
                         onClick={importGuide}
@@ -217,10 +259,19 @@ export const TranscriptSearch = ({ folder, onPick, onClose }) => {
                                         flex: 'none', fontSize: 11, color: theme.accent,
                                         fontVariantNumeric: 'tabular-nums', paddingTop: 1
                                     }}>
-                                        {hit.kind === 'episode' ? t('guideBadge') : fmt(hit.start)}
+                                        {hit.kind === 'line' ? fmt(hit.start) : t('guideBadge')}
                                     </span>
                                     <span style={{ flex: 1, minWidth: 0, fontSize: 13, lineHeight: 1.45 }}>
-                                        {hit.kind === 'episode' ? (
+                                        {hit.kind === 'ai' ? (
+                                            <>
+                                                <span style={{ fontWeight: 600, color: theme.text }}>{hit.title}</span>
+                                                {/* The reason is the answer; the synopsis is the evidence. */}
+                                                <div style={{ fontSize: 12, color: theme.accent, marginTop: 3 }}>{hit.why}</div>
+                                                <div style={{ fontSize: 11, color: theme.textTertiary, marginTop: 2 }}>
+                                                    {hit.summary.slice(0, 160)}
+                                                </div>
+                                            </>
+                                        ) : hit.kind === 'episode' ? (
                                             <>
                                                 <span style={{ fontWeight: 600, color: theme.text }}>
                                                     <Highlighted text={hit.title} query={query.trim()} color={theme.accent} />

@@ -37,6 +37,7 @@ const library = require('./library-file.cjs');
 const srt = require('./srt.cjs');
 const librarySearch = require('./library-search.cjs');
 const wikiEpisodes = require('./wiki-episodes.cjs');
+const askEpisodes = require('./ask-episodes.cjs');
 const { registerTheaterStore, drainTheaterSaves } = require('./theater-store.cjs');
 const { registerSyncClient, drainSyncRequests } = require('./sync-client.cjs');
 const { registerLocalVideoProtocol } = require('./local-video-protocol.cjs');
@@ -1442,6 +1443,19 @@ function setupIpcHandlers() {
             page: found.page, episodes: found.episodes.length,
             unmatched: parsed.size - matched
         };
+    });
+
+    // The same question literal search cannot answer: "which one is about
+    // trust", where no episode says that word. Costs real money per ask, so
+    // it only ever runs when explicitly asked for.
+    ipcMain.handle('ask-episodes', async (_event, { folder, question, scope } = {}) => {
+        if (!folder || !question) return { success: false, error: 'Need a folder and a question' };
+        try {
+            const folders = librarySearch.foldersInScope(folder, scope);
+            return await askEpisodes.ask({ folders, question });
+        } catch (e) {
+            return { success: false, error: e.message, results: [] };
+        }
     });
 
     ipcMain.handle('reel-renderer-status', () => ({
