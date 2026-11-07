@@ -1189,9 +1189,18 @@ function setupIpcHandlers() {
 
     // --- Watch on another device ---
 
+    // The share's token lives beside the app's other data, so the link a
+    // phone bookmarked still works after a restart.
+    lanServer.setStatePath(app.getPath('userData'));
     ipcMain.handle('lan-start', async (_event, { folder }) => await lanServer.start({ folder }));
     ipcMain.handle('lan-stop', () => lanServer.stop());
     ipcMain.handle('lan-status', () => lanServer.status());
+    ipcMain.handle('lan-rotate', () => lanServer.rotateToken());
+    // A share that was on when the app closed comes back on, rather than the
+    // phone finding nothing there.
+    lanServer.resume().then((r) => {
+        if (r?.resumed) console.log(`[lan] resumed share: ${r.url}`);
+    }).catch(() => { /* nothing was saved */ });
 
     // --- Offline dictionary (ECDICT) ---
 
@@ -2606,6 +2615,7 @@ app.on('will-quit', (event) => {
     event.preventDefault();
     killAllFfmpegJobs(); // don't leave orphaned encoders behind
     remotionRunner?.stop(); // and no orphaned Chromium either
+    lanServer.stop({ quitting: true }); // remembered, so it resumes next launch
     Promise.race([
         Promise.allSettled([drainTheaterSaves(), drainSyncRequests()]),
         new Promise((resolve) => setTimeout(resolve, 2000)),

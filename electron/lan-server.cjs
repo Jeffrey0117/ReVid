@@ -29,6 +29,44 @@ function makeToken() {
     return crypto.randomBytes(16).toString('base64url');
 }
 
+// The token used to be regenerated per start, so the phone's bookmark died
+// every time the app restarted. It is kept beside the app's other data
+// instead, and only changes when deliberately rotated.
+let tokenFile = null;
+
+function setStatePath(dir) {
+    tokenFile = path.join(dir, 'lan-share.json');
+}
+
+function readState() {
+    if (!tokenFile) return {};
+    try { return JSON.parse(fs.readFileSync(tokenFile, 'utf8')); } catch (e) { return {}; }
+}
+
+function writeState(patch) {
+    if (!tokenFile) return;
+    try {
+        fs.writeFileSync(tokenFile, JSON.stringify({ ...readState(), ...patch }), 'utf8');
+    } catch (e) { /* a share that cannot be remembered still works now */ }
+}
+
+function stableToken() {
+    const saved = readState().token;
+    if (typeof saved === 'string' && saved.length >= 20) return saved;
+    const fresh = makeToken();
+    writeState({ token: fresh });
+    return fresh;
+}
+
+// Rotating invalidates every device that had the old link, which is the
+// point: it is how a share is taken back.
+function rotateToken() {
+    const fresh = makeToken();
+    writeState({ token: fresh });
+    if (server) token = fresh;
+    return { success: true, ...status() };
+}
+
 // Prefer a real LAN address over loopback or virtual adapters, so the URL
 // shown to the user is one a phone can actually reach.
 function lanAddress() {
@@ -183,7 +221,7 @@ function start({ folder, port = 31848 }) {
         return { success: false, error: 'No folder is open' };
     }
     servedRoot = folder;
-    token = makeToken();
+    token = stableToken();
 
     return new Promise((resolve) => {
         server = http.createServer(handle);
@@ -208,6 +246,9 @@ function start({ folder, port = 31848 }) {
             server.listen(p, '0.0.0.0', () => {
                 server.removeListener('error', onError);
                 boundPort = server.address().port;
+                // Remembered so the share comes back after a restart rather
+                // than silently being off when the phone asks for it.
+                writeState({ folder, port: boundPort, wasRunning: true });
                 resolve({
                     success: true,
                     url: `http://${lanAddress()}:${boundPort}/?k=${token}`,
@@ -220,13 +261,25 @@ function start({ folder, port = 31848 }) {
     });
 }
 
-function stop() {
+// quitting=true keeps the "was running" memory so a restart resumes it; a
+// user switching it off means off.
+function stop({ quitting = false } = {}) {
     if (server) { try { server.close(); } catch (e) { /* already down */ } }
     server = null;
     token = null;
     servedRoot = null;
     boundPort = 0;
+    if (!quitting) writeState({ wasRunning: false });
     return { success: true };
+}
+
+// Bring back a share that was on when the app last closed.
+async function resume() {
+    const saved = readState();
+    if (!saved.wasRunning || !saved.folder) return { success: false, resumed: false };
+    if (!fs.existsSync(saved.folder)) return { success: false, resumed: false };
+    const r = await start({ folder: saved.folder, port: saved.port || 31848 });
+    return { ...r, resumed: r.success };
 }
 
 function status() {
@@ -235,4 +288,4 @@ function status() {
         : { running: false };
 }
 
-module.exports = { start, stop, status };
+module.exports = { start, stop, status, resume, rotateToken, setStatePath };

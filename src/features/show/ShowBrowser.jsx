@@ -4,6 +4,7 @@ import { useTheme } from '../../theme.jsx';
 import { toLocalVideoUrl } from '../../utils/localVideoUrl';
 import { generateVideoThumbnail, getCachedThumbnail } from '../../utils/videoThumbnails';
 import { getVideoMetadata, getCachedMetadata } from '../../utils/videoMetadata';
+import { EpisodeSheet } from './EpisodeSheet';
 
 const getElectronAPI = () => window.electronAPI || null;
 
@@ -26,6 +27,9 @@ export const ShowBrowser = ({ folder, onOpenEpisode }) => {
     const [media, setMedia] = useState({});
     const [busy, setBusy] = useState(false);
     const [msg, setMsg] = useState('');
+    // A card opens the episode's details rather than committing to it; the
+    // synopsis is the thing you wanted to read before giving up 22 minutes.
+    const [sheet, setSheet] = useState(null);
     const pendingRef = useRef(new Set());
     const stripRef = useRef(null);
 
@@ -299,7 +303,7 @@ export const ShowBrowser = ({ folder, onOpenEpisode }) => {
                     return (
                         <button
                             key={ep.videoPath}
-                            onClick={() => onOpenEpisode(ep.videoPath)}
+                            onClick={() => setSheet(ep)}
                             style={{
                                 display: 'flex', flexDirection: 'column', textAlign: 'left',
                                 borderRadius: 8, overflow: 'hidden', cursor: 'pointer',
@@ -360,6 +364,16 @@ export const ShowBrowser = ({ folder, onOpenEpisode }) => {
                     );
                 })}
             </div>
+
+            {sheet && (
+                <EpisodeSheet
+                    episode={sheet}
+                    season={season}
+                    onPlay={(p) => { setSheet(null); onOpenEpisode(p); }}
+                    onPick={setSheet}
+                    onClose={() => setSheet(null)}
+                />
+            )}
         </div>
     );
 };

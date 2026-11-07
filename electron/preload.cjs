@@ -352,6 +352,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     lanStart: (folder) => ipcRenderer.invoke('lan-start', { folder }),
     lanStop: () => ipcRenderer.invoke('lan-stop'),
     lanStatus: () => ipcRenderer.invoke('lan-status'),
+    lanRotate: () => ipcRenderer.invoke('lan-rotate'),
 
     // --- Offline dictionary ---
 
