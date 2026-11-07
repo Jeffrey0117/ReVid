@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useMemo } from 'react';
 import { useI18n } from '../i18n.jsx';
 import { useTheme } from '../theme.jsx';
 import { formatTime, formatTimePrecise } from '../features/editor/components/TrimTimeline';
+import { canToggleRow, missedRows, pendingRows } from './batchCutRules';
 
 const getElectronAPI = () => window.electronAPI || null;
 
@@ -48,7 +49,7 @@ export const BatchCutDialog = ({ files, template, onClose }) => {
     ), [cutPointOf]);
 
     const selectedRows = useMemo(
-        () => rows.filter(r => r.selected && r.status === 'found' && !nothingToCut(r)),
+        () => pendingRows(rows, nothingToCut),
         [rows, nothingToCut]
     );
     const scanTargets = useMemo(() => rows.filter(r => r.selected), [rows]);
@@ -57,13 +58,14 @@ export const BatchCutDialog = ({ files, template, onClose }) => {
         setRows(prev => prev.map(r => (r.path === path ? { ...r, ...patch } : r)));
     }, []);
 
-    // A row is toggleable while picking scan targets, and again in review for
-    // rows where the segment was actually found.
-    const canToggle = useCallback((row) => {
-        if (phase === 'setup') return true;
-        if (phase === 'review') return row.status === 'found' && !nothingToCut(row);
-        return false;
-    }, [phase, nothingToCut]);
+    const canToggle = useCallback(
+        (row) => canToggleRow(phase, row, nothingToCut),
+        [phase, nothingToCut]
+    );
+
+    // Rows that found a segment and were never cut — the ones you notice
+    // only once the run has finished.
+    const missed = useMemo(() => missedRows(rows, nothingToCut), [rows, nothingToCut]);
 
     // Click toggles one row; Shift+click applies this click's new state to the
     // whole range back to the previously clicked row (file-manager style).
@@ -363,9 +365,34 @@ export const BatchCutDialog = ({ files, template, onClose }) => {
                             </button>
                         )}
                         {phase === 'done' && (
-                            <button className="btn btn-primary" onClick={onClose}>
-                                {t('batchCutClose')}
-                            </button>
+                            <>
+                                {missed.length > 0 && (
+                                    <span style={{
+                                        alignSelf: 'center', marginRight: 'auto',
+                                        fontSize: 12, color: theme.pin
+                                    }}>
+                                        {t('batchCutMissed').replace('{n}', missed.length)}
+                                    </span>
+                                )}
+                                {/* A second pass over what was left behind,
+                                    instead of rescanning the whole folder. */}
+                                {selectedRows.length > 0 && (
+                                    <button
+                                        className="btn btn-primary"
+                                        onClick={() => {
+                                            if (!replaceOriginal || window.confirm(t('batchCutReplaceConfirm'))) handleCut();
+                                        }}
+                                    >
+                                        {t('batchCutAlsoBtn')} ({selectedRows.length})
+                                    </button>
+                                )}
+                                <button
+                                    className={selectedRows.length > 0 ? 'btn btn-ghost' : 'btn btn-primary'}
+                                    onClick={onClose}
+                                >
+                                    {t('batchCutClose')}
+                                </button>
+                            </>
                         )}
                     </div>
                 </div>
