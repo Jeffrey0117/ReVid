@@ -7,7 +7,9 @@ import { getCachedThumbnail } from '../../utils/videoThumbnails';
 import { parseSubtitles, findActiveCueIndex } from '../../utils/subtitles';
 import { TranscriptPanel } from './TranscriptPanel';
 import { SubtitleSettings, readSubtitleStyle } from './SubtitleSettings';
-import { WordCard, ClickableText, readDifficulty } from './WordLookup';
+import {
+    WordCard, ClickableText, readDifficulty, writeDifficulty, readKnownWords
+} from './WordLookup';
 import { Captions, PanelRight, Sliders } from '../../components/icons';
 import { setAudioSlot, setAudioSlotProvider, setPlayerBridge } from '../plugins/pluginRuntime';
 import { PluginPanelHost } from '../plugins/PluginPanelHost';
@@ -102,6 +104,9 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
     // Word lookup: { word, example, anchor } | null, and per-cue difficult marks.
     const [wordCard, setWordCard] = useState(null);
     const [difficultMarks, setDifficultMarks] = useState({});
+    const [difficulty, setDifficulty] = useState(readDifficulty);
+    const [knownWords, setKnownWords] = useState(readKnownWords);
+    const learnMode = difficulty.mark;
     const [transcriptOpen, setTranscriptOpen] = useState(() => readBool(TRANSCRIPT_KEY, false));
     const [transcribing, setTranscribing] = useState(null); // { pct } | null
     const [whisperMissing, setWhisperMissing] = useState(false);
@@ -565,18 +570,35 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
     // round-trip rather than per word.
     useEffect(() => {
         const api = getElectronAPI();
-        if (!api?.dictMarkDifficult || cues.length === 0) { setDifficultMarks({}); return; }
-        const settings = readDifficulty();
-        if (!settings.mark) { setDifficultMarks({}); return; }
+        if (!api?.dictMarkDifficult || cues.length === 0 || !learnMode) {
+            setDifficultMarks({});
+            return;
+        }
         let cancelled = false;
         api.dictMarkDifficult(cues.map(c => c.text), {
-            tags: settings.tags,
-            minFreqRank: settings.minFreqRank
+            tags: difficulty.tags,
+            minFreqRank: difficulty.minFreqRank
         }).then((r) => {
-            if (!cancelled && r.success) setDifficultMarks(r.marks || {});
+            if (cancelled || !r.success) return;
+            // Words the reader has retired are dropped here rather than in the
+            // dictionary, so the known list stays a renderer-side preference.
+            const filtered = {};
+            for (const [idx, hits] of Object.entries(r.marks || {})) {
+                const keep = hits.filter(h => !knownWords.has(h.base));
+                if (keep.length) filtered[idx] = keep;
+            }
+            setDifficultMarks(filtered);
         });
         return () => { cancelled = true; };
-    }, [cues]);
+    }, [cues, learnMode, knownWords, difficulty.tags, difficulty.minFreqRank]);
+
+    const toggleLearnMode = useCallback(() => {
+        setDifficulty(prev => {
+            const next = { ...prev, mark: !prev.mark };
+            writeDifficulty(next);
+            return next;
+        });
+    }, []);
 
     const openWordCard = useCallback((word, event, example) => {
         setWordCard({
@@ -864,6 +886,13 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                         <Sliders size={16} />
                     </button>
                     <button
+                        title={t('learnModeHint')}
+                        onClick={toggleLearnMode}
+                        style={{ ...iconBtn(learnMode), width: 'auto', padding: '0 9px', fontSize: 11, fontWeight: 600 }}
+                    >
+                        {t('learnMode')}
+                    </button>
+                    <button
                         title={t('transcriptToggle')}
                         onClick={toggleTranscript}
                         style={iconBtn(transcriptOpen)}
@@ -880,6 +909,13 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                             onChange={setSubStyle}
                             onClose={() => setStyleOpen(false)}
                             onRetranscribe={retranscribe}
+                            difficulty={difficulty}
+                            onDifficultyChange={(next) => { writeDifficulty(next); setDifficulty(next); }}
+                            knownCount={knownWords.size}
+                            onForgetKnown={() => {
+                                localStorage.removeItem('revid-known-words');
+                                setKnownWords(readKnownWords());
+                            }}
                         />
                     </div>
                 )}
@@ -972,6 +1008,7 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                     example={wordCard.example}
                     anchor={wordCard.anchor}
                     onClose={() => setWordCard(null)}
+                    onKnown={() => setKnownWords(readKnownWords())}
                 />
             )}
 

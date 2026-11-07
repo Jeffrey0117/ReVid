@@ -48,7 +48,10 @@ function Row({ label, children }) {
 }
 
 // Small popover for subtitle appearance. Values apply live and persist.
-export const SubtitleSettings = ({ style, onChange, onClose, onRetranscribe }) => {
+export const SubtitleSettings = ({
+    style, onChange, onClose, onRetranscribe,
+    difficulty, onDifficultyChange, knownCount = 0, onForgetKnown
+}) => {
     const { t } = useI18n();
     const { theme } = useTheme();
 
@@ -249,6 +252,40 @@ export const SubtitleSettings = ({ style, onChange, onClose, onRetranscribe }) =
                 />
                 {t('translateAuto')}
             </label>
+
+            {onDifficultyChange && (
+                <>
+                    <div style={{ height: 1, background: theme.border, margin: '12px 0' }} />
+                    <Row label={`${t('learnLevel')} ${difficulty.minFreqRank}`}>
+                        <input
+                            type="range" min="2000" max="20000" step="1000"
+                            value={difficulty.minFreqRank}
+                            onChange={(e) => onDifficultyChange({
+                                ...difficulty, minFreqRank: Number(e.target.value)
+                            })}
+                            style={{ width: '100%', accentColor: theme.accent }}
+                        />
+                        <div style={{
+                            display: 'flex', justifyContent: 'space-between',
+                            fontSize: 10, color: theme.textTertiary, marginTop: 2
+                        }}>
+                            <span>{t('learnLevelMore')}</span>
+                            <span>{t('learnLevelLess')}</span>
+                        </div>
+                    </Row>
+                    {knownCount > 0 && (
+                        <button
+                            onClick={onForgetKnown}
+                            style={{
+                                width: '100%', padding: '6px 0', borderRadius: 6, fontSize: 12,
+                                background: theme.inputBg, color: theme.textSecondary
+                            }}
+                        >
+                            {t('learnForgetKnown')} ({knownCount})
+                        </button>
+                    )}
+                </>
+            )}
 
             {onRetranscribe && (
                 <button

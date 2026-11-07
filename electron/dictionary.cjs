@@ -7,12 +7,14 @@
 const fs = require('fs');
 const path = require('path');
 
-// A word is "difficult" when it is rare ENOUGH first — exam word lists are
-// full of basics like make/order, so a tag alone over-marks badly. Tags then
-// narrow that set further rather than widening it.
+// Difficulty is driven by corpus frequency, not by exam word lists. Those
+// lists are both too generous (make, order sit in CET4) and too narrow (an
+// exam-tag filter silently skips maternity and robbery, which carry only
+// cet6). Rank is the one signal that tracks "have I met this word before".
+// Exam tags remain available as an OPTIONAL extra filter.
 const UNRANKED = 0;        // absent from the frequency list = very rare
-const RARE_RANK = 15000;   // rarer than this counts even with no exam tag
-const DEFAULT_FLOOR = 3000;
+const RARE_RANK = 15000;   // this rare is marked even when tags are filtered
+const DEFAULT_FLOOR = 5000;
 
 const TOKEN_PATTERN = /[A-Za-z][A-Za-z'’-]*/g;
 
@@ -68,14 +70,13 @@ function lookup(token) {
 
 function isDifficult(entry, { tags, minFreqRank }) {
     const floor = minFreqRank > 0 ? minFreqRank : DEFAULT_FLOOR;
-    const rareEnough = entry.rank === UNRANKED || entry.rank > floor;
-    if (!rareEnough) return false;
+    if (entry.rank !== UNRANKED && entry.rank <= floor) return false;
 
-    // Pure frequency mode: clearing the floor is enough.
-    if (!tags || tags.length === 0) return minFreqRank > 0;
+    // No tag filter: clearing the frequency floor is the whole test.
+    if (!tags || tags.length === 0) return true;
 
-    // Exam mode: needs one of the selected tags, but very rare words count
-    // even untagged.
+    // With a tag filter, words in the floor..RARE_RANK band must also carry
+    // one of the chosen tags; anything rarer is marked regardless.
     return entry.tags.some(t => tags.includes(t))
         || entry.rank === UNRANKED
         || entry.rank > RARE_RANK;
@@ -102,7 +103,7 @@ function looksLikeProperNoun(token, text, index) {
 function markDifficult(text, opts = {}) {
     const d = loadDict();
     const options = {
-        tags: Array.isArray(opts.tags) ? opts.tags : ['toefl', 'ielts'],
+        tags: Array.isArray(opts.tags) ? opts.tags : [],
         minFreqRank: Number.isFinite(opts.minFreqRank) ? opts.minFreqRank : DEFAULT_FLOOR
     };
 

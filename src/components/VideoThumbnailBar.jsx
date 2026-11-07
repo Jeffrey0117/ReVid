@@ -428,17 +428,6 @@ export const VideoThumbnailBar = ({
                     onMouseLeave={(e) => e.currentTarget.style.transform = ''}
                 >
                     <div style={{
-                        fontSize: 10, fontWeight: isActive ? 700 : 400,
-                        color: isActive ? '#fff' : textMuted,
-                        background: isActive ? '#3b82f6' : 'transparent',
-                        borderRadius: 999, minWidth: 18, padding: '1px 6px',
-                        textAlign: 'center', marginBottom: 4,
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        transition: 'background 0.2s, color 0.2s'
-                    }}>
-                        {index + 1}
-                    </div>
-                    <div style={{
                         width: thumbSize.width, height: thumbSize.height,
                         borderRadius: 8, overflow: 'hidden',
                         border: isActive ? '2px solid #3b82f6' : '2px solid transparent',
@@ -452,6 +441,22 @@ export const VideoThumbnailBar = ({
                                 <div style={{ width: 16, height: 16, border: `2px solid ${spinnerBorder}`, borderTopColor: spinnerActive, borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
                             </div>
                         )}
+
+                        {/* The index sits ON its own thumbnail. Above the image
+                            it read as belonging to the item before it, which
+                            made the list easy to miscount. */}
+                        <div style={{
+                            position: 'absolute', top: 3, left: 3,
+                            minWidth: 15, padding: '1px 5px', borderRadius: 4,
+                            fontSize: 10, fontWeight: isActive ? 700 : 500,
+                            textAlign: 'center',
+                            background: isActive ? '#3b82f6' : 'rgba(0,0,0,0.65)',
+                            color: isActive ? '#fff' : 'rgba(255,255,255,0.75)',
+                            transition: 'background 0.2s, color 0.2s',
+                            pointerEvents: 'none'
+                        }}>
+                            {index + 1}
+                        </div>
                     </div>
                     <div style={{ marginTop: 4, fontSize: 10, fontWeight: 500, textAlign: 'center', width: '100%', padding: '0 4px', color: isActive ? '#3b82f6' : textBright, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {fileName}

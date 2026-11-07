@@ -6,8 +6,30 @@ const getElectronAPI = () => window.electronAPI || null;
 
 const WORDBOOK_KEY = 'revid-wordbook';
 const DIFFICULTY_KEY = 'revid-difficulty';
+const KNOWN_KEY = 'revid-known-words';
 
-export const DEFAULT_DIFFICULTY = { tags: ['toefl', 'ielts'], minFreqRank: 3000, mark: true };
+// Marking is off by default: underlines everywhere are noise when you are
+// just watching. Learning mode turns them on.
+export const DEFAULT_DIFFICULTY = { tags: [], minFreqRank: 5000, mark: false };
+
+// Words the user says they already know are never marked again.
+export function readKnownWords() {
+    try { return new Set(JSON.parse(localStorage.getItem(KNOWN_KEY)) || []); } catch { return new Set(); }
+}
+
+export function markWordKnown(base) {
+    const known = readKnownWords();
+    known.add(base);
+    try { localStorage.setItem(KNOWN_KEY, JSON.stringify([...known])); } catch { /* full */ }
+    return known;
+}
+
+export function unmarkWordKnown(base) {
+    const known = readKnownWords();
+    known.delete(base);
+    try { localStorage.setItem(KNOWN_KEY, JSON.stringify([...known])); } catch { /* full */ }
+    return known;
+}
 
 export function readDifficulty() {
     try {
@@ -43,7 +65,7 @@ export function removeWord(word) {
 const TAG_LABELS = { cet4: 'CET4', cet6: 'CET6', toefl: 'TOEFL', ielts: 'IELTS', gre: 'GRE' };
 
 // Definition card for one word, anchored near where it was clicked.
-export const WordCard = ({ word, example, anchor, onClose }) => {
+export const WordCard = ({ word, example, anchor, onClose, onKnown }) => {
     const { t } = useI18n();
     const { theme } = useTheme();
     const [entry, setEntry] = useState(undefined); // undefined = loading, null = not found
@@ -138,19 +160,33 @@ export const WordCard = ({ word, example, anchor, onClose }) => {
                         {entry.definition}
                     </div>
 
-                    <button
-                        onClick={saved ? undefined : add}
-                        disabled={saved}
-                        style={{
-                            marginTop: 12, width: '100%', padding: '6px 0',
-                            borderRadius: 6, fontSize: 12,
-                            cursor: saved ? 'default' : 'pointer',
-                            background: saved ? theme.inputBg : theme.accent,
-                            color: saved ? theme.textTertiary : '#fff'
-                        }}
-                    >
-                        {saved ? t('wordSaved') : t('wordAdd')}
-                    </button>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
+                        <button
+                            onClick={saved ? undefined : add}
+                            disabled={saved}
+                            style={{
+                                flex: 1, padding: '6px 0',
+                                borderRadius: 6, fontSize: 12,
+                                cursor: saved ? 'default' : 'pointer',
+                                background: saved ? theme.inputBg : theme.accent,
+                                color: saved ? theme.textTertiary : '#fff'
+                            }}
+                        >
+                            {saved ? t('wordSaved') : t('wordAdd')}
+                        </button>
+                        {/* Frequency can't know what THIS reader knows, so let
+                            them retire a word from marking by hand. */}
+                        <button
+                            title={t('wordKnownHint')}
+                            onClick={() => { markWordKnown(entry.word); onKnown?.(entry.word); onClose(); }}
+                            style={{
+                                padding: '6px 10px', borderRadius: 6, fontSize: 12,
+                                background: theme.inputBg, color: theme.textSecondary
+                            }}
+                        >
+                            {t('wordKnown')}
+                        </button>
+                    </div>
                 </>
             )}
         </div>
