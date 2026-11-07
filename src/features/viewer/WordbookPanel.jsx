@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useI18n } from '../../i18n.jsx';
 import { useTheme } from '../../theme.jsx';
 import { readWordbook, removeWord } from './WordLookup';
@@ -24,6 +24,13 @@ export const WordbookPanel = ({ onClose, onSeekToExample }) => {
     const { theme } = useTheme();
     const [words, setWords] = useState(readWordbook);
     const [query, setQuery] = useState('');
+
+    // A sync round can merge in words added on another machine.
+    useEffect(() => {
+        const refresh = () => setWords(readWordbook());
+        window.addEventListener('revid-docs-updated', refresh);
+        return () => window.removeEventListener('revid-docs-updated', refresh);
+    }, []);
 
     const drop = useCallback((word) => {
         setWords(removeWord(word));

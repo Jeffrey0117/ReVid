@@ -4,31 +4,58 @@ import { useTheme } from '../../theme.jsx';
 
 const getElectronAPI = () => window.electronAPI || null;
 
-const WORDBOOK_KEY = 'revid-wordbook';
+import { readDoc, writeDoc, DOC_IDS } from '../sync/docsStore';
+
 const DIFFICULTY_KEY = 'revid-difficulty';
-const KNOWN_KEY = 'revid-known-words';
+// Pre-sync storage. Still read once so an existing list is not lost when the
+// account-level store takes over.
+const LEGACY_WORDBOOK_KEY = 'revid-wordbook';
+const LEGACY_KNOWN_KEY = 'revid-known-words';
 
 // Whether marking happens at all is the viewer's mode, not a setting here —
 // these are only the thresholds it uses once learning mode is on.
 export const DEFAULT_DIFFICULTY = { tags: [], minFreqRank: 5000 };
 
+// One-time lift of pre-sync data into the account-level store.
+function migrateLegacy(key, build) {
+    try {
+        const raw = JSON.parse(localStorage.getItem(key));
+        if (raw) {
+            localStorage.removeItem(key);
+            return build(raw);
+        }
+    } catch { /* unreadable */ }
+    return null;
+}
+
 // Words the user says they already know are never marked again.
 export function readKnownWords() {
-    try { return new Set(JSON.parse(localStorage.getItem(KNOWN_KEY)) || []); } catch { return new Set(); }
+    let doc = readDoc(DOC_IDS.KNOWN_WORDS);
+    if (!doc) {
+        doc = migrateLegacy(LEGACY_KNOWN_KEY, (raw) => (
+            Array.isArray(raw) ? writeDoc(DOC_IDS.KNOWN_WORDS, { words: raw }) : null
+        ));
+    }
+    return new Set(doc?.words || []);
 }
 
 export function markWordKnown(base) {
     const known = readKnownWords();
     known.add(base);
-    try { localStorage.setItem(KNOWN_KEY, JSON.stringify([...known])); } catch { /* full */ }
+    writeDoc(DOC_IDS.KNOWN_WORDS, { words: [...known] });
     return known;
 }
 
 export function unmarkWordKnown(base) {
     const known = readKnownWords();
     known.delete(base);
-    try { localStorage.setItem(KNOWN_KEY, JSON.stringify([...known])); } catch { /* full */ }
+    writeDoc(DOC_IDS.KNOWN_WORDS, { words: [...known] });
     return known;
+}
+
+export function clearKnownWords() {
+    writeDoc(DOC_IDS.KNOWN_WORDS, { words: [] });
+    return new Set();
 }
 
 export function readDifficulty() {
@@ -45,21 +72,39 @@ export function writeDifficulty(value) {
 }
 
 export function readWordbook() {
-    try { return JSON.parse(localStorage.getItem(WORDBOOK_KEY)) || []; } catch { return []; }
+    let doc = readDoc(DOC_IDS.WORDBOOK);
+    if (!doc) {
+        doc = migrateLegacy(LEGACY_WORDBOOK_KEY, (raw) => (
+            Array.isArray(raw) ? writeDoc(DOC_IDS.WORDBOOK, { words: raw }) : null
+        ));
+    }
+    // Removals are tombstones so another device cannot resurrect them.
+    return (doc?.words || []).filter(w => w && !w.removed);
+}
+
+function writeWordbook(words) {
+    writeDoc(DOC_IDS.WORDBOOK, { words });
+    return words.filter(w => !w.removed);
 }
 
 export function saveWord(entry) {
-    const book = readWordbook();
-    if (book.some(w => w.word === entry.word)) return book;
-    const next = [...book, { ...entry, addedAt: Date.now() }];
-    try { localStorage.setItem(WORDBOOK_KEY, JSON.stringify(next)); } catch { /* full */ }
-    return next;
+    const all = readDoc(DOC_IDS.WORDBOOK)?.words || [];
+    const now = Date.now();
+    const existing = all.find(w => w.word === entry.word);
+    if (existing && !existing.removed) return readWordbook();
+    const next = [
+        ...all.filter(w => w.word !== entry.word),
+        { ...entry, addedAt: existing?.addedAt || now, updatedAt: now }
+    ];
+    return writeWordbook(next);
 }
 
 export function removeWord(word) {
-    const next = readWordbook().filter(w => w.word !== word);
-    try { localStorage.setItem(WORDBOOK_KEY, JSON.stringify(next)); } catch { /* full */ }
-    return next;
+    const all = readDoc(DOC_IDS.WORDBOOK)?.words || [];
+    const next = all.map(w => (
+        w.word === word ? { word, removed: true, updatedAt: Date.now() } : w
+    ));
+    return writeWordbook(next);
 }
 
 const TAG_LABELS = { cet4: 'CET4', cet6: 'CET6', toefl: 'TOEFL', ielts: 'IELTS', gre: 'GRE' };

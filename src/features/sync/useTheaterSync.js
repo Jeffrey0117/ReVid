@@ -4,6 +4,8 @@ import { collectDirty } from '../../utils/syncMerge.js';
 import { syncOnce, retryDelayFor } from './syncEngine.js';
 import { normalizeBaseUrl, SYNC_TIMING } from './syncConfig.js';
 
+import { collectDirtyDocs, applyRemoteDocs } from './docsStore';
+
 const getElectronAPI = () => window.electronAPI || null;
 // Always the *current* token — the SDK refreshes it before expiry.
 const currentToken = () => window.letmeuse?.getToken?.() || null;
@@ -84,6 +86,14 @@ export function useTheaterSync(theater) {
       getFolders: () => theaterRef.current.allFolders,
       applyFolders: (base, merged, reapply) => {
         theaterRef.current.replaceAllFolders((prev) => (prev === base ? merged : reapply(prev)));
+      },
+      getDirtyDocs: collectDirtyDocs,
+      applyDocs: (docs) => {
+        // Learning data is read from localStorage on mount, so a merge that
+        // changed something has to tell the UI to re-read it.
+        if (applyRemoteDocs(docs)) {
+          window.dispatchEvent(new CustomEvent('revid-docs-updated'));
+        }
       }
     });
 

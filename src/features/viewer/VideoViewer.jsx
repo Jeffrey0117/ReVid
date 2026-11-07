@@ -11,7 +11,7 @@ import { BookMarked, Lock } from '../../components/icons';
 import { hasFeature, FEATURES } from '../licensing/entitlements';
 import { SubtitleSettings, readSubtitleStyle, subtitleTextStyle } from './SubtitleSettings';
 import {
-    WordCard, ClickableText, readDifficulty, writeDifficulty, readKnownWords
+    WordCard, ClickableText, readDifficulty, writeDifficulty, readKnownWords, clearKnownWords
 } from './WordLookup';
 import { Captions, PanelRight, Sliders } from '../../components/icons';
 import { setAudioSlot, setAudioSlotProvider, setPlayerBridge } from '../plugins/pluginRuntime';
@@ -117,6 +117,13 @@ export const VideoViewer = ({ src, videoPath, timeRef, onExportStudy, onUpgrade 
     const [difficultMarks, setDifficultMarks] = useState({});
     const [difficulty, setDifficulty] = useState(readDifficulty);
     const [knownWords, setKnownWords] = useState(readKnownWords);
+
+    // Words retired on another machine arrive through a sync round.
+    useEffect(() => {
+        const refresh = () => setKnownWords(readKnownWords());
+        window.addEventListener('revid-docs-updated', refresh);
+        return () => window.removeEventListener('revid-docs-updated', refresh);
+    }, []);
     const [viewerMode, setViewerMode] = useState(() => {
         const saved = localStorage.getItem(VIEWER_MODE_KEY);
         return VIEWER_MODES.includes(saved) ? saved : 'browse';
@@ -1119,10 +1126,7 @@ export const VideoViewer = ({ src, videoPath, timeRef, onExportStudy, onUpgrade 
                             difficulty={difficulty}
                             onDifficultyChange={(next) => { writeDifficulty(next); setDifficulty(next); }}
                             knownCount={knownWords.size}
-                            onForgetKnown={() => {
-                                localStorage.removeItem('revid-known-words');
-                                setKnownWords(readKnownWords());
-                            }}
+                            onForgetKnown={() => setKnownWords(clearKnownWords())}
                         />
                     </div>
                 )}

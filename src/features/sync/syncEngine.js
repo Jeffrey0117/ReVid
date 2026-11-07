@@ -25,7 +25,10 @@ const freshStateFor = (state, userId) => ({
  * @param {Function} [p.now]
  * @returns {Promise<{ ok: true, state, userId, pushed, pulled } | { ok: false, failure, userId? }>}
  */
-export async function syncOnce({ request, state, verifiedUserId, getFolders, applyFolders, now = Date.now }) {
+export async function syncOnce({
+    request, state, verifiedUserId, getFolders, applyFolders,
+    getDirtyDocs, applyDocs, now = Date.now
+}) {
   let userId = verifiedUserId;
   if (!userId) {
     const me = await request('GET', '/v1/me');
@@ -41,22 +44,29 @@ export async function syncOnce({ request, state, verifiedUserId, getFolders, app
   // round are pushed next time (−1 guards same-millisecond edits).
   const pushStartedAt = now() - 1;
   const dirty = collectDirty(getFolders(), next.watermark || 0);
-  const incoming = { folders: [], courses: [] };
+  const incoming = { folders: [], courses: [], docs: [] };
+  // Account-level documents (word list, preferences) ride the same round:
+  // the server keeps one cursor per user across every kind, so a second
+  // independent sync loop would advance it past the other's records.
+  const dirtyDocs = getDirtyDocs ? getDirtyDocs(next.watermark || 0) : [];
   const records = [
     ...dirty.folders.map((r) => ['folders', r]),
-    ...dirty.courses.map((r) => ['courses', r])
+    ...dirty.courses.map((r) => ['courses', r]),
+    ...dirtyDocs.map((r) => ['docs', r])
   ];
   // 413 TOO_LARGE → split the batch in half; a single record that is still too
   // large is skipped (it stays local-only until edited) instead of wedging the
   // whole round in a retry loop (§5.1 「拆小批 / 跳過該筆」).
   let skipped = 0;
   const pushPart = async (part) => {
-    const body = { deviceId: next.deviceId, folders: [], courses: [] };
+    const body = { deviceId: next.deviceId, folders: [], courses: [], docs: [] };
     for (const [kind, rec] of part) body[kind].push(rec);
     const res = await request('POST', '/v1/sync', body);
     if (res.success) {
       incoming.folders.push(...(res.data?.conflicts?.folders || []));
       incoming.courses.push(...(res.data?.conflicts?.courses || []));
+      // Absent on a server that predates docs — it just ignores them.
+      incoming.docs.push(...(res.data?.conflicts?.docs || []));
       return null;
     }
     if (res.code === 'TOO_LARGE') {
@@ -80,6 +90,7 @@ export async function syncOnce({ request, state, verifiedUserId, getFolders, app
     if (!res.success) return { ok: false, failure: res, userId };
     incoming.folders.push(...(res.data?.folders || []));
     incoming.courses.push(...(res.data?.courses || []));
+    incoming.docs.push(...(res.data?.docs || []));
     if (typeof res.data?.cursor === 'number') cursor = res.data.cursor;
     if (!res.data?.hasMore) break;
   }
@@ -90,6 +101,7 @@ export async function syncOnce({ request, state, verifiedUserId, getFolders, app
   if (result.changed) {
     applyFolders(base, result.folders, (latest) => applyRemote(latest, remote).folders);
   }
+  if (applyDocs && incoming.docs.length) applyDocs(incoming.docs);
 
   next = { ...next, cursor, watermark: pushStartedAt, orphans: result.orphans, lastSyncedAt: now() };
   return {
@@ -98,7 +110,7 @@ export async function syncOnce({ request, state, verifiedUserId, getFolders, app
     userId,
     pushed: records.length - skipped,
     skipped,
-    pulled: incoming.folders.length + incoming.courses.length
+    pulled: incoming.folders.length + incoming.courses.length + incoming.docs.length
   };
 }
 
