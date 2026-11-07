@@ -18,7 +18,8 @@ const {
 } = require('./ffmpeg-runner.cjs');
 const { extractEnvelope, findSegmentOffset, FRAMES_PER_SECOND } = require('./segment-matcher.cjs');
 const {
-    getWhisperStatus, ensureWhisper, transcribeVideo, cleanupWhisperTemp, DEFAULT_MODEL
+    getWhisperStatus, ensureWhisper, transcribeVideo, cleanupWhisperTemp,
+    cachedSubtitlePath, DEFAULT_MODEL
 } = require('./whisper-runner.cjs');
 const { translateLines } = require('./translator.cjs');
 const { registerTheaterStore, drainTheaterSaves } = require('./theater-store.cjs');
@@ -274,7 +275,11 @@ function createWindow() {
         icon: path.join(__dirname, '../revid.png'),
         webPreferences: {
             preload: path.join(__dirname, 'preload.cjs'),
-            additionalArguments: launchVideo ? [`--revid-open=${launchVideo}`] : [],
+            additionalArguments: [
+                // Lets preload find the subtitle cache without an IPC round-trip.
+                `--revid-userdata=${app.getPath('userData')}`,
+                ...(launchVideo ? [`--revid-open=${launchVideo}`] : [])
+            ],
             nodeIntegration: false,
             contextIsolation: true,
             sandbox: false,
@@ -953,7 +958,8 @@ function setupIpcHandlers() {
             return { success: false, error: 'File not found' };
         }
         const base = videoPath.replace(/\.[^.]+$/, '');
-        if (fs.existsSync(`${base}.srt`) || fs.existsSync(`${base}.vtt`)) {
+        const cachedSrt = cachedSubtitlePath(videoPath, '.srt');
+        if (fs.existsSync(`${base}.srt`) || fs.existsSync(`${base}.vtt`) || fs.existsSync(cachedSrt)) {
             return { success: true, skipped: true, srtPath: `${base}.srt` };
         }
         const status = getWhisperStatus(DEFAULT_MODEL);
@@ -1045,11 +1051,18 @@ function setupIpcHandlers() {
         const zhPath = `${videoPath.replace(/\.[^.]+$/, '')}.zh.srt`;
         try {
             await fs.promises.writeFile(zhPath, srt, 'utf8');
+            return { success: true, translations: result.translations, zhPath };
         } catch (e) {
-            // Translation still usable in-session even if the sidecar fails.
-            return { success: true, translations: result.translations, saveError: e.message };
+            // Folder not writable — keep the translation in the cache so it
+            // isn't redone on the next open.
+            try {
+                const cached = cachedSubtitlePath(videoPath, '.zh.srt');
+                await fs.promises.writeFile(cached, srt, 'utf8');
+                return { success: true, translations: result.translations, zhPath: cached, cached: true };
+            } catch (e2) {
+                return { success: true, translations: result.translations, saveError: e.message };
+            }
         }
-        return { success: true, translations: result.translations, zhPath };
     });
 
     // --- Mini Player IPC Handlers ---

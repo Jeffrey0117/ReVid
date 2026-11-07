@@ -12,6 +12,24 @@ const INITIAL_OPEN_FILE = (() => {
     return arg ? arg.slice(prefix.length) : null;
 })();
 
+const USER_DATA_DIR = (() => {
+    const prefix = '--revid-userdata=';
+    const arg = process.argv.find((a) => a.startsWith(prefix));
+    return arg ? arg.slice(prefix.length) : null;
+})();
+
+// Mirrors whisper-runner's cache key: subtitles land here when the video's own
+// folder can't be written to, and must still be found on the next open.
+function cachedSubtitlePath(videoPath, suffix) {
+    if (!USER_DATA_DIR) return null;
+    let size = 0;
+    try { size = fs.statSync(videoPath).size; } catch (e) { /* gone */ }
+    let h = 0;
+    const s = `${path.resolve(videoPath).toLowerCase()}:${size}`;
+    for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+    return path.join(USER_DATA_DIR, 'subtitle-cache', `${(h >>> 0).toString(36)}-${size}${suffix}`);
+}
+
 // 鴨鴨家族面板（family-kit）：清單 / 安裝 / 開啟 / 前往下載 / 下載進度
 contextBridge.exposeInMainWorld('familyKit', {
     list: (options) => ipcRenderer.invoke('family:list', options),
@@ -202,7 +220,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
     },
 
-    // Same-basename .srt/.vtt beside the video, if any.
+    // Same-basename .srt/.vtt beside the video, else the cache copy.
     readSubtitles: (videoPath) => {
         try {
             const base = videoPath.replace(/\.[^.]+$/, '');
@@ -212,16 +230,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
                     return { path: p, format: ext.slice(1), content: fs.readFileSync(p, 'utf8') };
                 }
             }
+            const cached = cachedSubtitlePath(videoPath, '.srt');
+            if (cached && fs.existsSync(cached)) {
+                return { path: cached, format: 'srt', content: fs.readFileSync(cached, 'utf8') };
+            }
         } catch (e) { /* unreadable */ }
         return null;
     },
 
-    // Previously translated sidecar (<video>.zh.srt), if any.
+    // Previously translated sidecar (<video>.zh.srt), else the cache copy.
     readTranslatedSubtitles: (videoPath) => {
         try {
             const p = `${videoPath.replace(/\.[^.]+$/, '')}.zh.srt`;
             if (fs.existsSync(p)) {
                 return { path: p, format: 'srt', content: fs.readFileSync(p, 'utf8') };
+            }
+            const cached = cachedSubtitlePath(videoPath, '.zh.srt');
+            if (cached && fs.existsSync(cached)) {
+                return { path: cached, format: 'srt', content: fs.readFileSync(cached, 'utf8') };
             }
         } catch (e) { /* unreadable */ }
         return null;

@@ -195,6 +195,32 @@ function asciiWorkDir() {
 
 const TEMP_PREFIX = 'revid-whisper-';
 
+// Fallback store for when the video's own folder can't be written to
+// (read-only media, a network share, permissions). Subtitles belong next to
+// the video so other players can use them, but they must never be lost just
+// because that write failed — a lost .srt means re-transcribing from scratch.
+function subtitleCacheDir() {
+    const dir = path.join(app.getPath('userData'), 'subtitle-cache');
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+}
+
+// Stable per-file key: full path + size, so a moved or replaced file misses.
+function subtitleCacheKey(videoPath) {
+    let size = 0;
+    try { size = fs.statSync(videoPath).size; } catch (e) { /* gone */ }
+    let h = 0;
+    const s = `${path.resolve(videoPath).toLowerCase()}:${size}`;
+    for (let i = 0; i < s.length; i++) {
+        h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+    }
+    return `${(h >>> 0).toString(36)}-${size}`;
+}
+
+function cachedSubtitlePath(videoPath, suffix = '.srt') {
+    return path.join(subtitleCacheDir(), `${subtitleCacheKey(videoPath)}${suffix}`);
+}
+
 // Windows won't unlink a file a just-killed process still holds open, so the
 // delete is retried briefly. An abandoned wav is ~2MB per minute of video.
 async function removeWithRetry(filePath) {
@@ -308,13 +334,22 @@ async function transcribeVideo({ videoPath, exePath, fallbackExePath, modelPath:
     }
 
     // Move to the real filename via fs, which handles non-ASCII correctly.
+    // If that folder isn't writable, keep the work in the cache rather than
+    // discarding a finished transcription.
     try {
         await fs.promises.copyFile(tmpSrtPath, srtPath);
         await removeWithRetry(tmpSrtPath);
+        return { success: true, srtPath };
     } catch (e) {
-        return { success: false, error: `Could not save subtitles: ${e.message}` };
+        try {
+            const cached = cachedSubtitlePath(videoPath, '.srt');
+            await fs.promises.copyFile(tmpSrtPath, cached);
+            await removeWithRetry(tmpSrtPath);
+            return { success: true, srtPath: cached, cached: true, saveError: e.message };
+        } catch (e2) {
+            return { success: false, error: `Could not save subtitles: ${e.message}` };
+        }
     }
-    return { success: true, srtPath };
 }
 
 module.exports = {
@@ -323,6 +358,7 @@ module.exports = {
     ensureWhisper,
     transcribeVideo,
     cleanupWhisperTemp,
+    cachedSubtitlePath,
     // exported for tests
     findWhisperExe,
     downloadFile,
