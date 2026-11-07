@@ -103,6 +103,9 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
     const [subsRetry, setSubsRetry] = useState(0);
     const cuesRef = useRef(cues);
     cuesRef.current = cues;
+    // Read inside the timeupdate listener without rebinding it per change.
+    const subShiftRef = useRef(0);
+    subShiftRef.current = subStyle.timeShift || 0;
 
     // A-B loop + resume prompt + glow
     const [abLoop, setAbLoop] = useState(null); // { a, b|null }
@@ -270,8 +273,9 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
             // stale position from another video is never applied.
             if (timeRef) timeRef.current = { src: srcRef.current, time: tNow };
 
-            // Subtitle cue under the playhead.
-            const idx = findActiveCueIndex(cuesRef.current, tNow);
+            // Subtitle cue under the playhead. The sync nudge shifts the cue
+            // timeline, so look the cue up at the un-shifted position.
+            const idx = findActiveCueIndex(cuesRef.current, tNow - subShiftRef.current);
             setActiveCueIndex((prev) => (prev === idx ? prev : idx));
 
             // A-B loop.
@@ -509,6 +513,23 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
         if (cues.length === 0 || cues.some(c => c.zh) || translating || transcribing) return;
         translateCues();
     }, [cues, translating, transcribing, translateCues]);
+
+    // Discard this video's subtitles and run them again.
+    const retranscribe = useCallback(async () => {
+        const api = getElectronAPI();
+        if (!api?.retranscribeVideo || !videoPath || transcribing) return;
+        if (!window.confirm(t('retranscribeConfirm'))) return;
+        setCues([]);
+        setActiveCueIndex(-1);
+        setTranscribing({ pct: 0 });
+        let live = [];
+        const result = await api.retranscribeVideo(videoPath, (ev) => {
+            if (ev.type === 'cue') { live = [...live, ev.cue]; setCues(live); }
+            else if (ev.type === 'progress') setTranscribing({ pct: ev.pct });
+        });
+        setTranscribing(null);
+        if (result?.success) setSubsRetry(n => n + 1);
+    }, [videoPath, transcribing, t]);
 
     const toggleTranscript = useCallback(() => {
         setTranscriptOpen(prev => {
@@ -768,6 +789,7 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                             style={subStyle}
                             onChange={setSubStyle}
                             onClose={() => setStyleOpen(false)}
+                            onRetranscribe={retranscribe}
                         />
                     </div>
                 )}

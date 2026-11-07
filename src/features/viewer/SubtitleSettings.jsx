@@ -21,7 +21,8 @@ export const DEFAULT_SUBTITLE_STYLE = {
     color: '#ffffff',
     bgOpacity: 0.72,
     position: 'bottom', // bottom | top
-    offset: 76          // px from that edge
+    offset: 76,         // px from that edge
+    timeShift: 0        // seconds added to every cue time
 };
 
 export function readSubtitleStyle() {
@@ -47,7 +48,7 @@ function Row({ label, children }) {
 }
 
 // Small popover for subtitle appearance. Values apply live and persist.
-export const SubtitleSettings = ({ style, onChange, onClose }) => {
+export const SubtitleSettings = ({ style, onChange, onClose, onRetranscribe }) => {
     const { t } = useI18n();
     const { theme } = useTheme();
 
@@ -166,6 +167,42 @@ export const SubtitleSettings = ({ style, onChange, onClose }) => {
 
             <div style={{ height: 1, background: theme.border, margin: '14px 0 12px' }} />
 
+            {/* Sync nudge: recordings carry all sorts of timeline offsets, and
+                no amount of fixing at the source covers every file. */}
+            <Row label={`${t('subStyleSync')} ${style.timeShift > 0 ? '+' : ''}${style.timeShift.toFixed(1)}s`}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <button
+                        onClick={() => set({ timeShift: Math.round((style.timeShift - 0.1) * 10) / 10 })}
+                        style={{
+                            width: 26, height: 22, borderRadius: 4, fontSize: 12,
+                            background: theme.inputBg, color: theme.textSecondary
+                        }}
+                    >
+                        {'−'}
+                    </button>
+                    <input
+                        type="range" min="-10" max="10" step="0.1"
+                        value={style.timeShift}
+                        onChange={(e) => set({ timeShift: Number(e.target.value) })}
+                        style={{ flex: 1, accentColor: theme.accent }}
+                    />
+                    <button
+                        onClick={() => set({ timeShift: Math.round((style.timeShift + 0.1) * 10) / 10 })}
+                        style={{
+                            width: 26, height: 22, borderRadius: 4, fontSize: 12,
+                            background: theme.inputBg, color: theme.textSecondary
+                        }}
+                    >
+                        {'+'}
+                    </button>
+                </div>
+                <div style={{ fontSize: 10, color: theme.textTertiary, marginTop: 4 }}>
+                    {t('subStyleSyncHint')}
+                </div>
+            </Row>
+
+            <div style={{ height: 1, background: theme.border, margin: '12px 0' }} />
+
             <Row label={t('translateEngine')}>
                 <div style={{ display: 'flex', gap: 4 }}>
                     {[['google', 'Google'], ['gemini', 'Gemini']].map(([id, label]) => (
@@ -212,6 +249,20 @@ export const SubtitleSettings = ({ style, onChange, onClose }) => {
                 />
                 {t('translateAuto')}
             </label>
+
+            {onRetranscribe && (
+                <button
+                    onClick={() => { onRetranscribe(); onClose(); }}
+                    title={t('retranscribeHint')}
+                    style={{
+                        marginTop: 12, width: '100%', padding: '6px 0',
+                        borderRadius: 6, fontSize: 12,
+                        background: theme.inputBg, color: theme.textSecondary
+                    }}
+                >
+                    {t('retranscribe')}
+                </button>
+            )}
         </div>
     );
 };

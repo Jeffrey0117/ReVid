@@ -214,6 +214,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     clearTranscriptionQueue: () => ipcRenderer.invoke('clear-transcription-queue'),
 
+    retranscribeVideo: async (videoPath, onEvent) => {
+        const handler = (_event, payload) => {
+            if (payload.videoPath === videoPath) onEvent?.(payload);
+        };
+        ipcRenderer.on('whisper-event', handler);
+        try {
+            return await ipcRenderer.invoke('retranscribe-video', { videoPath });
+        } finally {
+            ipcRenderer.removeListener('whisper-event', handler);
+        }
+    },
+
     onTranscriptionQueue: (callback) => {
         const handler = (_event, payload) => callback(payload);
         ipcRenderer.on('whisper-queue', handler);

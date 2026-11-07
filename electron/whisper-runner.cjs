@@ -248,6 +248,38 @@ function cleanupWhisperTemp() {
     }
 }
 
+// ffmpeg writes the extracted wav starting at sample zero, dropping any
+// container start offset. Whisper timestamps are therefore relative to the
+// first audio sample, while the player seeks on the container timeline — so
+// subtitles land early by exactly that offset on files that have one.
+function probeStartTime(videoPath) {
+    return new Promise((resolve) => {
+        const proc = spawn(ffmpegPath, ['-hide_banner', '-i', videoPath]);
+        let err = '';
+        proc.stderr.on('data', (d) => { err += d.toString(); });
+        proc.on('error', () => resolve(0));
+        proc.on('close', () => {
+            const m = err.match(/Duration:[^,]+,\s*start:\s*(-?[\d.]+)/);
+            const start = m ? parseFloat(m[1]) : 0;
+            resolve(Number.isFinite(start) ? start : 0);
+        });
+    });
+}
+
+const SRT_TIME = /(\d{2}):(\d{2}):(\d{2}),(\d{3})/g;
+
+function shiftSrt(content, seconds) {
+    if (!seconds) return content;
+    return content.replace(SRT_TIME, (_m, h, m, s, ms) => {
+        const t = Math.max(0, (+h * 3600 + +m * 60 + +s + +ms / 1000) + seconds);
+        const hh = String(Math.floor(t / 3600)).padStart(2, '0');
+        const mm = String(Math.floor((t % 3600) / 60)).padStart(2, '0');
+        const ss = String(Math.floor(t % 60)).padStart(2, '0');
+        const mmm = String(Math.round((t - Math.floor(t)) * 1000)).padStart(3, '0');
+        return `${hh}:${mm}:${ss},${mmm}`;
+    });
+}
+
 async function transcribeVideo({ videoPath, exePath, fallbackExePath, modelPath: mPath, op = 'whisper' }, { onCue, onProgress } = {}) {
     const base = videoPath.replace(/\.[^.]+$/, '');
     const srtPath = `${base}.srt`;
@@ -333,19 +365,28 @@ async function transcribeVideo({ videoPath, exePath, fallbackExePath, modelPath:
         return { success: false, error: 'whisper produced no subtitle file' };
     }
 
-    // Move to the real filename via fs, which handles non-ASCII correctly.
-    // If that folder isn't writable, keep the work in the cache rather than
-    // discarding a finished transcription.
+    // Put the cues back on the container timeline before saving, and write
+    // through fs so non-ASCII filenames work. If that folder isn't writable,
+    // keep the work in the cache rather than discarding a finished run.
+    let srt;
     try {
-        await fs.promises.copyFile(tmpSrtPath, srtPath);
+        srt = await fs.promises.readFile(tmpSrtPath, 'utf8');
+    } catch (e) {
+        return { success: false, error: `Could not read subtitles: ${e.message}` };
+    }
+    const startOffset = await probeStartTime(videoPath);
+    if (startOffset) srt = shiftSrt(srt, startOffset);
+
+    try {
+        await fs.promises.writeFile(srtPath, srt, 'utf8');
         await removeWithRetry(tmpSrtPath);
-        return { success: true, srtPath };
+        return { success: true, srtPath, startOffset };
     } catch (e) {
         try {
             const cached = cachedSubtitlePath(videoPath, '.srt');
-            await fs.promises.copyFile(tmpSrtPath, cached);
+            await fs.promises.writeFile(cached, srt, 'utf8');
             await removeWithRetry(tmpSrtPath);
-            return { success: true, srtPath: cached, cached: true, saveError: e.message };
+            return { success: true, srtPath: cached, cached: true, startOffset, saveError: e.message };
         } catch (e2) {
             return { success: false, error: `Could not save subtitles: ${e.message}` };
         }

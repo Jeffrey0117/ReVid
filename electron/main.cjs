@@ -1043,6 +1043,24 @@ function setupIpcHandlers() {
         return { success: true };
     });
 
+    // Throw away a video's subtitles and transcribe it again — for when the
+    // existing ones are wrong (bad timing, wrong language, a bad model).
+    ipcMain.handle('retranscribe-video', async (_event, { videoPath, alsoTranslation = true }) => {
+        if (!videoPath || !fs.existsSync(videoPath)) {
+            return { success: false, error: 'File not found' };
+        }
+        const base = videoPath.replace(/\.[^.]+$/, '');
+        const targets = [`${base}.srt`, cachedSubtitlePath(videoPath, '.srt')];
+        if (alsoTranslation) {
+            targets.push(`${base}.zh.srt`, cachedSubtitlePath(videoPath, '.zh.srt'));
+        }
+        for (const p of targets) {
+            try { await fs.promises.unlink(p); } catch (e) { /* absent */ }
+        }
+        const pending = whisperQueue.enqueue(videoPath, 0);
+        return pending ? await pending : { success: true, skipped: true };
+    });
+
     // Translate a cue list and persist it as a <video>.zh.srt sidecar, so the
     // work is done once per video. Cancellable by starting another request.
     let translateToken = 0;

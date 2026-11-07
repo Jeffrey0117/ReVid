@@ -226,12 +226,19 @@ export const VideoSidebar = ({
                 onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
                 onMouseLeave={(e) => e.currentTarget.style.transform = ''}
               >
+                {/* The number is part of the selection, not a separate label:
+                    highlighting only the thumbnail leaves the index looking
+                    like it belongs to nothing. */}
                 <div style={{
-                  fontSize: 10,
-                  color: 'rgba(255,255,255,0.4)',
-                  textAlign: 'center', width: '100%',
+                  fontSize: 10, fontWeight: isActive ? 700 : 400,
+                  color: isActive ? '#fff' : 'rgba(255,255,255,0.4)',
+                  background: isActive ? '#3b82f6' : 'transparent',
+                  borderRadius: 999,
+                  minWidth: 18, padding: '1px 6px',
+                  textAlign: 'center',
                   marginBottom: 4,
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  transition: 'background 0.2s, color 0.2s'
                 }}>
                   {index + 1}
                 </div>
