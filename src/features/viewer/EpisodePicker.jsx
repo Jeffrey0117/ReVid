@@ -30,7 +30,7 @@ export const EpisodePicker = ({ files, currentIndex, onPick, onClose }) => {
         <div
             onClick={(e) => e.stopPropagation()}
             style={{
-                position: 'absolute', top: 48, right: 12, zIndex: 8,
+                position: 'absolute', bottom: 64, right: 12, zIndex: 8,
                 width: 290, maxHeight: '62vh', overflowY: 'auto',
                 padding: 6,
                 background: theme.dialogBg, color: theme.text,

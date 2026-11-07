@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import Plyr from 'plyr';
 import 'plyr/dist/plyr.css';
 import { useI18n } from '../../i18n.jsx';
@@ -9,14 +10,14 @@ import { TranscriptPanel } from './TranscriptPanel';
 import { WordbookPanel } from './WordbookPanel';
 import { EpisodePicker } from './EpisodePicker';
 import { RIGHT_PANEL_WIDTH } from './layout';
-import { ListVideo } from '../../components/icons';
-import { BookMarked, Lock } from '../../components/icons';
 import { hasFeature, FEATURES } from '../licensing/entitlements';
 import { SubtitleSettings, readSubtitleStyle, subtitleTextStyle } from './SubtitleSettings';
 import {
     WordCard, ClickableText, readDifficulty, writeDifficulty, readKnownWords, clearKnownWords
 } from './WordLookup';
-import { Captions, PanelRight, Sliders } from '../../components/icons';
+import {
+    BookMarked, Captions, ListVideo, Lock, PanelRight, Sliders
+} from '../../components/icons';
 import { setAudioSlot, setAudioSlotProvider, setPlayerBridge } from '../plugins/pluginRuntime';
 import { PluginPanelHost } from '../plugins/PluginPanelHost';
 
@@ -139,6 +140,16 @@ export const VideoViewer = ({
     const [transcriptOpen, setTranscriptOpen] = useState(() => readBool(TRANSCRIPT_KEY, false));
     const [wordbookOpen, setWordbookOpen] = useState(false);
     const [episodesOpen, setEpisodesOpen] = useState(false);
+    const [controlsSlot, setControlsSlot] = useState(null);
+
+    // A menu anchored to the bar is orphaned if the bar fades out under it.
+    const barMenuOpen = episodesOpen || styleOpen;
+    useEffect(() => {
+        const el = controlsSlot?.closest('.plyr');
+        if (!el) return;
+        el.classList.toggle('revid-menu-open', barMenuOpen);
+        return () => el.classList.remove('revid-menu-open');
+    }, [controlsSlot, barMenuOpen]);
 
     // Tell the shell how much of the right edge is spoken for, so its toasts
     // land beside the panel instead of on it. Reset on the way out.
@@ -332,6 +343,20 @@ export const VideoViewer = ({
         });
         plyrRef.current = player;
 
+        // Playback-side controls belong in the player's own bar, not stacked
+        // in a second row over the picture. Plyr owns that DOM, so claim a
+        // slot in its right-hand cluster and portal into it — ahead of
+        // fullscreen, which stays last the way it does everywhere else.
+        // Safe because switching videos assigns video.src directly: Plyr's
+        // own source setter would rebuild this bar and drop the slot.
+        const bar = wrapper.querySelector('.plyr__controls');
+        if (bar) {
+            const slot = document.createElement('div');
+            slot.className = 'revid-plyr-slot';
+            bar.insertBefore(slot, bar.querySelector('[data-plyr="fullscreen"]'));
+            setControlsSlot(slot);
+        }
+
         const onTimeUpdate = () => {
             const tNow = video.currentTime;
             // Share the playback position with the editor. Tagged with src so a
@@ -392,6 +417,7 @@ export const VideoViewer = ({
             clearTimeout(flashTimerRef.current);
             clearTimeout(resumeTimerRef.current);
             video.removeEventListener('timeupdate', onTimeUpdate);
+            setControlsSlot(null);
             player.destroy();
             plyrRef.current = null;
             videoElRef.current = null;
@@ -1059,39 +1085,6 @@ export const VideoViewer = ({
                             {t('translateToZh')}
                         </button>
                     )}
-                    <button
-                        title={t('ccToggle')}
-                        onClick={cycleCc}
-                        style={{ ...iconBtn(ccMode !== 'off'), width: 'auto', padding: '0 8px', gap: 5 }}
-                    >
-                        <Captions size={16} />
-                        <span style={{ fontSize: 10, fontWeight: 600 }}>{CC_LABEL[ccMode]}</span>
-                    </button>
-                    <button
-                        title={t('subStyleTitle')}
-                        onClick={(e) => { e.stopPropagation(); setEpisodesOpen(false); setStyleOpen(o => !o); }}
-                        style={iconBtn(styleOpen)}
-                    >
-                        <Sliders size={16} />
-                    </button>
-                    {files.length > 1 && (
-                        <button
-                            title={t('episodes')}
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                // Shares the top-right slot with the subtitle panel.
-                                setStyleOpen(false);
-                                setEpisodesOpen(o => !o);
-                            }}
-                            style={{ ...iconBtn(episodesOpen), width: 'auto', padding: '0 9px', gap: 5 }}
-                        >
-                            <ListVideo size={15} />
-                            <span style={{ fontSize: 11, fontWeight: 600 }}>
-                                {currentIndex + 1}/{files.length}
-                            </span>
-                        </button>
-                    )}
-
                     {/* One switch instead of scattered toggles: browse is a
                         plain player, the other two add their own affordances. */}
                     <div style={{
@@ -1121,22 +1114,13 @@ export const VideoViewer = ({
                         })}
                     </div>
                     {learnMode && (
-                        <>
-                            <button
-                                title={t('shadowHint')}
-                                onClick={() => setShadowing(s => !s)}
-                                style={{ ...iconBtn(shadowing), width: 'auto', padding: '0 9px', fontSize: 11, fontWeight: 600 }}
-                            >
-                                {t('shadow')}
-                            </button>
-                            <button
-                                title={t('wordbookTitle')}
-                                onClick={() => { setWordbookOpen(o => !o); setTranscriptOpen(false); }}
-                                style={iconBtn(wordbookOpen)}
-                            >
-                                <BookMarked size={16} />
-                            </button>
-                        </>
+                        <button
+                            title={t('wordbookTitle')}
+                            onClick={() => { setWordbookOpen(o => !o); setTranscriptOpen(false); }}
+                            style={iconBtn(wordbookOpen)}
+                        >
+                            <BookMarked size={16} />
+                        </button>
                     )}
                     <button
                         title={t('transcriptToggle')}
@@ -1148,6 +1132,55 @@ export const VideoViewer = ({
                     <PluginPanelHost />
                 </div>
 
+                {/* Playback controls, living in Plyr's own bar */}
+                {controlsSlot && createPortal(
+                    <>
+                        {files.length > 1 && (
+                            <button
+                                title={t('episodes')}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setStyleOpen(false);
+                                    setEpisodesOpen(o => !o);
+                                }}
+                                style={barBtn(episodesOpen)}
+                            >
+                                <ListVideo size={15} />
+                                {`${currentIndex + 1}/${files.length}`}
+                            </button>
+                        )}
+                        {learnMode && (
+                            <button
+                                title={t('shadowHint')}
+                                onClick={(e) => { e.stopPropagation(); setShadowing(s => !s); }}
+                                style={barBtn(shadowing)}
+                            >
+                                {t('shadow')}
+                            </button>
+                        )}
+                        <button
+                            title={t('ccToggle')}
+                            onClick={(e) => { e.stopPropagation(); cycleCc(); }}
+                            style={barBtn(ccMode !== 'off')}
+                        >
+                            <Captions size={15} />
+                            {CC_LABEL[ccMode]}
+                        </button>
+                        <button
+                            title={t('subStyleTitle')}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setEpisodesOpen(false);
+                                setStyleOpen(o => !o);
+                            }}
+                            style={barBtn(styleOpen)}
+                        >
+                            <Sliders size={15} />
+                        </button>
+                    </>,
+                    controlsSlot
+                )}
+
                 {episodesOpen && (
                     <EpisodePicker
                         files={files}
@@ -1158,7 +1191,7 @@ export const VideoViewer = ({
                 )}
 
                 {styleOpen && (
-                    <div style={{ position: 'absolute', top: 48, right: 12, zIndex: 6 }}>
+                    <div style={{ position: 'absolute', bottom: 64, right: 12, zIndex: 6 }}>
                         <SubtitleSettings
                             style={subStyle}
                             onChange={setSubStyle}
@@ -1327,6 +1360,15 @@ const iconBtn = (active) => ({
     width: 32, height: 28, borderRadius: 6, cursor: 'pointer',
     background: active ? 'rgba(59,130,246,0.85)' : 'rgba(0,0,0,0.55)',
     color: '#fff', border: '1px solid rgba(255,255,255,0.15)'
+});
+// Inside Plyr's bar the controls are already on a dark scrim, so they drop
+// the chip background and read as part of the player's own row.
+const barBtn = (active) => ({
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+    height: 26, padding: '0 7px', borderRadius: 4, cursor: 'pointer',
+    fontSize: 11, fontWeight: 600, lineHeight: 1,
+    background: active ? 'rgba(59,130,246,0.9)' : 'transparent',
+    color: '#fff', opacity: active ? 1 : 0.85
 });
 const menuLabel = {
     fontSize: 11, opacity: 0.55, textTransform: 'uppercase',

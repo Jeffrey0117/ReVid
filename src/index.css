@@ -105,8 +105,22 @@ button {
 
 /* Entering/switching a video force-shows the control bar briefly (perceived
    responsiveness) — overrides Plyr's idle auto-hide until the class drops. */
-.plyr.revid-flash-controls .plyr__controls {
+.plyr.revid-flash-controls .plyr__controls,
+.plyr.revid-menu-open .plyr__controls {
     opacity: 1 !important;
     pointer-events: auto !important;
     transform: none !important;
+}
+
+/* Our controls sit inside Plyr's bar as one flex item in its right cluster. */
+.revid-plyr-slot {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: 2px;
+}
+
+.revid-plyr-slot button:hover {
+    background: rgba(255, 255, 255, 0.16);
+    opacity: 1;
 }
