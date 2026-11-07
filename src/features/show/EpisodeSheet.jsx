@@ -1,9 +1,10 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../i18n.jsx';
 import { useTheme } from '../../theme.jsx';
 import { toLocalVideoUrl } from '../../utils/localVideoUrl';
-import { getCachedThumbnail } from '../../utils/videoThumbnails';
+import { generateVideoThumbnail, getCachedThumbnail } from '../../utils/videoThumbnails';
 import { getCachedMetadata } from '../../utils/videoMetadata';
+import { SHEET } from './sheetLayout';
 
 const stemOf = (name) => name.replace(/\.[^.]+$/, '');
 const mins = (sec) => (sec > 0 ? Math.round(sec / 60) : null);
@@ -30,7 +31,21 @@ export const EpisodeSheet = ({ episode, season, onPlay, onPick, onClose }) => {
     }, [episode]);
 
     const url = toLocalVideoUrl(episode.videoPath);
-    const thumb = getCachedThumbnail(url);
+    const [made, setMade] = useState(null);
+
+    // The card for this episode may not have been on screen long enough to
+    // have a thumbnail yet, and an empty hero is the first thing you see.
+    useEffect(() => {
+        setMade(null);
+        if (getCachedThumbnail(url)) return;
+        let dropped = false;
+        generateVideoThumbnail(url)
+            .then(d => { if (!dropped && d) setMade(d); })
+            .catch(() => { /* a frame that will not decode is not fatal */ });
+        return () => { dropped = true; };
+    }, [url]);
+
+    const thumb = getCachedThumbnail(url) || made;
     const length = mins(getCachedMetadata(url)?.duration);
     const num = episode.guide?.episode;
 
@@ -40,13 +55,17 @@ export const EpisodeSheet = ({ episode, season, onPlay, onPick, onClose }) => {
             style={{
                 position: 'fixed', inset: 0, zIndex: 340,
                 background: theme.overlayBg,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24
+                // Centering overflows symmetrically, so content taller than
+                // the viewport loses its top — including the hero image.
+                // Pinned to the top with auto margins instead.
+                display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+                padding: 24, overflow: 'hidden'
             }}
         >
             <div
                 onClick={(e) => e.stopPropagation()}
                 style={{
-                    width: 760, maxWidth: '100%', maxHeight: '88%',
+                    width: 760, maxWidth: '100%', maxHeight: '100%', margin: 'auto 0',
                     display: 'flex', flexDirection: 'column', overflow: 'hidden',
                     background: theme.dialogBg, color: theme.text,
                     border: `1px solid ${theme.border}`, borderRadius: 12,
@@ -55,7 +74,7 @@ export const EpisodeSheet = ({ episode, season, onPlay, onPick, onClose }) => {
             >
                 <div style={{
                     position: 'relative', width: '100%', aspectRatio: '16 / 7',
-                    background: theme.inputBg, flexShrink: 0
+                    maxHeight: SHEET.heroMaxPx, background: theme.inputBg, flexShrink: 0
                 }}>
                     {thumb && (
                         <img src={thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -99,8 +118,14 @@ export const EpisodeSheet = ({ episode, season, onPlay, onPick, onClose }) => {
                             episode.hasSubs ? t('subMenuTitle') : null
                         ].filter(Boolean).join('  ·  ')}
                     </div>
+                    {/* Capped and self-scrolling. Left to grow, a long
+                        synopsis squeezed the episode list below it down to
+                        two rows while a short one left five — the list's
+                        size should not depend on how wordy the summary is. */}
                     <p style={{
-                        margin: 0, fontSize: 13.5, lineHeight: 1.7, color: theme.textSecondary
+                        margin: 0, maxHeight: `${SHEET.summaryMaxEm}em`, overflowY: 'auto',
+                        fontSize: 13.5, lineHeight: SHEET.summaryLineHeight,
+                        color: theme.textSecondary
                     }}>
                         {episode.guide?.summary || t('showNoSummary')}
                     </p>
@@ -114,7 +139,12 @@ export const EpisodeSheet = ({ episode, season, onPlay, onPick, onClose }) => {
                         }}>
                             {season.name} · {season.episodes.length} {t('episodesWord')}
                         </div>
-                        <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 16px' }}>
+                        {/* A floor so the list is always worth looking at,
+                            whatever is above it. */}
+                        <div style={{
+                            flex: 1, minHeight: SHEET.listMinPx,
+                            overflowY: 'auto', padding: '0 16px 16px'
+                        }}>
                             {season.episodes.map((ep, i) => {
                                 const active = ep.videoPath === episode.videoPath;
                                 return (
