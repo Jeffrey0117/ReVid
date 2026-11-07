@@ -176,6 +176,46 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
     },
 
+    // --- Whisper auto-subtitles ---
+
+    whisperStatus: () => ipcRenderer.invoke('whisper-status'),
+
+    whisperSetup: async (params, onProgress) => {
+        const handler = (_event, p) => onProgress(p);
+        ipcRenderer.on('whisper-setup-progress', handler);
+        try {
+            return await ipcRenderer.invoke('whisper-setup', params);
+        } finally {
+            ipcRenderer.removeListener('whisper-setup-progress', handler);
+        }
+    },
+
+    transcribeVideo: async (videoPath, onEvent) => {
+        const handler = (_event, payload) => {
+            if (payload.videoPath === videoPath) onEvent(payload);
+        };
+        ipcRenderer.on('whisper-event', handler);
+        try {
+            return await ipcRenderer.invoke('transcribe-video', { videoPath });
+        } finally {
+            ipcRenderer.removeListener('whisper-event', handler);
+        }
+    },
+
+    // Same-basename .srt/.vtt beside the video, if any.
+    readSubtitles: (videoPath) => {
+        try {
+            const base = videoPath.replace(/\.[^.]+$/, '');
+            for (const ext of ['.srt', '.vtt']) {
+                const p = base + ext;
+                if (fs.existsSync(p)) {
+                    return { path: p, format: ext.slice(1), content: fs.readFileSync(p, 'utf8') };
+                }
+            }
+        } catch (e) { /* unreadable */ }
+        return null;
+    },
+
     startDrag: (filePath) => {
         ipcRenderer.send('start-drag', filePath);
     },

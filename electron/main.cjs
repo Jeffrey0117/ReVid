@@ -17,6 +17,7 @@ const {
     ffmpegFailure
 } = require('./ffmpeg-runner.cjs');
 const { extractEnvelope, findSegmentOffset, FRAMES_PER_SECOND } = require('./segment-matcher.cjs');
+const { getWhisperStatus, ensureWhisper, transcribeVideo, DEFAULT_MODEL } = require('./whisper-runner.cjs');
 const { registerTheaterStore, drainTheaterSaves } = require('./theater-store.cjs');
 const { registerSyncClient, drainSyncRequests } = require('./sync-client.cjs');
 const { registerLocalVideoProtocol } = require('./local-video-protocol.cjs');
@@ -907,6 +908,93 @@ function setupIpcHandlers() {
             sendProgress({ index: i, path: inputPath, phase: 'done', result: results[results.length - 1] });
         }
         return { success: true, results };
+    });
+
+    // --- Whisper auto-subtitles ---
+
+    ipcMain.handle('whisper-status', () => {
+        try {
+            return { success: true, ...getWhisperStatus(DEFAULT_MODEL) };
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    });
+
+    // One-time download of the whisper binary + model, with progress events.
+    let whisperSetupRunning = false;
+    ipcMain.handle('whisper-setup', async (_event, params = {}) => {
+        if (whisperSetupRunning) return { success: false, error: 'Setup already running' };
+        whisperSetupRunning = true;
+        try {
+            const status = await ensureWhisper(
+                { flavor: params.flavor || 'cuda', model: DEFAULT_MODEL },
+                (p) => {
+                    if (mainWindow && !mainWindow.isDestroyed()) {
+                        mainWindow.webContents.send('whisper-setup-progress', p);
+                    }
+                }
+            );
+            return { success: true, ...status };
+        } catch (e) {
+            return { success: false, error: e.message };
+        } finally {
+            whisperSetupRunning = false;
+        }
+    });
+
+    // Transcribe one video to <video>.srt. Single-flight: the renderer cancels
+    // the previous job (cancel-ffmpeg('whisper')) before starting a new one.
+    let whisperBusy = false;
+    ipcMain.handle('transcribe-video', async (_event, { videoPath }) => {
+        if (!videoPath || !fs.existsSync(videoPath)) {
+            return { success: false, error: 'File not found' };
+        }
+        const base = videoPath.replace(/\.[^.]+$/, '');
+        if (fs.existsSync(`${base}.srt`) || fs.existsSync(`${base}.vtt`)) {
+            return { success: true, skipped: true, srtPath: `${base}.srt` };
+        }
+        const status = getWhisperStatus(DEFAULT_MODEL);
+        if (!status.binaryReady || !status.modelReady) {
+            return { success: false, notReady: true, error: 'Whisper not set up' };
+        }
+
+        // Wait briefly for a just-cancelled job to wind down.
+        for (let i = 0; whisperBusy && i < 30; i++) await sleep(100);
+        if (whisperBusy) return { success: false, busy: true, error: 'Transcription already running' };
+
+        whisperBusy = true;
+        const epoch = getCancelEpoch('whisper');
+        const send = (payload) => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('whisper-event', { videoPath, ...payload });
+            }
+        };
+        try {
+            send({ type: 'start' });
+            const result = await transcribeVideo(
+                {
+                    videoPath,
+                    exePath: status.exePath,
+                    fallbackExePath: status.fallbackExePath,
+                    modelPath: status.modelPath,
+                    op: 'whisper'
+                },
+                {
+                    onCue: (cue) => send({ type: 'cue', cue }),
+                    onProgress: (pct) => send({ type: 'progress', pct })
+                }
+            );
+            if (getCancelEpoch('whisper') !== epoch) {
+                // Cancelled mid-run: a partial .srt may exist — remove it so the
+                // next visit transcribes cleanly instead of loading half a file.
+                try { await fs.promises.unlink(`${base}.srt`); } catch (e) { /* none */ }
+                return { success: false, cancelled: true, error: 'Cancelled' };
+            }
+            send({ type: 'done', success: result.success, srtPath: result.srtPath, error: result.error });
+            return result;
+        } finally {
+            whisperBusy = false;
+        }
     });
 
     // --- Mini Player IPC Handlers ---

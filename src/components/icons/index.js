@@ -10,3 +10,5 @@ export { VolumeOff } from './VolumeOff';
 export { StepBack } from './StepBack';
 export { StepForward } from './StepForward';
 export { ArrowDownToLine } from './ArrowDownToLine';
+export { Captions } from './Captions';
+export { PanelRight } from './PanelRight';

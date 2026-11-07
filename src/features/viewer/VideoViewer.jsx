@@ -3,6 +3,9 @@ import Plyr from 'plyr';
 import 'plyr/dist/plyr.css';
 import { useI18n } from '../../i18n.jsx';
 import { getCachedThumbnail } from '../../utils/videoThumbnails';
+import { parseSubtitles, findActiveCueIndex } from '../../utils/subtitles';
+import { TranscriptPanel } from './TranscriptPanel';
+import { Captions, PanelRight } from '../../components/icons';
 
 const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 // Gain multipliers for volume boost (1 = native 100%, >1 amplifies past it).
@@ -11,16 +14,53 @@ const BOOST_OPTIONS = [1, 1.5, 2, 3];
 // Volume boost persists (it's a "my speakers are quiet" preference); speed does
 // NOT — each new video should start at the natural 1x.
 const BOOST_KEY = 'revid-viewer-boost';
+const CC_KEY = 'revid-cc-visible';
+const TRANSCRIPT_KEY = 'revid-transcript-open';
+const GLOW_KEY = 'revid-glow';
+const AUTO_SUBS_KEY = 'revid-auto-subs';
+const RESUME_KEY = 'revid-resume-positions';
+const MAX_RESUME_ENTRIES = 300;
+
 const readNum = (key, fallback) => {
     const n = Number(localStorage.getItem(key));
     return Number.isFinite(n) && n > 0 ? n : fallback;
 };
+const readBool = (key, fallback) => {
+    const v = localStorage.getItem(key);
+    return v == null ? fallback : v === 'on';
+};
 
-export const VideoViewer = ({ src, timeRef }) => {
+const getElectronAPI = () => window.electronAPI || null;
+
+// --- cross-restart resume positions ---------------------------------------
+function readResumeMap() {
+    try { return JSON.parse(localStorage.getItem(RESUME_KEY)) || {}; } catch { return {}; }
+}
+function saveResumePosition(videoPath, time, duration) {
+    try {
+        const map = readResumeMap();
+        map[videoPath] = { time, duration, at: Date.now() };
+        const keys = Object.keys(map);
+        if (keys.length > MAX_RESUME_ENTRIES) {
+            keys.sort((a, b) => (map[a].at || 0) - (map[b].at || 0));
+            for (const k of keys.slice(0, keys.length - MAX_RESUME_ENTRIES)) delete map[k];
+        }
+        localStorage.setItem(RESUME_KEY, JSON.stringify(map));
+    } catch { /* storage full */ }
+}
+
+function fmtTime(s) {
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
+export const VideoViewer = ({ src, videoPath, timeRef }) => {
     const { t } = useI18n();
     const wrapperRef = useRef(null);
     const plyrRef = useRef(null);
     const videoElRef = useRef(null);
+    const glowRef = useRef(null);
 
     // Web Audio graph for volume boost (HTML5 <video>.volume caps at 1.0, so
     // anything above 100% needs a GainNode). Created lazily on first boost.
@@ -33,10 +73,40 @@ export const VideoViewer = ({ src, timeRef }) => {
     const [loop, setLoop] = useState(false);
     const [menu, setMenu] = useState(null); // { x, y } | null
 
-    // Keep the latest playback prefs in refs so the (src-only) build effect can
-    // re-apply them to a freshly created <video> without re-running on each change.
+    // Subtitles / transcript
+    const [cues, setCues] = useState([]);
+    const [activeCueIndex, setActiveCueIndex] = useState(-1);
+    const [ccVisible, setCcVisible] = useState(() => readBool(CC_KEY, true));
+    const [transcriptOpen, setTranscriptOpen] = useState(() => readBool(TRANSCRIPT_KEY, false));
+    const [transcribing, setTranscribing] = useState(null); // { pct } | null
+    const [whisperMissing, setWhisperMissing] = useState(false);
+    const [installing, setInstalling] = useState(null); // { stage, pct } | null
+    const [subsRetry, setSubsRetry] = useState(0);
+    const cuesRef = useRef(cues);
+    cuesRef.current = cues;
+
+    // A-B loop + resume prompt + glow
+    const [abLoop, setAbLoop] = useState(null); // { a, b|null }
+    const abRef = useRef(abLoop);
+    abRef.current = abLoop;
+    const [resumePrompt, setResumePrompt] = useState(null); // { time } | null
+    const resumeTimerRef = useRef(0);
+    const [autoSubs, setAutoSubs] = useState(() => readBool(AUTO_SUBS_KEY, true));
+    const [glowOn, setGlowOn] = useState(() => readBool(GLOW_KEY, true));
+    const glowOnRef = useRef(glowOn);
+    glowOnRef.current = glowOn;
+    // Read inside the subtitle effect without making the toggle re-trigger it.
+    const autoSubsRef = useRef(autoSubs);
+    autoSubsRef.current = autoSubs;
+
+    // Keep the latest playback prefs in refs so the (src-only) effects can
+    // re-apply them to the element without re-running on each change.
     const prefsRef = useRef({ speed, boost, loop });
     prefsRef.current = { speed, boost, loop };
+
+    const videoPathRef = useRef(videoPath);
+    videoPathRef.current = videoPath;
+    const lastResumeSaveRef = useRef(0);
 
     // Route the current <video> through an AudioContext → GainNode → speakers.
     // A MediaElementSource is one-per-element, so this is rebuilt per source.
@@ -87,6 +157,25 @@ export const VideoViewer = ({ src, timeRef }) => {
         });
     }, []);
 
+    const toggleAutoSubs = useCallback(() => {
+        setAutoSubs(prev => {
+            const next = !prev;
+            localStorage.setItem(AUTO_SUBS_KEY, next ? 'on' : 'off');
+            if (!next) getElectronAPI()?.cancelFfmpeg?.('whisper');
+            else setSubsRetry(n => n + 1);
+            return next;
+        });
+    }, []);
+
+    const toggleGlow = useCallback(() => {
+        setGlowOn((prev) => {
+            const next = !prev;
+            localStorage.setItem(GLOW_KEY, next ? 'on' : 'off');
+            if (!next && glowRef.current) glowRef.current.style.opacity = '0';
+            return next;
+        });
+    }, []);
+
     const enterPip = useCallback(() => {
         const video = videoElRef.current;
         if (!video) return;
@@ -94,6 +183,14 @@ export const VideoViewer = ({ src, timeRef }) => {
             if (document.pictureInPictureElement) document.exitPictureInPicture();
             else video.requestPictureInPicture?.();
         } catch { /* unsupported */ }
+    }, []);
+
+    const seekTo = useCallback((time) => {
+        const video = videoElRef.current;
+        if (!video) return;
+        video.currentTime = time;
+        const p = video.play();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
     }, []);
 
     // The current src, readable from listeners that outlive a single source.
@@ -114,6 +211,7 @@ export const VideoViewer = ({ src, timeRef }) => {
         video.style.height = '100%';
         video.style.objectFit = 'contain';
         video.preload = 'auto';
+        video.crossOrigin = 'anonymous'; // lets the glow canvas sample frames
         wrapper.appendChild(video);
         videoElRef.current = video;
 
@@ -133,15 +231,53 @@ export const VideoViewer = ({ src, timeRef }) => {
         });
         plyrRef.current = player;
 
-        // Share the playback position with the editor. Tagged with src so a
-        // stale position from another video is never applied.
         const onTimeUpdate = () => {
-            if (timeRef) timeRef.current = { src: srcRef.current, time: video.currentTime };
+            const tNow = video.currentTime;
+            // Share the playback position with the editor. Tagged with src so a
+            // stale position from another video is never applied.
+            if (timeRef) timeRef.current = { src: srcRef.current, time: tNow };
+
+            // Subtitle cue under the playhead.
+            const idx = findActiveCueIndex(cuesRef.current, tNow);
+            setActiveCueIndex((prev) => (prev === idx ? prev : idx));
+
+            // A-B loop.
+            const ab = abRef.current;
+            if (ab && ab.b != null && tNow >= ab.b) {
+                video.currentTime = ab.a;
+            }
+
+            // Cross-restart resume position (throttled).
+            const now = Date.now();
+            if (now - lastResumeSaveRef.current > 3000 && videoPathRef.current && tNow > 5) {
+                lastResumeSaveRef.current = now;
+                saveResumePosition(videoPathRef.current, tNow, video.duration || 0);
+            }
         };
         video.addEventListener('timeupdate', onTimeUpdate);
 
+        // Ambient glow: sample the frame tiny + blur it huge behind the video.
+        const glowCanvas = document.createElement('canvas');
+        glowCanvas.width = 32;
+        glowCanvas.height = 18;
+        const glowCtx = glowCanvas.getContext('2d');
+        const glowTimer = setInterval(() => {
+            const el = glowRef.current;
+            if (!el) return;
+            if (!glowOnRef.current || video.readyState < 2) { el.style.opacity = '0'; return; }
+            try {
+                glowCtx.drawImage(video, 0, 0, 32, 18);
+                el.style.backgroundImage = `url(${glowCanvas.toDataURL('image/jpeg', 0.5)})`;
+                el.style.opacity = '0.5';
+            } catch {
+                el.style.opacity = '0'; // tainted canvas — glow off, playback unaffected
+            }
+        }, 700);
+
         return () => {
+            clearInterval(glowTimer);
             clearTimeout(flashTimerRef.current);
+            clearTimeout(resumeTimerRef.current);
             video.removeEventListener('timeupdate', onTimeUpdate);
             player.destroy();
             plyrRef.current = null;
@@ -164,6 +300,9 @@ export const VideoViewer = ({ src, timeRef }) => {
 
         // Each new video starts at the natural 1x; volume boost carries over.
         setSpeed(1);
+        setAbLoop(null);
+        setResumePrompt(null);
+        clearTimeout(resumeTimerRef.current);
         const poster = getCachedThumbnail(src);
         if (poster) video.poster = poster;
         video.loop = prefsRef.current.loop;
@@ -195,6 +334,14 @@ export const VideoViewer = ({ src, timeRef }) => {
             const saved = timeRef?.current;
             if (saved && saved.src === src && Number.isFinite(saved.time) && saved.time > 0) {
                 video.currentTime = saved.time;
+            } else if (videoPathRef.current) {
+                // Fresh open: offer (not force) the cross-restart position.
+                const stored = readResumeMap()[videoPathRef.current];
+                if (stored && stored.time > 30 && video.duration - stored.time > 20) {
+                    setResumePrompt({ time: stored.time });
+                    clearTimeout(resumeTimerRef.current);
+                    resumeTimerRef.current = setTimeout(() => setResumePrompt(null), 8000);
+                }
             }
             // "Open and it plays": kick off playback once the video is ready.
             // Electron allows autoplay with sound; ignore the promise rejection
@@ -205,6 +352,112 @@ export const VideoViewer = ({ src, timeRef }) => {
         video.addEventListener('loadedmetadata', reapply, { once: true });
         return () => video.removeEventListener('loadedmetadata', reapply);
     }, [src, ensureGain]);
+
+    // Subtitles: load the same-name .srt/.vtt, or quietly transcribe with
+    // Whisper in the background ("偷跑") while the user watches.
+    useEffect(() => {
+        setCues([]);
+        setActiveCueIndex(-1);
+        setTranscribing(null);
+        setWhisperMissing(false);
+        const api = getElectronAPI();
+        if (!api || !videoPath) return;
+
+        const sub = api.readSubtitles(videoPath);
+        if (sub) {
+            setCues(parseSubtitles(sub.content, sub.format));
+            return;
+        }
+        if (!autoSubsRef.current) return;
+
+        let cancelled = false;
+        let live = [];
+        (async () => {
+            const status = await api.whisperStatus();
+            if (cancelled) return;
+            if (!status.success || !status.binaryReady || !status.modelReady) {
+                setWhisperMissing(true);
+                return;
+            }
+            setTranscribing({ pct: 0 });
+            const result = await api.transcribeVideo(videoPath, (ev) => {
+                if (cancelled) return;
+                if (ev.type === 'cue') {
+                    live = [...live, ev.cue];
+                    setCues(live);
+                } else if (ev.type === 'progress') {
+                    setTranscribing({ pct: ev.pct });
+                }
+            });
+            if (cancelled) return;
+            setTranscribing(null);
+            if (result.success) {
+                const finished = api.readSubtitles(videoPath);
+                if (finished) setCues(parseSubtitles(finished.content, finished.format));
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+            // Leaving this video kills its in-flight transcription.
+            api.cancelFfmpeg?.('whisper');
+        };
+    }, [videoPath, subsRetry]);
+
+    // One-time Whisper engine/model download, then transcribe this video.
+    const handleWhisperSetup = useCallback(async () => {
+        const api = getElectronAPI();
+        if (!api) return;
+        setWhisperMissing(false);
+        setInstalling({ stage: 'binary', pct: 0 });
+        const result = await api.whisperSetup({ flavor: 'cuda' }, (p) => setInstalling(p));
+        setInstalling(null);
+        if (result.success) setSubsRetry(n => n + 1);
+        else setWhisperMissing(true);
+    }, []);
+
+    const toggleCc = useCallback(() => {
+        setCcVisible(prev => {
+            localStorage.setItem(CC_KEY, prev ? 'off' : 'on');
+            return !prev;
+        });
+    }, []);
+
+    const toggleTranscript = useCallback(() => {
+        setTranscriptOpen(prev => {
+            localStorage.setItem(TRANSCRIPT_KEY, prev ? 'off' : 'on');
+            return !prev;
+        });
+    }, []);
+
+    // A-B loop keys: [ sets A, ] sets B (starts looping), \ clears.
+    useEffect(() => {
+        const onKey = (e) => {
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            const el = e.target;
+            if (el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA' || el?.isContentEditable) return;
+            const video = videoElRef.current;
+            if (!video) return;
+
+            if (e.key === '[') {
+                e.preventDefault();
+                const a = video.currentTime;
+                setAbLoop(prev => ({ a, b: prev && prev.b != null && prev.b > a ? prev.b : null }));
+            } else if (e.key === ']') {
+                e.preventDefault();
+                const b = video.currentTime;
+                setAbLoop(prev => {
+                    const a = prev ? prev.a : 0;
+                    return b > a + 0.2 ? { a, b } : prev;
+                });
+            } else if (e.key === '\\') {
+                e.preventDefault();
+                setAbLoop(null);
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, []);
 
     // Close the AudioContext when the viewer unmounts entirely.
     useEffect(() => () => {
@@ -252,71 +505,195 @@ export const VideoViewer = ({ src, timeRef }) => {
     const openMenu = useCallback((e) => {
         e.preventDefault();
         // Clamp so the menu stays on screen.
-        const MENU_W = 230, MENU_H = 250;
+        const MENU_W = 230, MENU_H = 290;
         const x = Math.min(e.clientX, window.innerWidth - MENU_W);
         const y = Math.min(e.clientY, window.innerHeight - MENU_H);
         setMenu({ x: Math.max(8, x), y: Math.max(8, y) });
     }, []);
 
+    const activeCue = activeCueIndex >= 0 ? cues[activeCueIndex] : null;
+
     return (
-        <div
-            ref={wrapperRef}
-            onContextMenu={openMenu}
-            style={{
-                width: '100%', height: '100%',
-                overflow: 'hidden', background: '#000', position: 'relative'
-            }}
-        >
-            {menu && (
+        <div style={{ width: '100%', height: '100%', display: 'flex', background: '#000' }}>
+            {/* Player area */}
+            <div
+                onContextMenu={openMenu}
+                style={{ flex: 1, minWidth: 0, position: 'relative', overflow: 'hidden' }}
+            >
+                {/* Ambient glow behind the video */}
                 <div
-                    onClick={(e) => e.stopPropagation()}
-                    onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    ref={glowRef}
                     style={{
-                        position: 'fixed', left: menu.x, top: menu.y, zIndex: 9999,
-                        width: 214, padding: 8,
-                        background: 'rgba(20,20,22,0.97)', color: '#fff',
-                        border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10,
-                        boxShadow: '0 8px 28px rgba(0,0,0,0.5)', fontSize: 13,
-                        backdropFilter: 'blur(6px)', userSelect: 'none'
+                        position: 'absolute', inset: '-8%', zIndex: 0,
+                        backgroundSize: 'cover', backgroundPosition: 'center',
+                        filter: 'blur(64px) saturate(1.4)',
+                        opacity: 0, transition: 'opacity 0.6s',
+                        pointerEvents: 'none'
                     }}
-                >
-                    <div style={menuLabel}>{t('ctxPlaybackSpeed')}</div>
-                    <div style={chipRow}>
-                        {SPEED_OPTIONS.map((s) => (
-                            <button
-                                key={s}
-                                onClick={() => applySpeed(s)}
-                                style={chip(speed === s)}
-                            >{s}x</button>
-                        ))}
+                />
+                <div ref={wrapperRef} style={{ position: 'absolute', inset: 0, zIndex: 1 }} />
+
+                {/* CC subtitle overlay */}
+                {ccVisible && activeCue && (
+                    <div style={{
+                        position: 'absolute', left: '50%', bottom: 76, zIndex: 4,
+                        transform: 'translateX(-50%)',
+                        maxWidth: '82%', padding: '7px 16px',
+                        background: 'rgba(0,0,0,0.72)', color: '#fff',
+                        borderRadius: 8, fontSize: 18, lineHeight: 1.45,
+                        textAlign: 'center', whiteSpace: 'pre-wrap',
+                        textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+                        pointerEvents: 'none', backdropFilter: 'blur(2px)'
+                    }}>
+                        {activeCue.text}
                     </div>
+                )}
 
-                    <div style={menuLabel}>{t('ctxVolumeBoost')}</div>
-                    <div style={chipRow}>
-                        {BOOST_OPTIONS.map((b) => (
-                            <button
-                                key={b}
-                                onClick={() => applyBoost(b)}
-                                style={chip(boost === b)}
-                            >{Math.round(b * 100)}%</button>
-                        ))}
-                    </div>
-
-                    <div style={{ height: 1, background: 'rgba(255,255,255,0.1)', margin: '8px 4px' }} />
-
-                    <button onClick={() => { toggleLoop(); }} style={menuItem}>
-                        <span>{t('ctxLoop')}</span>
-                        <span style={{ opacity: 0.7 }}>{loop ? '✓' : ''}</span>
+                {/* Top-right: CC + transcript toggles, transcription status */}
+                <div style={{
+                    position: 'absolute', top: 12, right: 12, zIndex: 5,
+                    display: 'flex', alignItems: 'center', gap: 6
+                }}>
+                    {transcribing && (
+                        <span style={pill}>
+                            {t('transcriptWaiting')} {transcribing.pct}%
+                        </span>
+                    )}
+                    {installing && (
+                        <span style={pill}>
+                            {installing.stage === 'binary' ? t('whisperInstallingBin') : t('whisperInstallingModel')}
+                            {' '}{installing.pct}%
+                        </span>
+                    )}
+                    {whisperMissing && !installing && (
+                        <button onClick={handleWhisperSetup} style={{ ...pill, cursor: 'pointer' }}>
+                            {t('whisperSetupNeeded')}
+                        </button>
+                    )}
+                    <button
+                        title={t('ccToggle')}
+                        onClick={toggleCc}
+                        style={iconBtn(ccVisible)}
+                    >
+                        <Captions size={16} />
                     </button>
-                    <button onClick={() => { enterPip(); setMenu(null); }} style={menuItem}>
-                        <span>{t('ctxPictureInPicture')}</span>
+                    <button
+                        title={t('transcriptToggle')}
+                        onClick={toggleTranscript}
+                        style={iconBtn(transcriptOpen)}
+                    >
+                        <PanelRight size={16} />
                     </button>
                 </div>
+
+                {/* Bottom-left: resume prompt + A-B loop pill */}
+                <div style={{
+                    position: 'absolute', left: 12, bottom: 76, zIndex: 5,
+                    display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start'
+                }}>
+                    {resumePrompt && (
+                        <button
+                            onClick={() => { seekTo(resumePrompt.time); setResumePrompt(null); }}
+                            style={{ ...pill, cursor: 'pointer' }}
+                        >
+                            {t('resumeAt')} {fmtTime(resumePrompt.time)}
+                        </button>
+                    )}
+                    {abLoop && (
+                        <button
+                            title={t('abLoopHint')}
+                            onClick={() => setAbLoop(null)}
+                            style={{ ...pill, cursor: 'pointer' }}
+                        >
+                            A {fmtTime(abLoop.a)}
+                            {abLoop.b != null ? ` – B ${fmtTime(abLoop.b)}` : ` – B ?`}
+                            {' ✕'}
+                        </button>
+                    )}
+                </div>
+
+                {menu && (
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                        style={{
+                            position: 'fixed', left: menu.x, top: menu.y, zIndex: 9999,
+                            width: 214, padding: 8,
+                            background: 'rgba(20,20,22,0.97)', color: '#fff',
+                            border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10,
+                            boxShadow: '0 8px 28px rgba(0,0,0,0.5)', fontSize: 13,
+                            backdropFilter: 'blur(6px)', userSelect: 'none'
+                        }}
+                    >
+                        <div style={menuLabel}>{t('ctxPlaybackSpeed')}</div>
+                        <div style={chipRow}>
+                            {SPEED_OPTIONS.map((s) => (
+                                <button
+                                    key={s}
+                                    onClick={() => applySpeed(s)}
+                                    style={chip(speed === s)}
+                                >{s}x</button>
+                            ))}
+                        </div>
+
+                        <div style={menuLabel}>{t('ctxVolumeBoost')}</div>
+                        <div style={chipRow}>
+                            {BOOST_OPTIONS.map((b) => (
+                                <button
+                                    key={b}
+                                    onClick={() => applyBoost(b)}
+                                    style={chip(boost === b)}
+                                >{Math.round(b * 100)}%</button>
+                            ))}
+                        </div>
+
+                        <div style={{ height: 1, background: 'rgba(255,255,255,0.1)', margin: '8px 4px' }} />
+
+                        <button onClick={() => { toggleLoop(); }} style={menuItem}>
+                            <span>{t('ctxLoop')}</span>
+                            <span style={{ opacity: 0.7 }}>{loop ? '✓' : ''}</span>
+                        </button>
+                        <button onClick={() => { toggleAutoSubs(); }} style={menuItem}>
+                            <span>{t('ctxAutoSubs')}</span>
+                            <span style={{ opacity: 0.7 }}>{autoSubs ? '✓' : ''}</span>
+                        </button>
+                        <button onClick={() => { toggleGlow(); }} style={menuItem}>
+                            <span>{t('ctxGlow')}</span>
+                            <span style={{ opacity: 0.7 }}>{glowOn ? '✓' : ''}</span>
+                        </button>
+                        <button onClick={() => { enterPip(); setMenu(null); }} style={menuItem}>
+                            <span>{t('ctxPictureInPicture')}</span>
+                        </button>
+                    </div>
+                )}
+            </div>
+
+            {/* Transcript / language-learning panel */}
+            {transcriptOpen && (
+                <TranscriptPanel
+                    cues={cues}
+                    activeIndex={activeCueIndex}
+                    onSeekTo={seekTo}
+                    onClose={toggleTranscript}
+                    transcribing={Boolean(transcribing)}
+                />
             )}
         </div>
     );
 };
 
+const pill = {
+    padding: '5px 12px', borderRadius: 999, fontSize: 12,
+    background: 'rgba(0,0,0,0.6)', color: 'rgba(255,255,255,0.9)',
+    border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(4px)',
+    whiteSpace: 'nowrap'
+};
+const iconBtn = (active) => ({
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    width: 32, height: 28, borderRadius: 6, cursor: 'pointer',
+    background: active ? 'rgba(59,130,246,0.85)' : 'rgba(0,0,0,0.55)',
+    color: '#fff', border: '1px solid rgba(255,255,255,0.15)'
+});
 const menuLabel = {
     fontSize: 11, opacity: 0.55, textTransform: 'uppercase',
     letterSpacing: 0.5, padding: '6px 4px 4px'
@@ -335,3 +712,5 @@ const menuItem = {
     border: 'none', borderRadius: 6, background: 'transparent',
     color: '#fff', fontSize: 13, textAlign: 'left'
 };
+
+export default VideoViewer;
