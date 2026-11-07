@@ -13,3 +13,4 @@ export { ArrowDownToLine } from './ArrowDownToLine';
 export { Captions } from './Captions';
 export { PanelRight } from './PanelRight';
 export { Sliders } from './Sliders';
+export { Repeat } from './Repeat';

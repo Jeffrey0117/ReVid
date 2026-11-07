@@ -108,6 +108,11 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
     subShiftRef.current = subStyle.timeShift || 0;
 
     // A-B loop + resume prompt + glow
+    // Index of the cue being drilled, or -1.
+    const [loopCueIndex, setLoopCueIndex] = useState(-1);
+    const loopCueRef = useRef(-1);
+    loopCueRef.current = loopCueIndex;
+
     const [abLoop, setAbLoop] = useState(null); // { a, b|null }
     const abRef = useRef(abLoop);
     abRef.current = abLoop;
@@ -278,10 +283,21 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
             const idx = findActiveCueIndex(cuesRef.current, tNow - subShiftRef.current);
             setActiveCueIndex((prev) => (prev === idx ? prev : idx));
 
-            // A-B loop.
-            const ab = abRef.current;
-            if (ab && ab.b != null && tNow >= ab.b) {
-                video.currentTime = ab.a;
+            // Sentence drill takes precedence over the A-B loop: repeat the
+            // chosen cue until it is switched off.
+            const drill = loopCueRef.current;
+            if (drill >= 0) {
+                const cue = cuesRef.current[drill];
+                if (cue) {
+                    const from = cue.start + subShiftRef.current;
+                    const to = cue.end + subShiftRef.current;
+                    if (tNow >= to || tNow < from - 0.3) video.currentTime = from;
+                }
+            } else {
+                const ab = abRef.current;
+                if (ab && ab.b != null && tNow >= ab.b) {
+                    video.currentTime = ab.a;
+                }
             }
 
             // Cross-restart resume position (throttled).
@@ -513,6 +529,19 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
         if (cues.length === 0 || cues.some(c => c.zh) || translating || transcribing) return;
         translateCues();
     }, [cues, translating, transcribing, translateCues]);
+
+    // Repeat one sentence until switched off. Jumps there and plays so the
+    // drill starts immediately rather than on the next pass.
+    const startCueDrill = useCallback((index) => {
+        setLoopCueIndex(index);
+        if (index < 0) return;
+        setAbLoop(null);
+        const cue = cuesRef.current[index];
+        if (cue) seekTo(cue.start + subShiftRef.current);
+    }, [seekTo]);
+
+    // Switching video must not leave a drill pointing at a stale cue index.
+    useEffect(() => { setLoopCueIndex(-1); }, [videoPath]);
 
     // Discard this video's subtitles and run them again.
     const retranscribe = useCallback(async () => {
@@ -884,6 +913,8 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                     onSeekTo={seekTo}
                     onClose={toggleTranscript}
                     transcribing={Boolean(transcribing)}
+                    loopCueIndex={loopCueIndex}
+                    onLoopCue={startCueDrill}
                 />
             )}
         </div>

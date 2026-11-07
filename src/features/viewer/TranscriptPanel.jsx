@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useI18n } from '../../i18n.jsx';
 import { useTheme } from '../../theme.jsx';
+import { Repeat } from '../../components/icons';
 
 function fmt(s) {
     const m = Math.floor(s / 60);
@@ -9,8 +10,11 @@ function fmt(s) {
 }
 
 // Language-learning sidebar: every subtitle line with its timestamp, the line
-// being spoken highlighted and kept in view, click to jump there.
-export const TranscriptPanel = ({ cues, activeIndex, onSeekTo, onClose, transcribing }) => {
+// being spoken highlighted and kept in view, click to jump there, and a
+// per-line repeat for drilling one sentence.
+export const TranscriptPanel = ({
+    cues, activeIndex, onSeekTo, onClose, transcribing, loopCueIndex, onLoopCue
+}) => {
     const { t } = useI18n();
     const { theme } = useTheme();
     const listRef = useRef(null);
@@ -50,10 +54,13 @@ export const TranscriptPanel = ({ cues, activeIndex, onSeekTo, onClose, transcri
                         onClick={() => onSeekTo(cue.start)}
                         style={{
                             display: 'flex', gap: 10, padding: '7px 14px', cursor: 'pointer',
-                            background: i === activeIndex ? theme.accentBg : 'transparent',
-                            borderLeft: i === activeIndex
-                                ? `3px solid ${theme.accent}`
-                                : '3px solid transparent'
+                            position: 'relative',
+                            background: i === loopCueIndex
+                                ? theme.accentBg
+                                : (i === activeIndex ? theme.accentBg : 'transparent'),
+                            borderLeft: i === loopCueIndex
+                                ? `3px solid ${theme.pin}`
+                                : (i === activeIndex ? `3px solid ${theme.accent}` : '3px solid transparent')
                         }}
                     >
                         <span style={{
@@ -80,6 +87,22 @@ export const TranscriptPanel = ({ cues, activeIndex, onSeekTo, onClose, transcri
                                 </span>
                             )}
                         </span>
+
+                        {/* Drill one sentence: repeat it until switched off. */}
+                        <button
+                            title={t('transcriptRepeat')}
+                            onClick={(e) => { e.stopPropagation(); onLoopCue(i === loopCueIndex ? -1 : i); }}
+                            style={{
+                                flexShrink: 0, alignSelf: 'flex-start',
+                                width: 22, height: 22, borderRadius: 4,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                background: i === loopCueIndex ? theme.pin : 'transparent',
+                                color: i === loopCueIndex ? '#fff' : theme.textTertiary,
+                                opacity: i === loopCueIndex ? 1 : 0.65
+                            }}
+                        >
+                            <Repeat size={13} />
+                        </button>
                     </div>
                 ))}
                 {transcribing && cues.length > 0 && (
