@@ -249,12 +249,76 @@ async function fetchSeason(show, season) {
     return { page: used, episodes };
 }
 
+// Kept inside the library file rather than dropped beside the videos: a
+// folder should not grow stray artwork files any more than stray .srt ones.
+const MAX_POSTER_BYTES = 700 * 1024;
+
+function fetchBinary(url) {
+    return new Promise((resolve, reject) => {
+        const req = https.get(url, { headers: { 'User-Agent': UA } }, (res) => {
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                res.resume();
+                fetchBinary(res.headers.location).then(resolve, reject);
+                return;
+            }
+            if (res.statusCode !== 200) {
+                res.resume();
+                reject(new Error(`Image fetch returned ${res.statusCode}`));
+                return;
+            }
+            const type = res.headers['content-type'] || 'image/png';
+            const chunks = [];
+            let total = 0;
+            res.on('data', (c) => {
+                total += c.length;
+                if (total > MAX_POSTER_BYTES) {
+                    req.destroy();
+                    reject(new Error('Image is too large to keep in the library'));
+                    return;
+                }
+                chunks.push(c);
+            });
+            res.on('end', () => resolve({ type, buffer: Buffer.concat(chunks) }));
+        });
+        req.on('error', (e) => reject(new Error(`Could not fetch image: ${e.message}`)));
+        req.setTimeout(20000, () => { req.destroy(new Error('Image fetch timed out')); });
+    });
+}
+
+// The infobox names a file; this turns that into something displayable.
+async function fetchImage(fileName, width = 900) {
+    if (!fileName) return null;
+    const title = `File:${fileName.replace(/^File:/i, '')}`;
+    const url = `${API}?action=query&titles=${encodeURIComponent(title)}`
+        + `&prop=imageinfo&iiprop=url&iiurlwidth=${width}&format=json&formatversion=2`;
+
+    let info;
+    try {
+        const data = await getJson(url);
+        info = data.query?.pages?.[0]?.imageinfo?.[0];
+    } catch (e) {
+        return null;
+    }
+    const src = info?.thumburl || info?.url;
+    if (!src) return null;
+
+    try {
+        const { type, buffer } = await fetchBinary(src);
+        return `data:${type};base64,${buffer.toString('base64')}`;
+    } catch (e) {
+        return null;
+    }
+}
+
 async function fetchShow(title) {
     const wikitext = await fetchPage(title);
-    return { page: title, ...parseShow(wikitext) };
+    const show = { page: title, ...parseShow(wikitext) };
+    // Artwork is a nicety: a show with none still has everything else.
+    show.poster = await fetchImage(infoboxField(wikitext, 'image'));
+    return show;
 }
 
 module.exports = {
     cleanWikitext, parseEpisodes, episodeFromName, fetchSeason, searchTitles,
-    parseShow, fetchShow, infoboxField, listItems
+    parseShow, fetchShow, fetchImage, infoboxField, listItems
 };

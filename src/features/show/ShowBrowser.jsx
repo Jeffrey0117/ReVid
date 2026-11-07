@@ -119,12 +119,29 @@ export const ShowBrowser = ({ folder, onOpenEpisode }) => {
 
     return (
         <div style={{ width: '100%', height: '100%', overflowY: 'auto', background: theme.bg }}>
-            {/* Show header */}
+            {/* Show header. The artwork sits behind it, dimmed enough that
+                the text over it stays readable on any poster. */}
             <div style={{
-                margin: 16, padding: '20px 24px', borderRadius: 10,
+                position: 'relative', margin: 16, padding: '20px 24px',
+                borderRadius: 10, overflow: 'hidden',
                 background: theme.bgSecondary, border: `1px solid ${theme.border}`
             }}>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+                {show?.poster && (
+                    <>
+                        <div style={{
+                            position: 'absolute', inset: 0,
+                            backgroundImage: `url(${show.poster})`,
+                            backgroundSize: 'cover', backgroundPosition: 'center',
+                            opacity: 0.22, filter: 'blur(1px)'
+                        }} />
+                        <div style={{
+                            position: 'absolute', inset: 0,
+                            background: `linear-gradient(90deg, ${theme.bgSecondary} 30%, transparent)`
+                        }} />
+                    </>
+                )}
+
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 24, fontWeight: 700, color: theme.text }}>
                         {(folder || '').split(/[\\/]/).filter(Boolean).pop()}
                     </span>
@@ -142,17 +159,18 @@ export const ShowBrowser = ({ folder, onOpenEpisode }) => {
                 </div>
 
                 {facts.length > 0 && (
-                    <div style={{ marginTop: 6, fontSize: 12, color: theme.textTertiary }}>
+                    <div style={{ position: 'relative', marginTop: 6, fontSize: 12, color: theme.textTertiary }}>
                         {facts.join('  ·  ')}
                     </div>
                 )}
 
                 {msg && (
-                    <div style={{ marginTop: 8, fontSize: 12, color: theme.accent }}>{msg}</div>
+                    <div style={{ position: 'relative', marginTop: 8, fontSize: 12, color: theme.accent }}>{msg}</div>
                 )}
 
                 {show?.description && (
                     <div style={{
+                        position: 'relative',
                         display: 'flex', gap: 32, marginTop: 14, flexWrap: 'wrap', alignItems: 'flex-start'
                     }}>
                         <p style={{

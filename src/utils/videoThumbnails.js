@@ -10,7 +10,20 @@ function addToCache(key, value) {
   thumbnailCache.set(key, value);
 }
 
-export async function generateVideoThumbnail(videoSrc, seekTime = 1.0) {
+// A frame one second in is the channel logo, a fade from black, or nothing.
+// Halfway through is the episode. 'middle' is the default for that reason;
+// a number still means that many seconds in, capped inside the video.
+export const MIDDLE = 'middle';
+
+export function seekTargetFor(duration, seekTime) {
+    const length = Number.isFinite(duration) && duration > 0 ? duration : 0;
+    if (seekTime === MIDDLE) return length ? length / 2 : 1;
+    if (!length) return seekTime;
+    // Never past the end, and never so early it catches the fade-in.
+    return Math.min(seekTime, length * 0.1 || seekTime);
+}
+
+export async function generateVideoThumbnail(videoSrc, seekTime = MIDDLE) {
   const cacheKey = `${videoSrc}@${seekTime}`;
   if (thumbnailCache.has(cacheKey)) {
     return thumbnailCache.get(cacheKey);
@@ -25,8 +38,7 @@ export async function generateVideoThumbnail(videoSrc, seekTime = 1.0) {
     let resolved = false;
 
     const onLoadedMetadata = () => {
-      const targetTime = Math.min(seekTime, video.duration * 0.1 || seekTime);
-      video.currentTime = targetTime;
+      video.currentTime = seekTargetFor(video.duration, seekTime);
     };
 
     const onSeeked = () => {
@@ -91,6 +103,6 @@ export function clearThumbnailCache() {
   thumbnailCache.clear();
 }
 
-export function getCachedThumbnail(videoSrc, seekTime = 1.0) {
+export function getCachedThumbnail(videoSrc, seekTime = MIDDLE) {
   return thumbnailCache.get(`${videoSrc}@${seekTime}`) || null;
 }

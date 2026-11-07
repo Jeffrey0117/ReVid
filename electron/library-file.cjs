@@ -101,9 +101,20 @@ function getEntry(videoPath) {
 function getSubtitles(videoPath) {
     const entry = getEntry(videoPath);
     if (!entry?.subs?.length) return null;
-    // A replaced file is a different video; its old subtitles would be wrong.
-    if (entry.size && entry.size !== sizeOf(videoPath)) return null;
+    // A changed size used to discard these outright, on the theory that the
+    // file had been replaced. Re-encoding and re-downloading change the size
+    // too, and the cost of being wrong was hours of transcription thrown away
+    // and silently redone on every folder open. Hand them back and let
+    // subtitlesStale() say they are worth a second look.
     return entry.subs.map(unpackCue);
+}
+
+// The file is not the size it was when these were written. Usually a
+// re-encode; occasionally a different episode under the same name.
+function subtitlesStale(videoPath) {
+    const entry = getEntry(videoPath);
+    if (!entry?.subs?.length || !entry.size) return false;
+    return entry.size !== sizeOf(videoPath);
 }
 
 function setSubtitles(videoPath, cues) {
@@ -200,6 +211,7 @@ module.exports = {
     ensureLibrary,
     getEntry,
     getSubtitles,
+    subtitlesStale,
     setSubtitles,
     setTranslation,
     clearSubtitles,
