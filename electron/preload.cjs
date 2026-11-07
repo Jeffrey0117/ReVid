@@ -244,7 +244,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
     },
 
-    // Same-basename .srt/.vtt beside the video, else the cache copy.
+    // Subtitles come from the folder's .revid library, falling back to any
+    // sidecar the user brought along. Async because the main process owns
+    // the library file.
+    readSubtitleCues: (videoPath) => ipcRenderer.invoke('read-subtitles', { videoPath }),
+    exportSrt: (videoPath, translated) => ipcRenderer.invoke('export-srt', { videoPath, translated }),
+    ensureLibrary: (folder) => ipcRenderer.invoke('ensure-library', { folder }),
+
+    // Legacy sidecar readers, still used by the export dialog.
     readSubtitles: (videoPath) => {
         try {
             const base = videoPath.replace(/\.[^.]+$/, '');

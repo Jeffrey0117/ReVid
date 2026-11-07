@@ -8,6 +8,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { ffmpegPath, trackFfmpegProc } = require('./ffmpeg-runner.cjs');
+const library = require('./library-file.cjs');
+const { parse: srtParse } = require('./srt.cjs');
 
 const RELEASE_TAG = 'v1.9.2';
 const BIN_URLS = {
@@ -281,12 +283,10 @@ function shiftSrt(content, seconds) {
 }
 
 async function transcribeVideo({ videoPath, exePath, fallbackExePath, modelPath: mPath, op = 'whisper' }, { onCue, onProgress } = {}) {
-    const base = videoPath.replace(/\.[^.]+$/, '');
-    const srtPath = `${base}.srt`;
     const workDir = asciiWorkDir();
     const stamp = `${Date.now()}-${Math.floor(process.hrtime()[1] / 1000)}`;
     const wavPath = path.join(workDir, `revid-whisper-${stamp}.wav`);
-    // whisper writes <outBase>.srt; kept ASCII, then moved to srtPath.
+    // whisper writes <outBase>.srt; kept ASCII, then read back and stored.
     const outBase = path.join(workDir, `revid-whisper-${stamp}`);
     const tmpSrtPath = `${outBase}.srt`;
 
@@ -365,31 +365,30 @@ async function transcribeVideo({ videoPath, exePath, fallbackExePath, modelPath:
         return { success: false, error: 'whisper produced no subtitle file' };
     }
 
-    // Put the cues back on the container timeline before saving, and write
-    // through fs so non-ASCII filenames work. If that folder isn't writable,
-    // keep the work in the cache rather than discarding a finished run.
-    let srt;
+    // Put the cues back on the container timeline before saving.
+    let srtText;
     try {
-        srt = await fs.promises.readFile(tmpSrtPath, 'utf8');
+        srtText = await fs.promises.readFile(tmpSrtPath, 'utf8');
     } catch (e) {
         return { success: false, error: `Could not read subtitles: ${e.message}` };
     }
     const startOffset = await probeStartTime(videoPath);
-    if (startOffset) srt = shiftSrt(srt, startOffset);
+    if (startOffset) srtText = shiftSrt(srtText, startOffset);
+    await removeWithRetry(tmpSrtPath);
+
+    // Subtitles go into the folder's library file rather than a sidecar, so a
+    // folder gains one file instead of two per video. If that folder cannot
+    // be written, keep the work in the cache rather than discarding a
+    // finished run.
+    const cues = srtParse(srtText);
+    const saved = library.setSubtitles(videoPath, cues);
+    if (saved.success) return { success: true, cues, startOffset, savedTo: saved.path };
 
     try {
-        await fs.promises.writeFile(srtPath, srt, 'utf8');
-        await removeWithRetry(tmpSrtPath);
-        return { success: true, srtPath, startOffset };
-    } catch (e) {
-        try {
-            const cached = cachedSubtitlePath(videoPath, '.srt');
-            await fs.promises.writeFile(cached, srt, 'utf8');
-            await removeWithRetry(tmpSrtPath);
-            return { success: true, srtPath: cached, cached: true, startOffset, saveError: e.message };
-        } catch (e2) {
-            return { success: false, error: `Could not save subtitles: ${e.message}` };
-        }
+        await fs.promises.writeFile(cachedSubtitlePath(videoPath, '.srt'), srtText, 'utf8');
+        return { success: true, cues, cached: true, startOffset, saveError: saved.error };
+    } catch (e2) {
+        return { success: false, error: `Could not save subtitles: ${saved.error}` };
     }
 }
 

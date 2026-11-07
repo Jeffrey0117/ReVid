@@ -710,6 +710,14 @@ export default function App() {
     // Opening a folder queues every video without subtitles for background
     // transcription, so the library fills in while the user watches instead of
     // each video only being transcribed when it is first opened.
+    // Opening a folder creates (or tops up) its .revid library, which also
+    // pulls in any .srt files written before the library existed.
+    useEffect(() => {
+        const api = getElectronAPI();
+        if (!api?.ensureLibrary || !currentPath) return;
+        api.ensureLibrary(currentPath).catch(() => {});
+    }, [currentPath]);
+
     useEffect(() => {
         const api = getElectronAPI();
         if (!api?.queueFolderTranscriptions || files.length === 0) return;

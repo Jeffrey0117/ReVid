@@ -11,6 +11,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const library = require('./library-file.cjs');
+const srt = require('./srt.cjs');
 
 const VIDEO_MIME = {
     '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.webm': 'video/webm',
@@ -59,16 +61,19 @@ function listLibrary() {
     return names
         .filter(n => VIDEO_EXTS.includes(path.extname(n).toLowerCase()))
         .filter(n => !/\.revid-(tmp|bak)(\.[^.]+)?$/i.test(n))
+        .filter(n => !/\.revid(\.tmp)?$/i.test(n))
         .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
         .map((name) => {
+            const full = path.join(servedRoot, name);
             const base = name.replace(/\.[^.]+$/, '');
             let size = 0;
-            try { size = fs.statSync(path.join(servedRoot, name)).size; } catch (e) { /* gone */ }
+            try { size = fs.statSync(full).size; } catch (e) { /* gone */ }
+            const cues = library.getSubtitles(full);
             return {
                 name,
                 size,
-                hasSubs: fs.existsSync(path.join(servedRoot, `${base}.srt`)),
-                hasZh: fs.existsSync(path.join(servedRoot, `${base}.zh.srt`))
+                hasSubs: Boolean(cues?.length) || fs.existsSync(path.join(servedRoot, `${base}.srt`)),
+                hasZh: Boolean(cues?.some(c => c.zh)) || fs.existsSync(path.join(servedRoot, `${base}.zh.srt`))
             };
         });
 }
@@ -148,10 +153,19 @@ function handle(req, res) {
 
         if (url.pathname === '/api/video') { streamVideo(req, res, target); return; }
 
-        const base = target.replace(/\.[^.]+$/, '');
-        const which = url.searchParams.get('lang') === 'zh' ? '.zh.srt' : '.srt';
+        const wantZh = url.searchParams.get('lang') === 'zh';
+        // The folder library is the store; a sidecar may still exist if the
+        // user brought their own subtitles.
+        const cues = library.getSubtitles(target);
+        if (cues?.length) {
+            const body = srt.serialize(cues, wantZh ? 'zh' : 'text');
+            res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end(body);
+            return;
+        }
         try {
-            const body = fs.readFileSync(base + which, 'utf8');
+            const base = target.replace(/\.[^.]+$/, '');
+            const body = fs.readFileSync(base + (wantZh ? '.zh.srt' : '.srt'), 'utf8');
             res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
             res.end(body);
         } catch (e) {

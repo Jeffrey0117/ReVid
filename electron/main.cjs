@@ -26,6 +26,8 @@ const { createWhisperQueue } = require('./whisper-queue.cjs');
 const pluginHost = require('./plugin-host.cjs');
 const dictionary = require('./dictionary.cjs');
 const lanServer = require('./lan-server.cjs');
+const library = require('./library-file.cjs');
+const srt = require('./srt.cjs');
 const { registerTheaterStore, drainTheaterSaves } = require('./theater-store.cjs');
 const { registerSyncClient, drainSyncRequests } = require('./sync-client.cjs');
 const { registerLocalVideoProtocol } = require('./local-video-protocol.cjs');
@@ -958,7 +960,8 @@ function setupIpcHandlers() {
     // machine, and the video being watched must not wait behind a folder sweep.
     const subtitlesExist = (videoPath) => {
         const base = videoPath.replace(/\.[^.]+$/, '');
-        return fs.existsSync(`${base}.srt`)
+        return Boolean(library.getSubtitles(videoPath))
+            || fs.existsSync(`${base}.srt`)
             || fs.existsSync(`${base}.vtt`)
             || fs.existsSync(cachedSubtitlePath(videoPath, '.srt'));
     };
@@ -1006,7 +1009,7 @@ function setupIpcHandlers() {
                 return { success: false, cancelled: true, error: 'Cancelled' };
             }
             sendWhisper(videoPath, {
-                type: 'done', success: result.success, srtPath: result.srtPath, error: result.error
+                type: 'done', success: result.success, error: result.error
             });
             return result;
         }
@@ -1017,7 +1020,7 @@ function setupIpcHandlers() {
             return { success: false, error: 'File not found' };
         }
         if (subtitlesExist(videoPath)) {
-            return { success: true, skipped: true, srtPath: `${videoPath.replace(/\.[^.]+$/, '')}.srt` };
+            return { success: true, skipped: true };
         }
         const status = getWhisperStatus(DEFAULT_MODEL);
         if (!status.binaryReady || !status.modelReady) {
@@ -1030,6 +1033,52 @@ function setupIpcHandlers() {
 
     // Background-transcribe every video in the open folder that has no
     // subtitles yet, so the library fills in while the user watches.
+    // Read whatever this video's subtitles are, wherever they live. The
+    // folder library is the store; sidecars are still honoured because a user
+    // may have brought their own, and the cache covers unwritable folders.
+    ipcMain.handle('read-subtitles', (_event, { videoPath }) => {
+        if (!videoPath) return { success: true, cues: null };
+        const fromLibrary = library.getSubtitles(videoPath);
+        if (fromLibrary) return { success: true, cues: fromLibrary, from: 'library' };
+
+        const base = videoPath.replace(/\.[^.]+$/, '');
+        for (const candidate of [`${base}.srt`, cachedSubtitlePath(videoPath, '.srt')]) {
+            try {
+                const cues = srt.parse(fs.readFileSync(candidate, 'utf8'));
+                if (!cues.length) continue;
+                let zh = null;
+                const zhPath = candidate.replace(/\.srt$/, '.zh.srt');
+                try { zh = srt.parse(fs.readFileSync(zhPath, 'utf8')); } catch (e) { /* none */ }
+                const merged = zh && zh.length === cues.length
+                    ? cues.map((c, i) => ({ ...c, zh: zh[i].text }))
+                    : cues;
+                return { success: true, cues: merged, from: 'sidecar' };
+            } catch (e) { /* try the next place */ }
+        }
+        return { success: true, cues: null };
+    });
+
+    // Write .srt files on request — for other players, or to hand to someone.
+    ipcMain.handle('export-srt', async (_event, { videoPath, translated }) => {
+        const cues = library.getSubtitles(videoPath);
+        if (!cues?.length) return { success: false, error: 'No subtitles' };
+        const base = videoPath.replace(/\.[^.]+$/, '');
+        const written = [];
+        try {
+            await fs.promises.writeFile(`${base}.srt`, srt.serialize(cues, 'text'), 'utf8');
+            written.push(`${base}.srt`);
+            if (translated && cues.some(c => c.zh)) {
+                await fs.promises.writeFile(`${base}.zh.srt`, srt.serialize(cues, 'zh'), 'utf8');
+                written.push(`${base}.zh.srt`);
+            }
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+        return { success: true, written };
+    });
+
+    ipcMain.handle('ensure-library', (_event, { folder }) => library.ensureLibrary(folder));
+
     ipcMain.handle('queue-folder-transcriptions', async (_event, { videoPaths }) => {
         if (!Array.isArray(videoPaths)) return { success: false, error: 'No files' };
         const status = getWhisperStatus(DEFAULT_MODEL);
@@ -1051,6 +1100,7 @@ function setupIpcHandlers() {
         if (!videoPath || !fs.existsSync(videoPath)) {
             return { success: false, error: 'File not found' };
         }
+        library.clearSubtitles(videoPath, { alsoTranslation });
         const base = videoPath.replace(/\.[^.]+$/, '');
         const targets = [`${base}.srt`, cachedSubtitlePath(videoPath, '.srt')];
         if (alsoTranslation) {
@@ -1089,32 +1139,20 @@ function setupIpcHandlers() {
         if (token !== translateToken) return { success: false, cancelled: true, error: 'Superseded' };
         if (!result.success) return result;
 
-        // Persist beside the video in the same SRT shape as the source.
-        const toStamp = (s) => {
-            const h = String(Math.floor(s / 3600)).padStart(2, '0');
-            const m = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
-            const sec = String(Math.floor(s % 60)).padStart(2, '0');
-            const ms = String(Math.round((s - Math.floor(s)) * 1000)).padStart(3, '0');
-            return `${h}:${m}:${sec},${ms}`;
-        };
-        const srt = cues.map((c, i) =>
-            `${i + 1}\n${toStamp(c.start)} --> ${toStamp(c.end)}\n${result.translations[i]}\n`
-        ).join('\n');
+        // The translation belongs alongside the line it translates, in the
+        // folder's library, not in a second file.
+        const stored = library.setTranslation(videoPath, result.translations);
+        if (stored.success) return { success: true, translations: result.translations };
 
-        const zhPath = `${videoPath.replace(/\.[^.]+$/, '')}.zh.srt`;
+        // Folder not writable — keep it in the cache so it isn't redone.
         try {
-            await fs.promises.writeFile(zhPath, srt, 'utf8');
-            return { success: true, translations: result.translations, zhPath };
-        } catch (e) {
-            // Folder not writable — keep the translation in the cache so it
-            // isn't redone on the next open.
-            try {
-                const cached = cachedSubtitlePath(videoPath, '.zh.srt');
-                await fs.promises.writeFile(cached, srt, 'utf8');
-                return { success: true, translations: result.translations, zhPath: cached, cached: true };
-            } catch (e2) {
-                return { success: true, translations: result.translations, saveError: e.message };
-            }
+            const body = srt.serialize(
+                cues.map((c, i) => ({ ...c, zh: result.translations[i] })), 'zh'
+            );
+            await fs.promises.writeFile(cachedSubtitlePath(videoPath, '.zh.srt'), body, 'utf8');
+            return { success: true, translations: result.translations, cached: true };
+        } catch (e2) {
+            return { success: true, translations: result.translations, saveError: stored.error };
         }
     });
 
@@ -1267,34 +1305,19 @@ function setupIpcHandlers() {
     // Overwrite a video's subtitles after the user corrects them. Whisper
     // mishears names and jargon, and a wrong transcript poisons the
     // translation, the word list and every export built from it.
-    ipcMain.handle('save-subtitles', async (_event, { videoPath, cues, translated }) => {
+    ipcMain.handle('save-subtitles', async (_event, { videoPath, cues }) => {
         if (!videoPath || !Array.isArray(cues) || cues.length === 0) {
             return { success: false, error: 'Nothing to save' };
         }
-        const toStamp = (s) => {
-            const h = String(Math.floor(s / 3600)).padStart(2, '0');
-            const m = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
-            const sec = String(Math.floor(s % 60)).padStart(2, '0');
-            const ms = String(Math.round((s - Math.floor(s)) * 1000)).padStart(3, '0');
-            return `${h}:${m}:${sec},${ms}`;
-        };
-        const body = cues.map((c, i) =>
-            `${i + 1}\n${toStamp(c.start)} --> ${toStamp(c.end)}\n${c.text}\n`
-        ).join('\n');
-
-        const suffix = translated ? '.zh.srt' : '.srt';
-        const target = `${videoPath.replace(/\.[^.]+$/, '')}${suffix}`;
+        const stored = library.setSubtitles(videoPath, cues);
+        if (stored.success) return stored;
         try {
-            await fs.promises.writeFile(target, body, 'utf8');
-            return { success: true, path: target };
+            const body = srt.serialize(cues, 'text');
+            const cached = cachedSubtitlePath(videoPath, '.srt');
+            await fs.promises.writeFile(cached, body, 'utf8');
+            return { success: true, path: cached, cached: true };
         } catch (e) {
-            try {
-                const cached = cachedSubtitlePath(videoPath, suffix);
-                await fs.promises.writeFile(cached, body, 'utf8');
-                return { success: true, path: cached, cached: true };
-            } catch (e2) {
-                return { success: false, error: e.message };
-            }
+            return { success: false, error: stored.error };
         }
     });
 

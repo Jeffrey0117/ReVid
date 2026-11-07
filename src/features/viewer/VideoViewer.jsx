@@ -4,7 +4,7 @@ import 'plyr/dist/plyr.css';
 import { useI18n } from '../../i18n.jsx';
 import { useTheme } from '../../theme.jsx';
 import { getCachedThumbnail } from '../../utils/videoThumbnails';
-import { parseSubtitles, findActiveCueIndex } from '../../utils/subtitles';
+import { findActiveCueIndex } from '../../utils/subtitles';
 import { TranscriptPanel } from './TranscriptPanel';
 import { WordbookPanel } from './WordbookPanel';
 import { BookMarked, Lock } from '../../components/icons';
@@ -471,26 +471,16 @@ export const VideoViewer = ({ src, videoPath, timeRef, onExportStudy, onUpgrade 
         const api = getElectronAPI();
         if (!api || !videoPath) return;
 
-        // Merge any previously translated sidecar onto the source cues so a
-        // video is never re-translated.
-        const withTranslations = (base) => {
-            const zh = api.readTranslatedSubtitles?.(videoPath);
-            if (!zh) return base;
-            const zhCues = parseSubtitles(zh.content, 'srt');
-            if (zhCues.length !== base.length) return base; // misaligned sidecar
-            return base.map((c, i) => ({ ...c, zh: zhCues[i].text }));
-        };
-
-        const sub = api.readSubtitles(videoPath);
-        if (sub) {
-            setCues(withTranslations(parseSubtitles(sub.content, sub.format)));
-            return;
-        }
-        if (!autoSubsRef.current) return;
-
         let cancelled = false;
         let live = [];
         (async () => {
+            // Subtitles live in the folder's .revid library; the main process
+            // falls back to a sidecar if the user brought one.
+            const stored = await api.readSubtitleCues?.(videoPath);
+            if (cancelled) return;
+            if (stored?.cues?.length) { setCues(stored.cues); return; }
+            if (!autoSubsRef.current) return;
+
             const status = await api.whisperStatus();
             if (cancelled) return;
             if (!status.success || !status.binaryReady || !status.modelReady) {
@@ -510,8 +500,8 @@ export const VideoViewer = ({ src, videoPath, timeRef, onExportStudy, onUpgrade 
             if (cancelled) return;
             setTranscribing(null);
             if (result.success) {
-                const finished = api.readSubtitles(videoPath);
-                if (finished) setCues(withTranslations(parseSubtitles(finished.content, finished.format)));
+                const finished = await api.readSubtitleCues?.(videoPath);
+                if (!cancelled && finished?.cues?.length) setCues(finished.cues);
             }
         })();
 
@@ -791,6 +781,15 @@ export const VideoViewer = ({ src, videoPath, timeRef, onExportStudy, onUpgrade 
         if (!result.success && !result.cancelled) {
             setTranslateError(result.error);
         }
+    }, [videoPath]);
+
+    // Subtitles live in the library file; write real .srt files only when
+    // the user wants them — for another player, or to hand to someone.
+    const exportSrt = useCallback(async () => {
+        const api = getElectronAPI();
+        if (!api?.exportSrt || !videoPath) return;
+        const result = await api.exportSrt(videoPath, cuesRef.current.some(c => c.zh));
+        if (!result.success) setTranslateError(result.error);
     }, [videoPath]);
 
     // Discard this video's subtitles and run them again.
@@ -1123,6 +1122,7 @@ export const VideoViewer = ({ src, videoPath, timeRef, onExportStudy, onUpgrade 
                             onChange={setSubStyle}
                             onClose={() => setStyleOpen(false)}
                             onRetranscribe={retranscribe}
+                            onExportSrt={exportSrt}
                             difficulty={difficulty}
                             onDifficultyChange={(next) => { writeDifficulty(next); setDifficulty(next); }}
                             knownCount={knownWords.size}

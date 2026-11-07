@@ -76,7 +76,7 @@ function Row({ label, children }) {
 
 // Small popover for subtitle appearance. Values apply live and persist.
 export const SubtitleSettings = ({
-    style, onChange, onClose, onRetranscribe,
+    style, onChange, onClose, onRetranscribe, onExportSrt,
     difficulty, onDifficultyChange, knownCount = 0, onForgetKnown
 }) => {
     const { t } = useI18n();
@@ -363,6 +363,20 @@ export const SubtitleSettings = ({
                         </button>
                     )}
                 </>
+            )}
+
+            {onExportSrt && (
+                <button
+                    onClick={onExportSrt}
+                    title={t('exportSrtHint')}
+                    style={{
+                        marginTop: 12, width: '100%', padding: '6px 0',
+                        borderRadius: 6, fontSize: 12,
+                        background: theme.inputBg, color: theme.textSecondary
+                    }}
+                >
+                    {t('exportSrt')}
+                </button>
             )}
 
             {onRetranscribe && (
