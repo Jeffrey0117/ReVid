@@ -40,6 +40,8 @@ import { BatchCutDialog } from './components/BatchCutDialog';
 import { PluginsDialog } from './features/plugins/PluginsDialog';
 import { StudyExportDialog } from './features/export/StudyExportDialog';
 import { ShareDialog } from './features/share/ShareDialog';
+import { TranscriptSearch } from './features/search/TranscriptSearch';
+import { Search as SearchIcon } from './components/icons';
 import { reloadPlugins } from './features/plugins/pluginRuntime';
 import { validateRevidFile } from './utils/revidFile';
 import { detectPlatform } from './utils/platformDetect';
@@ -96,6 +98,9 @@ export default function App() {
     // The viewer's transcript/wordbook panel takes real width on the right, so
     // toasts have to step aside or they land on the lines being read.
     const [rightPanelWidth, setRightPanelWidth] = useState(0);
+    const [showSearch, setShowSearch] = useState(false);
+    // Bumped on every jump so asking for the same moment twice still seeks.
+    const [seekRequest, setSeekRequest] = useState(null);
     const [showScreenshots, setShowScreenshots] = useState(false);
     const [showGif, setShowGif] = useState(false);
     const [showBatchCrop, setShowBatchCrop] = useState(false);
@@ -635,6 +640,18 @@ export default function App() {
         }
     }, [selectVideo, gridFiles, files]);
 
+    // A search hit names a moment in a file that may be in another season's
+    // folder, so open the file first and let the viewer land on the line.
+    const jumpToHit = useCallback((hit) => {
+        const src = toLocalVideoUrl(hit.videoPath);
+        // reapply() reads this when the new video's metadata arrives; the
+        // seekRequest covers the case where that video is already open.
+        viewerTimeRef.current = { src, time: hit.start };
+        setSeekRequest({ src, time: hit.start, nonce: Date.now() });
+        openVideoFile(hit.videoPath);
+        setViewMode('viewer');
+    }, [openVideoFile]);
+
     const toggleGridSize = useCallback(() => {
         setGridSize(current => {
             const s = ['small', 'medium', 'large'];
@@ -882,6 +899,17 @@ export default function App() {
                                     : `${files.length} ${t('videos')}`
                             }
                         </span>
+                    )}
+
+                    {currentPath && (
+                        <button
+                            className="btn btn-ghost"
+                            title={t('searchTitle')}
+                            onClick={() => setShowSearch(true)}
+                            style={{ padding: 7, borderRadius: 8, display: 'flex' }}
+                        >
+                            <SearchIcon size={17} />
+                        </button>
                     )}
 
                     {/* Background transcription. It reports on work the user
@@ -2036,6 +2064,7 @@ export default function App() {
                                         currentIndex={gridFiles.indexOf(currentVideo)}
                                         onSelectVideo={handleSelectVideoFromGrid}
                                         onRightPanelWidth={setRightPanelWidth}
+                                        seekRequest={seekRequest}
                                     />
                                 )
                         ) : null}
@@ -2164,6 +2193,14 @@ export default function App() {
                     files={gridFiles}
                     template={batchCutCtx}
                     onClose={handleBatchCutClose}
+                />
+            )}
+
+            {showSearch && currentPath && (
+                <TranscriptSearch
+                    folder={currentPath}
+                    onPick={jumpToHit}
+                    onClose={() => setShowSearch(false)}
                 />
             )}
 

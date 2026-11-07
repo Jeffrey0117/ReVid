@@ -330,6 +330,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
     },
     reelRendererStatus: () => ipcRenderer.invoke('reel-renderer-status'),
+    searchSubtitles: (params) => ipcRenderer.invoke('search-subtitles', params),
 
     saveSubtitles: (videoPath, cues, translated) =>
         ipcRenderer.invoke('save-subtitles', { videoPath, cues, translated }),

@@ -18,3 +18,4 @@ export { BookMarked } from './BookMarked';
 export { Pencil } from './Pencil';
 export { Lock } from './Lock';
 export { ListVideo } from './ListVideo';
+export { Search } from './Search';

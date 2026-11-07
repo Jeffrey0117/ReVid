@@ -35,6 +35,7 @@ let remotionRunner = null;
 const reelRunner = () => (remotionRunner ||= createRemotionRunner());
 const library = require('./library-file.cjs');
 const srt = require('./srt.cjs');
+const librarySearch = require('./library-search.cjs');
 const { registerTheaterStore, drainTheaterSaves } = require('./theater-store.cjs');
 const { registerSyncClient, drainSyncRequests } = require('./sync-client.cjs');
 const { registerLocalVideoProtocol } = require('./local-video-protocol.cjs');
@@ -1371,6 +1372,16 @@ function setupIpcHandlers() {
         } finally {
             if (served) { try { await served.close(); } catch (e) { /* already down */ } }
             try { await fs.promises.rm(work, { recursive: true, force: true }); } catch (e) { /* leave it */ }
+        }
+    });
+
+    // Find a line across everything transcribed, so "which episode was that
+    // bit in" is a search rather than a scrub through six hours.
+    ipcMain.handle('search-subtitles', async (_event, params) => {
+        try {
+            return librarySearch.search(params || {});
+        } catch (e) {
+            return { success: false, error: e.message, results: [] };
         }
     });
 

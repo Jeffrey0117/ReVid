@@ -88,7 +88,7 @@ function fmtTime(s) {
 
 export const VideoViewer = ({
     src, videoPath, timeRef, onExportStudy, onUpgrade,
-    files = [], currentIndex = -1, onSelectVideo, onRightPanelWidth
+    files = [], currentIndex = -1, onSelectVideo, onRightPanelWidth, seekRequest
 }) => {
     const { t } = useI18n();
     const { theme } = useTheme();
@@ -876,6 +876,16 @@ export const VideoViewer = ({
             setTranslateError(result.error);
         }
     }, [videoPath, subStyle, t]);
+
+    // Landing on a line found by search. Switching videos is already handled
+    // by the resume path on loadedmetadata; this covers the case where the hit
+    // is in the video that happens to be playing.
+    useEffect(() => {
+        if (!seekRequest || seekRequest.src !== src) return;
+        const video = videoElRef.current;
+        if (!video || video.readyState < 1) return;
+        seekTo(seekRequest.time);
+    }, [seekRequest, src, seekTo]);
 
     // Subtitles live in the library file; write real .srt files only when
     // the user wants them — for another player, or to hand to someone.
