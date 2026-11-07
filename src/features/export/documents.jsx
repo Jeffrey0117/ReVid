@@ -1,5 +1,5 @@
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
-import { latinOrMixed } from './pdfFonts';
+import { latinOrMixed, normalizeForFont as zh } from './pdfFonts';
 
 // Typography carried over from pdfluv2, where it was tuned over several
 // rounds for printing: Latin is set larger than CJK because Times at the same
@@ -27,9 +27,13 @@ const styles = StyleSheet.create({
     },
     cueBody: { flex: 1 },
     original: {
-        fontFamily: 'Times-Roman', fontSize: 12, lineHeight: 1.45, color: '#2e2e2e'
+        // Sans, not Times: subtitles are speech, and a serif face at this size
+        // reads as a book quotation rather than a line someone said.
+        fontFamily: 'NotoLatin', fontSize: 11, lineHeight: 1.5, color: '#1f1f1f'
     },
-    translation: { fontSize: 10.5, lineHeight: 1.44, color: '#5a5a5a', marginTop: 1 },
+    // Close in weight to the English above it — a translation is the other
+    // half of the line, not a footnote.
+    translation: { fontSize: 10.5, lineHeight: 1.5, color: '#3d3d3d', marginTop: 2 },
 
     entry: {
         paddingVertical: 7,
@@ -37,15 +41,15 @@ const styles = StyleSheet.create({
     },
     entryHead: { flexDirection: 'row', alignItems: 'baseline' },
     entryNum: { width: 24, fontSize: 7, color: '#9a9a9a', fontFamily: 'NotoLatin' },
-    entryWord: { fontFamily: 'Times-Bold', fontSize: 12, color: '#111111' },
-    entryPhonetic: { fontFamily: 'NotoLatin', fontSize: 7.5, color: '#8a8a8a', marginLeft: 6 },
+    entryWord: { fontFamily: 'Helvetica-Bold', fontSize: 12.5, color: '#111111' },
+    entryPhonetic: { fontFamily: 'NotoLatin', fontSize: 8, color: '#6b6b6b', marginLeft: 6 },
     entryTags: { fontFamily: 'Helvetica', fontSize: 6.5, color: '#b05a2a', marginLeft: 6 },
-    entryDef: { fontSize: 9.5, lineHeight: 1.44, color: '#2e2e2e', marginTop: 3, marginLeft: 24 },
+    entryDef: { fontSize: 10, lineHeight: 1.5, color: '#1f1f1f', marginTop: 3, marginLeft: 24 },
     entryExample: {
-        fontFamily: 'Times-Italic', fontSize: 9, lineHeight: 1.4,
-        color: '#5a5a5a', marginTop: 3, marginLeft: 24
+        fontFamily: 'NotoLatin', fontSize: 9.5, lineHeight: 1.45,
+        color: '#3d3d3d', marginTop: 4, marginLeft: 24
     },
-    entryExampleZh: { fontSize: 8.5, lineHeight: 1.4, color: '#8a8a8a', marginLeft: 24 },
+    entryExampleZh: { fontSize: 9, lineHeight: 1.45, color: '#5a5a5a', marginLeft: 24 },
 
     footer: {
         position: 'absolute', bottom: 32, left: 0, right: 0,
@@ -67,9 +71,10 @@ function stamp(seconds) {
 }
 
 function Header({ title, subtitle }) {
+    const shown = zh(title);
     return (
         <View style={styles.header}>
-            <Text style={latinOrMixed(title, styles.title)}>{title}</Text>
+            <Text style={latinOrMixed(shown, styles.title)}>{shown}</Text>
             <Text style={styles.subtitle}>{subtitle}</Text>
         </View>
     );
@@ -103,8 +108,8 @@ export function TranscriptPdf({ title, sections, showTranslation }) {
                             // stranded alone at the foot of a page.
                             <View style={styles.sectionRow} minPresenceAhead={60}>
                                 <View style={styles.sectionLine} />
-                                <Text style={latinOrMixed(section.title, styles.sectionLabel)}>
-                                    {section.title}
+                                <Text style={latinOrMixed(zh(section.title), styles.sectionLabel)}>
+                                    {zh(section.title)}
                                 </Text>
                                 <View style={styles.sectionLine} />
                             </View>
@@ -117,7 +122,7 @@ export function TranscriptPdf({ title, sections, showTranslation }) {
                                         {cue.text}
                                     </Text>
                                     {showTranslation && cue.zh ? (
-                                        <Text style={styles.translation}>{cue.zh}</Text>
+                                        <Text style={styles.translation}>{zh(cue.zh)}</Text>
                                     ) : null}
                                 </View>
                             </View>
@@ -154,14 +159,14 @@ export function WordbookPdf({ title, words }) {
                                 </Text>
                             ) : null}
                         </View>
-                        <Text style={styles.entryDef}>{w.definition}</Text>
+                        <Text style={styles.entryDef}>{zh(w.definition)}</Text>
                         {w.example ? (
                             <Text style={latinOrMixed(w.example, styles.entryExample)}>
                                 “{w.example}”
                             </Text>
                         ) : null}
                         {w.exampleZh ? (
-                            <Text style={styles.entryExampleZh}>{w.exampleZh}</Text>
+                            <Text style={styles.entryExampleZh}>{zh(w.exampleZh)}</Text>
                         ) : null}
                     </View>
                 ))}

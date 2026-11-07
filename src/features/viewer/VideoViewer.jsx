@@ -7,7 +7,8 @@ import { getCachedThumbnail } from '../../utils/videoThumbnails';
 import { parseSubtitles, findActiveCueIndex } from '../../utils/subtitles';
 import { TranscriptPanel } from './TranscriptPanel';
 import { WordbookPanel } from './WordbookPanel';
-import { BookMarked } from '../../components/icons';
+import { BookMarked, Lock } from '../../components/icons';
+import { hasFeature, FEATURES } from '../licensing/entitlements';
 import { SubtitleSettings, readSubtitleStyle, subtitleTextStyle } from './SubtitleSettings';
 import {
     WordCard, ClickableText, readDifficulty, writeDifficulty, readKnownWords
@@ -79,7 +80,7 @@ function fmtTime(s) {
     return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
-export const VideoViewer = ({ src, videoPath, timeRef, onExportStudy }) => {
+export const VideoViewer = ({ src, videoPath, timeRef, onExportStudy, onUpgrade }) => {
     const { t } = useI18n();
     const { theme } = useTheme();
     const wrapperRef = useRef(null);
@@ -981,20 +982,27 @@ export const VideoViewer = ({ src, videoPath, timeRef, onExportStudy }) => {
                         display: 'flex', borderRadius: 6, overflow: 'hidden',
                         border: '1px solid rgba(255,255,255,0.15)'
                     }}>
-                        {['learn', 'edit'].map((mode) => (
-                            <button
-                                key={mode}
-                                title={t(`mode_${mode}_hint`)}
-                                onClick={() => pickMode(mode)}
-                                style={{
-                                    height: 28, padding: '0 10px', fontSize: 11, fontWeight: 600,
-                                    background: viewerMode === mode ? 'rgba(59,130,246,0.85)' : 'rgba(0,0,0,0.55)',
-                                    color: '#fff'
-                                }}
-                            >
-                                {t(`mode_${mode}`)}
-                            </button>
-                        ))}
+                        {['learn', 'edit'].map((mode) => {
+                            const allowed = hasFeature(
+                                mode === 'learn' ? FEATURES.LEARNING : FEATURES.TRANSCRIPT_TOOLS
+                            );
+                            return (
+                                <button
+                                    key={mode}
+                                    title={allowed ? t(`mode_${mode}_hint`) : t('advancedOnly')}
+                                    onClick={() => (allowed ? pickMode(mode) : onUpgrade?.())}
+                                    style={{
+                                        height: 28, padding: '0 10px', fontSize: 11, fontWeight: 600,
+                                        display: 'flex', alignItems: 'center', gap: 4,
+                                        background: viewerMode === mode ? 'rgba(59,130,246,0.85)' : 'rgba(0,0,0,0.55)',
+                                        color: allowed ? '#fff' : 'rgba(255,255,255,0.55)'
+                                    }}
+                                >
+                                    {t(`mode_${mode}`)}
+                                    {!allowed && <Lock size={10} />}
+                                </button>
+                            );
+                        })}
                     </div>
                     {learnMode && (
                         <button
@@ -1152,7 +1160,7 @@ export const VideoViewer = ({ src, videoPath, timeRef, onExportStudy }) => {
                     showRepeat={learnMode}
                     onEditCue={editMode ? editCue : null}
                     onCutSelection={editMode ? cutSelection : null}
-                    onExport={onExportStudy}
+                    onExport={learnMode ? onExportStudy : null}
                 />
             )}
         </div>

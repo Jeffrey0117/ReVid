@@ -1,4 +1,5 @@
 import { Font } from '@react-pdf/renderer';
+import * as OpenCC from 'opencc-js';
 
 // react-pdf ships no CJK support at all: it breaks lines on spaces, and CJK
 // text has none, so a paragraph of Chinese renders as one unbreakable run
@@ -9,6 +10,22 @@ export const CJK_PATTERN = /[　-〿一-鿿豈-﫿＀-￯]/;
 
 const NO_LINE_START = new Set('、。，．！？；：）」』】》〉…—％‰℃·');
 const NO_LINE_END = new Set('「『（【《〈');
+
+// The bundled CJK face is Traditional-only, so Simplified-only glyphs (剧,
+// 烦, 监, 狱 …) have nothing to draw and come out as garbage — which is what
+// happens to every title taken from a Simplified filename. Shipping a second
+// 17MB Simplified face to fix a title is not worth it; converting is, and
+// the rest of the document is Traditional already.
+const toSimplified = OpenCC.Converter({ from: 'tw', to: 'cn' });
+const toTraditional = OpenCC.Converter({ from: 'cn', to: 'twp' });
+
+export function normalizeForFont(text) {
+    if (!text || !CJK_PATTERN.test(text)) return text;
+    // Running the converter over text that is ALREADY Traditional corrupts
+    // it (看表演 → 看錶演), so only touch strings with no Traditional-only
+    // characters.
+    return toSimplified(text) !== text ? text : toTraditional(text);
+}
 
 let registered = false;
 

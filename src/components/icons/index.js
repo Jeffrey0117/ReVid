@@ -16,3 +16,4 @@ export { Sliders } from './Sliders';
 export { Repeat } from './Repeat';
 export { BookMarked } from './BookMarked';
 export { Pencil } from './Pencil';
+export { Lock } from './Lock';
