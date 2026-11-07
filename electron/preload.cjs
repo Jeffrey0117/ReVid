@@ -289,6 +289,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
     },
 
+    // --- Watch on another device ---
+
+    lanStart: (folder) => ipcRenderer.invoke('lan-start', { folder }),
+    lanStop: () => ipcRenderer.invoke('lan-stop'),
+    lanStatus: () => ipcRenderer.invoke('lan-status'),
+
     // --- Offline dictionary ---
 
     dictLookup: (word) => ipcRenderer.invoke('dict-lookup', { word }),

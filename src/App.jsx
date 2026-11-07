@@ -39,6 +39,7 @@ import { InfoPanel } from './components/InfoPanel';
 import { BatchCutDialog } from './components/BatchCutDialog';
 import { PluginsDialog } from './features/plugins/PluginsDialog';
 import { StudyExportDialog } from './features/export/StudyExportDialog';
+import { ShareDialog } from './features/share/ShareDialog';
 import { reloadPlugins } from './features/plugins/pluginRuntime';
 import { validateRevidFile } from './utils/revidFile';
 import { detectPlatform } from './utils/platformDetect';
@@ -104,6 +105,7 @@ export default function App() {
     const [showSettingsMenu, setShowSettingsMenu] = useState(false);
     const [showPlugins, setShowPlugins] = useState(false);
     const [showStudyExport, setShowStudyExport] = useState(false);
+    const [showShare, setShowShare] = useState(false);
     const [showAbout, setShowAbout] = useState(false);
     const [toast, setToast] = useState(null);
     const [alertModal, setAlertModal] = useState(null); // { message }
@@ -1431,6 +1433,23 @@ export default function App() {
                                         </svg>
                                         <span>{t('exportStudyTitle')}</span>
                                     </button>
+                                    {/* 用手機/平板看這台電腦裡的片 */}
+                                    <button
+                                        onClick={() => { setShowShare(true); setShowSettingsMenu(false); }}
+                                        style={{
+                                            width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+                                            padding: '8px 12px', fontSize: 13, color: theme.textSecondary,
+                                            transition: 'background 0.1s'
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.background = theme.hoverBg}
+                                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                    >
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <rect width="10" height="16" x="7" y="4" rx="2" />
+                                            <path d="M11 20h2" />
+                                        </svg>
+                                        <span>{t('shareTitle')}</span>
+                                    </button>
                                     <button
                                         onClick={() => { setShowSyncSettings(true); setShowSettingsMenu(false); }}
                                         style={{
@@ -2255,6 +2274,10 @@ export default function App() {
             <FamilyDialog isOpen={showFamily} onClose={() => setShowFamily(false)} />
 
             {showPlugins && <PluginsDialog onClose={() => setShowPlugins(false)} />}
+
+            {showShare && (
+                <ShareDialog folder={currentPath} onClose={() => setShowShare(false)} />
+            )}
 
             {showStudyExport && (
                 <StudyExportDialog

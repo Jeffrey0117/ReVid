@@ -25,6 +25,7 @@ const { translateLines } = require('./translator.cjs');
 const { createWhisperQueue } = require('./whisper-queue.cjs');
 const pluginHost = require('./plugin-host.cjs');
 const dictionary = require('./dictionary.cjs');
+const lanServer = require('./lan-server.cjs');
 const { registerTheaterStore, drainTheaterSaves } = require('./theater-store.cjs');
 const { registerSyncClient, drainSyncRequests } = require('./sync-client.cjs');
 const { registerLocalVideoProtocol } = require('./local-video-protocol.cjs');
@@ -1116,6 +1117,12 @@ function setupIpcHandlers() {
             }
         }
     });
+
+    // --- Watch on another device ---
+
+    ipcMain.handle('lan-start', async (_event, { folder }) => await lanServer.start({ folder }));
+    ipcMain.handle('lan-stop', () => lanServer.stop());
+    ipcMain.handle('lan-status', () => lanServer.status());
 
     // --- Offline dictionary (ECDICT) ---
 
