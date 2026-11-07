@@ -94,6 +94,9 @@ export default function App() {
     // Folder-wide background transcription: { running, pending, done }.
     const [subsQueue, setSubsQueue] = useState(null);
     const [subsCollapsed, setSubsCollapsed] = useState(false);
+    // The viewer's transcript/wordbook panel takes real width on the right, so
+    // the toast has to step aside or it lands on the lines being read.
+    const [rightPanelWidth, setRightPanelWidth] = useState(0);
     const [showScreenshots, setShowScreenshots] = useState(false);
     const [showGif, setShowGif] = useState(false);
     const [showBatchCrop, setShowBatchCrop] = useState(false);
@@ -2003,6 +2006,7 @@ export default function App() {
                                         files={gridFiles}
                                         currentIndex={gridFiles.indexOf(currentVideo)}
                                         onSelectVideo={handleSelectVideoFromGrid}
+                                        onRightPanelWidth={setRightPanelWidth}
                                     />
                                 )
                         ) : null}
@@ -2144,7 +2148,7 @@ export default function App() {
                 const collapsed = isEditing || subsCollapsed;
                 const place = isEditing
                     ? { top: 46, left: '50%', transform: 'translateX(-50%)' }
-                    : { right: 16, bottom: exportJob ? 108 : 16 };
+                    : { right: 16 + rightPanelWidth, bottom: exportJob ? 108 : 16 };
                 return (
                     <div style={{
                         position: 'fixed', zIndex: 399, ...place,

@@ -8,6 +8,7 @@ import { findActiveCueIndex } from '../../utils/subtitles';
 import { TranscriptPanel } from './TranscriptPanel';
 import { WordbookPanel } from './WordbookPanel';
 import { EpisodePicker } from './EpisodePicker';
+import { RIGHT_PANEL_WIDTH } from './layout';
 import { ListVideo } from '../../components/icons';
 import { BookMarked, Lock } from '../../components/icons';
 import { hasFeature, FEATURES } from '../licensing/entitlements';
@@ -84,7 +85,7 @@ function fmtTime(s) {
 
 export const VideoViewer = ({
     src, videoPath, timeRef, onExportStudy, onUpgrade,
-    files = [], currentIndex = -1, onSelectVideo
+    files = [], currentIndex = -1, onSelectVideo, onRightPanelWidth
 }) => {
     const { t } = useI18n();
     const { theme } = useTheme();
@@ -138,6 +139,14 @@ export const VideoViewer = ({
     const [transcriptOpen, setTranscriptOpen] = useState(() => readBool(TRANSCRIPT_KEY, false));
     const [wordbookOpen, setWordbookOpen] = useState(false);
     const [episodesOpen, setEpisodesOpen] = useState(false);
+
+    // Tell the shell how much of the right edge is spoken for, so its toasts
+    // land beside the panel instead of on it. Reset on the way out.
+    const rightPanelOpen = wordbookOpen || transcriptOpen;
+    useEffect(() => {
+        onRightPanelWidth?.(rightPanelOpen ? RIGHT_PANEL_WIDTH : 0);
+    }, [rightPanelOpen, onRightPanelWidth]);
+    useEffect(() => () => onRightPanelWidth?.(0), [onRightPanelWidth]);
     const [cutting, setCutting] = useState(null); // { pct } | null
     const [transcribing, setTranscribing] = useState(null); // { pct } | null
     const [whisperMissing, setWhisperMissing] = useState(false);

@@ -3,6 +3,7 @@ import { useI18n } from '../../i18n.jsx';
 import { useTheme } from '../../theme.jsx';
 import { Repeat, Pencil } from '../../components/icons';
 import { ClickableText } from './WordLookup';
+import { RIGHT_PANEL_WIDTH } from './layout';
 
 function fmt(s) {
     const m = Math.floor(s / 60);
@@ -51,7 +52,15 @@ export const TranscriptPanel = ({
     useEffect(() => {
         // Following the playhead while typing would yank the field away.
         if (editing >= 0) return;
-        activeRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        const list = listRef.current;
+        const el = activeRef.current;
+        if (!list || !el) return;
+        // Park the spoken line near the top. 'nearest' scrolled the least it
+        // could get away with, which pinned the line to the bottom edge and
+        // left the upcoming lines — the ones worth reading — off screen.
+        const lead = list.clientHeight * 0.28;
+        const delta = el.getBoundingClientRect().top - list.getBoundingClientRect().top;
+        list.scrollTo({ top: list.scrollTop + delta - lead, behavior: 'smooth' });
     }, [activeIndex, editing]);
 
     const beginEdit = (i, text) => {
@@ -68,7 +77,7 @@ export const TranscriptPanel = ({
 
     return (
         <div style={{
-            width: 320, flexShrink: 0, display: 'flex', flexDirection: 'column',
+            width: RIGHT_PANEL_WIDTH, flexShrink: 0, display: 'flex', flexDirection: 'column',
             background: theme.bgSecondary, borderLeft: `1px solid ${theme.border}`
         }}>
             <div style={{

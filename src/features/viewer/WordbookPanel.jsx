@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { useI18n } from '../../i18n.jsx';
 import { useTheme } from '../../theme.jsx';
 import { readWordbook, removeWord } from './WordLookup';
+import { RIGHT_PANEL_WIDTH } from './layout';
 
 const TAG_LABELS = { cet4: 'CET4', cet6: 'CET6', toefl: 'TOEFL', ielts: 'IELTS', gre: 'GRE' };
 
@@ -58,7 +59,7 @@ export const WordbookPanel = ({ onClose, onSeekToExample }) => {
 
     return (
         <div style={{
-            width: 320, flexShrink: 0, display: 'flex', flexDirection: 'column',
+            width: RIGHT_PANEL_WIDTH, flexShrink: 0, display: 'flex', flexDirection: 'column',
             background: theme.bgSecondary, borderLeft: `1px solid ${theme.border}`
         }}>
             <div style={{
