@@ -78,6 +78,36 @@ test('a date template becomes a readable date', () => {
     assert.equal(cleanWikitext('Aired {{Start date|2015|1|4|df=y}} on Fox'), 'Aired 2015-01-04 on Fox');
 });
 
+// A two-part episode that aired as one hour is written as a single block
+// with numbered variants of each field. Reading only EpisodeNumber2 left a
+// hole in the season, so those files matched nothing.
+const TWO_PARTER = `
+{{Episode list/sublist|Show season 4
+| NumParts = 2
+| EpisodeNumber_1 = 79
+| EpisodeNumber_2 = 80
+| EpisodeNumber2_1 = 11
+| EpisodeNumber2_2 = 12
+| Title = [[The Fugitive (Show)|The Fugitive]]
+| OriginalAirDate = {{Start date|2017|01|01}}
+| ShortSummary = The squad goes on a manhunt for nine escaped convicts.
+| LineColor = 0F0E0E
+}}
+`;
+
+test('both halves of a two-part episode are returned', () => {
+    const eps = parseEpisodes(TWO_PARTER);
+    assert.deepEqual(eps.map(e => e.episode), [11, 12]);
+    // They share the hour, so they share what it was about.
+    assert.ok(eps.every(e => e.title === 'The Fugitive'));
+    assert.ok(eps.every(e => e.summary.includes('escaped convicts')));
+});
+
+test('a two-parter is marked so the UI can say it is one hour', () => {
+    assert.ok(parseEpisodes(TWO_PARTER).every(e => e.parts === 2));
+    assert.ok(parseEpisodes(WIKITEXT).every(e => !e.parts || e.parts === 1));
+});
+
 test('an article with no episode templates yields nothing, not a crash', () => {
     assert.deepEqual(parseEpisodes('{{Infobox television season}}\nSome prose.'), []);
     assert.deepEqual(parseEpisodes(''), []);

@@ -60,23 +60,36 @@ function parseEpisodes(wikitext) {
     const blocks = wikitext.match(blockRe) || [];
 
     for (const block of blocks) {
-        // EpisodeNumber2 is the number within the season, which is what a
-        // filename's SxxExx refers to; EpisodeNumber counts the whole series.
-        const withinSeason = fieldOf(block, 'EpisodeNumber2');
-        const overall = fieldOf(block, 'EpisodeNumber');
-        const episode = parseInt(withinSeason || overall, 10);
-        if (!Number.isFinite(episode)) continue;
-
         const title = fieldOf(block, 'Title');
         const summary = fieldOf(block, 'ShortSummary');
         if (!title && !summary) continue;
+        const airDate = fieldOf(block, 'OriginalAirDate');
 
-        episodes.push({
-            episode,
-            title,
-            summary,
-            airDate: fieldOf(block, 'OriginalAirDate')
-        });
+        // A two-part episode that aired as one hour is a single block with
+        // numbered variants of each field. Both halves exist as files, so
+        // both have to come back, sharing the hour's title and summary.
+        const parts = parseInt(fieldOf(block, 'NumParts'), 10);
+        if (Number.isFinite(parts) && parts > 1) {
+            for (let p = 1; p <= parts; p += 1) {
+                const n = parseInt(
+                    fieldOf(block, `EpisodeNumber2_${p}`) || fieldOf(block, `EpisodeNumber_${p}`),
+                    10
+                );
+                if (!Number.isFinite(n)) continue;
+                episodes.push({ episode: n, title, summary, airDate, parts });
+            }
+            continue;
+        }
+
+        // EpisodeNumber2 is the number within the season, which is what a
+        // filename's SxxExx refers to; EpisodeNumber counts the whole series.
+        const episode = parseInt(
+            fieldOf(block, 'EpisodeNumber2') || fieldOf(block, 'EpisodeNumber'),
+            10
+        );
+        if (!Number.isFinite(episode)) continue;
+
+        episodes.push({ episode, title, summary, airDate });
     }
 
     return episodes;
