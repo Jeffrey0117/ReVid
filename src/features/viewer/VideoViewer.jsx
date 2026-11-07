@@ -142,6 +142,15 @@ export const VideoViewer = ({ src, videoPath, timeRef, onExportStudy, onUpgrade 
     const loopCueRef = useRef(-1);
     loopCueRef.current = loopCueIndex;
 
+    // Shadowing: after each line, hold for as long as the line took so there
+    // is room to say it back, then carry on.
+    const [shadowing, setShadowing] = useState(false);
+    const [shadowWait, setShadowWait] = useState(0); // seconds left in the gap
+    const shadowRef = useRef(false);
+    shadowRef.current = shadowing;
+    const shadowTimerRef = useRef(null);
+    const shadowDoneRef = useRef(-1); // cue already paused on, so it fires once
+
     const [abLoop, setAbLoop] = useState(null); // { a, b|null }
     const abRef = useRef(abLoop);
     abRef.current = abLoop;
@@ -582,6 +591,71 @@ export const VideoViewer = ({ src, videoPath, timeRef, onExportStudy, onUpgrade 
     // Switching video must not leave a drill pointing at a stale cue index.
     useEffect(() => { setLoopCueIndex(-1); }, [videoPath]);
 
+    const stopShadowTimer = useCallback(() => {
+        if (shadowTimerRef.current) {
+            clearInterval(shadowTimerRef.current);
+            shadowTimerRef.current = null;
+        }
+        setShadowWait(0);
+    }, []);
+
+    // Shadowing runs on its own frame ticker for the same reason the sentence
+    // drill does: timeupdate is far too coarse to stop on a line's end.
+    useEffect(() => {
+        if (!shadowing) { stopShadowTimer(); shadowDoneRef.current = -1; return; }
+        let raf = 0;
+        const tick = () => {
+            const v = videoElRef.current;
+            const cues_ = cuesRef.current;
+            if (v && !v.paused && cues_.length && !shadowTimerRef.current) {
+                const shift = subShiftRef.current;
+                const idx = cues_.findIndex(
+                    (c, i) => i > shadowDoneRef.current
+                        && v.currentTime >= c.end + shift
+                        && v.currentTime < c.end + shift + 1
+                );
+                if (idx >= 0) {
+                    shadowDoneRef.current = idx;
+                    const cue = cues_[idx];
+                    const gap = Math.min(12, Math.max(1.2, (cue.end - cue.start) * 1.1));
+                    v.pause();
+                    let left = gap;
+                    setShadowWait(Math.ceil(left));
+                    shadowTimerRef.current = setInterval(() => {
+                        left -= 0.1;
+                        if (left <= 0) {
+                            stopShadowTimer();
+                            // Only resume if the user has not taken over.
+                            if (shadowRef.current && videoElRef.current?.paused) {
+                                videoElRef.current.play().catch(() => {});
+                            }
+                        } else {
+                            setShadowWait(Math.ceil(left));
+                        }
+                    }, 100);
+                }
+            }
+            raf = requestAnimationFrame(tick);
+        };
+        raf = requestAnimationFrame(tick);
+        return () => { cancelAnimationFrame(raf); stopShadowTimer(); };
+    }, [shadowing, stopShadowTimer]);
+
+    // Seeking elsewhere should not leave earlier lines marked as "already
+    // shadowed", or jumping back would skip their gaps.
+    useEffect(() => {
+        if (!shadowing) return;
+        const v = videoElRef.current;
+        if (!v) return;
+        const onSeek = () => {
+            const i = findActiveCueIndex(cuesRef.current, v.currentTime - subShiftRef.current);
+            shadowDoneRef.current = i - 1;
+            stopShadowTimer();
+        };
+        v.addEventListener('seeked', onSeek);
+        return () => v.removeEventListener('seeked', onSeek);
+    }, [shadowing, stopShadowTimer]);
+
     // Frame-accurate sentence loop: check every frame so the line repeats on
     // its own end instead of spilling into the next one.
     useEffect(() => {
@@ -632,7 +706,10 @@ export const VideoViewer = ({ src, videoPath, timeRef, onExportStudy, onUpgrade 
             // Tapping the active mode returns to plain playback.
             const next = prev === mode ? 'browse' : mode;
             localStorage.setItem(VIEWER_MODE_KEY, next);
-            if (next !== 'learn') setWordbookOpen(false);
+            if (next !== 'learn') {
+                setWordbookOpen(false);
+                setShadowing(false);
+            }
             return next;
         });
     }, []);
@@ -1005,13 +1082,22 @@ export const VideoViewer = ({ src, videoPath, timeRef, onExportStudy, onUpgrade 
                         })}
                     </div>
                     {learnMode && (
-                        <button
-                            title={t('wordbookTitle')}
-                            onClick={() => { setWordbookOpen(o => !o); setTranscriptOpen(false); }}
-                            style={iconBtn(wordbookOpen)}
-                        >
-                            <BookMarked size={16} />
-                        </button>
+                        <>
+                            <button
+                                title={t('shadowHint')}
+                                onClick={() => setShadowing(s => !s)}
+                                style={{ ...iconBtn(shadowing), width: 'auto', padding: '0 9px', fontSize: 11, fontWeight: 600 }}
+                            >
+                                {t('shadow')}
+                            </button>
+                            <button
+                                title={t('wordbookTitle')}
+                                onClick={() => { setWordbookOpen(o => !o); setTranscriptOpen(false); }}
+                                style={iconBtn(wordbookOpen)}
+                            >
+                                <BookMarked size={16} />
+                            </button>
+                        </>
                     )}
                     <button
                         title={t('transcriptToggle')}
@@ -1038,6 +1124,23 @@ export const VideoViewer = ({ src, videoPath, timeRef, onExportStudy, onUpgrade 
                                 setKnownWords(readKnownWords());
                             }}
                         />
+                    </div>
+                )}
+
+                {/* Your turn to speak — shown where the eyes already are. */}
+                {shadowWait > 0 && (
+                    <div style={{
+                        position: 'absolute', left: '50%', top: '50%', zIndex: 6,
+                        transform: 'translate(-50%,-50%)',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+                        padding: '14px 26px', borderRadius: 14,
+                        background: 'rgba(0,0,0,0.55)', color: '#fff',
+                        backdropFilter: 'blur(3px)', pointerEvents: 'none'
+                    }}>
+                        <span style={{ fontSize: 13, opacity: 0.85 }}>{t('shadowYourTurn')}</span>
+                        <span style={{ fontSize: 30, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                            {shadowWait}
+                        </span>
                     </div>
                 )}
 
