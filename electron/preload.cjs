@@ -320,6 +320,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
     },
 
+    renderReel: async (params, onProgress) => {
+        const handler = (_event, p) => onProgress?.(p);
+        ipcRenderer.on('render-reel-progress', handler);
+        try {
+            return await ipcRenderer.invoke('render-reel', params);
+        } finally {
+            ipcRenderer.removeListener('render-reel-progress', handler);
+        }
+    },
+    reelRendererStatus: () => ipcRenderer.invoke('reel-renderer-status'),
+
     saveSubtitles: (videoPath, cues, translated) =>
         ipcRenderer.invoke('save-subtitles', { videoPath, cues, translated }),
     revealInFolder: (target) => ipcRenderer.invoke('open-path', { target }),

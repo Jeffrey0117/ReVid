@@ -10,6 +10,8 @@ import { TranscriptPanel } from './TranscriptPanel';
 import { WordbookPanel } from './WordbookPanel';
 import { EpisodePicker } from './EpisodePicker';
 import { RIGHT_PANEL_WIDTH } from './layout';
+import { retimeCues, PAD } from '../../utils/reelSegments';
+import { toReelStyle } from '../../utils/reelStyle';
 import { hasFeature, FEATURES } from '../licensing/entitlements';
 import { SubtitleSettings, readSubtitleStyle, subtitleTextStyle } from './SubtitleSettings';
 import {
@@ -821,6 +823,60 @@ export const VideoViewer = ({
         }
     }, [videoPath]);
 
+    // Same picked lines, but finished rather than merely cut: joined, turned
+    // vertical and with the subtitles burned in, through the compositor the
+    // user's short-form projects already render with.
+    const exportReel = useCallback(async (ranges) => {
+        const api = getElectronAPI();
+        if (!api?.renderReel || !videoPath || ranges.length === 0) return;
+
+        const segments = retimeCues(cuesRef.current, ranges);
+        if (segments.length === 0) {
+            setTranslateError(t('reelNoSubtitles'));
+            return;
+        }
+
+        const status = await api.reelRendererStatus?.();
+        if (status && !status.available) {
+            setTranslateError(t('reelRendererMissing'));
+            return;
+        }
+
+        const ext = api.path.extname(videoPath);
+        const base = api.path.basename(videoPath, ext);
+        const picked = await api.showSaveDialog(
+            api.path.join(api.path.dirname(videoPath), `${base}-reel.mp4`)
+        );
+        if (picked.canceled || !picked.filePath) return;
+
+        setCutting({ pct: 0 });
+        let result;
+        try {
+            result = await api.renderReel(
+                {
+                    inputPath: videoPath,
+                    // The cut pads each end; retimeCues used the same padding
+                    // to place the lines, so the two must stay in step.
+                    ranges: ranges.map(r => ({
+                        ...r,
+                        start: Math.max(0, r.start - PAD.start),
+                        end: r.end + PAD.end
+                    })),
+                    segments,
+                    style: toReelStyle(subStyle),
+                    outputPath: picked.filePath
+                },
+                ({ pct }) => setCutting({ pct })
+            );
+        } catch (e) {
+            result = { success: false, error: e.message };
+        }
+        setCutting(null);
+        if (!result.success && !result.cancelled) {
+            setTranslateError(result.error);
+        }
+    }, [videoPath, subStyle, t]);
+
     // Subtitles live in the library file; write real .srt files only when
     // the user wants them — for another player, or to hand to someone.
     const exportSrt = useCallback(async () => {
@@ -1336,6 +1392,7 @@ export const VideoViewer = ({
                     showRepeat={learnMode}
                     onEditCue={editMode ? editCue : null}
                     onCutSelection={editMode ? cutSelection : null}
+                    onExportReel={editMode ? exportReel : null}
                     onExport={learnMode ? onExportStudy : null}
                 />
             )}

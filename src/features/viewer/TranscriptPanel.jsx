@@ -16,7 +16,8 @@ function fmt(s) {
 // per-line repeat for drilling one sentence.
 export const TranscriptPanel = ({
     cues, activeIndex, onSeekTo, onClose, transcribing, loopCueIndex, onLoopCue,
-    difficultMarks, onWordClick, onEditCue, onCutSelection, showRepeat, onExport
+    difficultMarks, onWordClick, onEditCue, onCutSelection, onExportReel,
+    showRepeat, onExport
 }) => {
     const { t } = useI18n();
     const { theme } = useTheme();
@@ -62,6 +63,27 @@ export const TranscriptPanel = ({
         const delta = el.getBoundingClientRect().top - list.getBoundingClientRect().top;
         list.scrollTo({ top: list.scrollTop + delta - lead, behavior: 'smooth' });
     }, [activeIndex, editing]);
+
+    // Adjacent lines become one clip, so picking a run of dialogue does not
+    // produce ten tiny files. Both exports start from the same ranges.
+    const runOnPicked = (action) => {
+        const ranges = [];
+        for (const i of [...picked].sort((a, b) => a - b)) {
+            const last = ranges[ranges.length - 1];
+            if (last && last.endIndex === i - 1) {
+                last.endIndex = i;
+                last.end = cues[i].end;
+            } else {
+                ranges.push({
+                    startIndex: i, endIndex: i,
+                    start: cues[i].start, end: cues[i].end
+                });
+            }
+        }
+        action(ranges);
+        setPicking(false);
+        setPicked(new Set());
+    };
 
     const beginEdit = (i, text) => {
         setEditing(i);
@@ -247,31 +269,24 @@ export const TranscriptPanel = ({
                     <button
                         className="btn btn-primary"
                         disabled={picked.size === 0}
-                        onClick={() => {
-                            // Adjacent lines become one clip, so picking a run
-                            // of dialogue does not produce ten tiny files.
-                            const sorted = [...picked].sort((a, b) => a - b);
-                            const ranges = [];
-                            for (const i of sorted) {
-                                const last = ranges[ranges.length - 1];
-                                if (last && last.endIndex === i - 1) {
-                                    last.endIndex = i;
-                                    last.end = cues[i].end;
-                                } else {
-                                    ranges.push({
-                                        startIndex: i, endIndex: i,
-                                        start: cues[i].start, end: cues[i].end
-                                    });
-                                }
-                            }
-                            onCutSelection(ranges);
-                            setPicking(false);
-                            setPicked(new Set());
-                        }}
+                        onClick={() => runOnPicked(onCutSelection)}
                         style={{ width: '100%' }}
                     >
                         {t('transcriptCutGo')} ({picked.size})
                     </button>
+                    {onExportReel && (
+                        <button
+                            title={t('reelExportHint')}
+                            onClick={() => runOnPicked(onExportReel)}
+                            style={{
+                                width: '100%', marginTop: 6, padding: '6px 0',
+                                borderRadius: 6, fontSize: 12, fontWeight: 600,
+                                background: theme.accent, color: '#fff'
+                            }}
+                        >
+                            {t('reelExport')} ({picked.size})
+                        </button>
+                    )}
                 </div>
             )}
         </div>

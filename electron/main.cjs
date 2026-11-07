@@ -26,6 +26,13 @@ const { createWhisperQueue } = require('./whisper-queue.cjs');
 const pluginHost = require('./plugin-host.cjs');
 const dictionary = require('./dictionary.cjs');
 const lanServer = require('./lan-server.cjs');
+const { serveFile } = require('./file-serve.cjs');
+const { createRemotionRunner, findRemotionDir } = require('./remotion-runner.cjs');
+
+// Started on the first export, then kept warm: the server's webpack bundle and
+// its Chromium cost far more on a cold start than they do to hold open.
+let remotionRunner = null;
+const reelRunner = () => (remotionRunner ||= createRemotionRunner());
 const library = require('./library-file.cjs');
 const srt = require('./srt.cjs');
 const { registerTheaterStore, drainTheaterSaves } = require('./theater-store.cjs');
@@ -1219,18 +1226,12 @@ function setupIpcHandlers() {
     // "edit by picking lines in the transcript". Each range is extracted to a
     // temp file first because concat needs uniform streams, and a single
     // filter_complex over many inputs blows up on long videos.
-    ipcMain.handle('cut-ranges', async (_event, params) => {
-        const { inputPath, ranges, outputPath } = params;
-        if (!inputPath || !Array.isArray(ranges) || ranges.length === 0) {
-            return { success: false, error: 'Nothing to cut' };
-        }
-        if (!ranges.every(r => Number.isFinite(r.start) && Number.isFinite(r.end) && r.end > r.start)) {
-            return { success: false, error: 'Invalid range' };
-        }
-
-        const epoch = getCancelEpoch('cut-ranges');
+    // Shared by the plain highlight cut and the vertical-short export, which
+    // both start by joining the picked ranges into one clean file.
+    const cutAndJoin = async ({ inputPath, ranges, outputPath, op, onProgress }) => {
+        const epoch = getCancelEpoch(op);
         const encoder = await getH264Encoder();
-        if (getCancelEpoch('cut-ranges') !== epoch) {
+        if (getCancelEpoch(op) !== epoch) {
             return { success: false, cancelled: true, error: 'Cancelled' };
         }
 
@@ -1240,15 +1241,11 @@ function setupIpcHandlers() {
         const total = ranges.reduce((n, r) => n + (r.end - r.start), 0);
         let elapsed = 0;
 
-        const sendProgress = (pct) => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('cut-ranges-progress', Math.min(99, pct));
-            }
-        };
+        const sendProgress = (pct) => onProgress?.(Math.min(99, pct));
 
         try {
             for (const [i, r] of ranges.entries()) {
-                if (getCancelEpoch('cut-ranges') !== epoch) {
+                if (getCancelEpoch(op) !== epoch) {
                     return { success: false, cancelled: true, error: 'Cancelled' };
                 }
                 const part = path.join(work, `part-${String(i).padStart(3, '0')}.mp4`);
@@ -1256,7 +1253,7 @@ function setupIpcHandlers() {
                 // Re-encoded, not stream-copied: parts must start on a real
                 // frame or the join stutters at every seam.
                 const r1 = await runFfmpeg({
-                    op: 'cut-ranges',
+                    op,
                     args: [
                         '-y', '-ss', String(r.start), '-i', inputPath, '-t', String(dur),
                         '-vf', 'crop=trunc(iw/2)*2:trunc(ih/2)*2',
@@ -1284,7 +1281,7 @@ function setupIpcHandlers() {
                     'utf8'
                 );
                 const r2 = await runFfmpeg({
-                    op: 'cut-ranges',
+                    op,
                     args: [
                         '-y', '-f', 'concat', '-safe', '0', '-i', listFile,
                         '-c', 'copy', '-movflags', '+faststart',
@@ -1300,7 +1297,87 @@ function setupIpcHandlers() {
         } finally {
             try { await fs.promises.rm(work, { recursive: true, force: true }); } catch (e) { /* leave it */ }
         }
+    };
+
+    const validRanges = (ranges) => Array.isArray(ranges) && ranges.length > 0
+        && ranges.every(r => Number.isFinite(r.start) && Number.isFinite(r.end) && r.end > r.start);
+
+    ipcMain.handle('cut-ranges', async (_event, params) => {
+        const { inputPath, ranges, outputPath } = params;
+        if (!inputPath || !validRanges(ranges)) {
+            return { success: false, error: 'Nothing to cut' };
+        }
+        return cutAndJoin({
+            inputPath, ranges, outputPath, op: 'cut-ranges',
+            onProgress: (pct) => {
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send('cut-ranges-progress', pct);
+                }
+            }
+        });
     });
+
+    // Vertical short: join the picked lines, then hand the result to the
+    // Remotion compositor that already renders AutoReel's and plottr's shorts,
+    // so a clip cut here looks like one cut there. ReVid supplies the footage
+    // and the timings; the look belongs to that project.
+    ipcMain.handle('render-reel', async (_event, params) => {
+        const { inputPath, ranges, segments, style, topTitle, outputPath } = params || {};
+        if (!inputPath || !validRanges(ranges)) {
+            return { success: false, error: 'Nothing to cut' };
+        }
+        if (!Array.isArray(segments) || segments.length === 0) {
+            return { success: false, error: 'No subtitles to burn' };
+        }
+
+        const report = (stage, pct) => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('render-reel-progress', { stage, pct });
+            }
+        };
+
+        const work = path.join(app.getPath('temp'), `revid-reel-${Date.now()}`);
+        await fs.promises.mkdir(work, { recursive: true });
+        const joined = path.join(work, 'joined.mp4');
+        const rendered = path.join(work, 'reel.mp4');
+        let served = null;
+
+        try {
+            // Cutting is roughly the first half of the wait; rendering the rest.
+            const cut = await cutAndJoin({
+                inputPath, ranges, outputPath: joined, op: 'render-reel',
+                onProgress: (pct) => report('cut', Math.round(pct * 0.4))
+            });
+            if (!cut.success) return cut;
+
+            served = await serveFile(joined);
+            const propsPath = path.join(work, 'props.json');
+            const props = { videoUrl: served.url, segments, style };
+            if (topTitle?.text) props.topTitle = topTitle;
+            await fs.promises.writeFile(propsPath, JSON.stringify(props), 'utf8');
+
+            report('render', 40);
+            await reelRunner().render(
+                { propsPath, output: rendered, composition: 'VideoWithSubs' },
+                (pct) => report('render', 40 + Math.round(pct * 0.59))
+            );
+
+            // Across drives rename fails, so copy then drop the temp.
+            await fs.promises.copyFile(rendered, outputPath);
+            report('done', 100);
+            return { success: true, outputPath };
+        } catch (e) {
+            return { success: false, error: e.message };
+        } finally {
+            if (served) { try { await served.close(); } catch (e) { /* already down */ } }
+            try { await fs.promises.rm(work, { recursive: true, force: true }); } catch (e) { /* leave it */ }
+        }
+    });
+
+    ipcMain.handle('reel-renderer-status', () => ({
+        available: Boolean(findRemotionDir()),
+        dir: findRemotionDir()
+    }));
 
     // Overwrite a video's subtitles after the user corrects them. Whisper
     // mishears names and jargon, and a wrong transcript poisons the
@@ -2281,6 +2358,7 @@ app.on('will-quit', (event) => {
     quitFlushed = true;
     event.preventDefault();
     killAllFfmpegJobs(); // don't leave orphaned encoders behind
+    remotionRunner?.stop(); // and no orphaned Chromium either
     Promise.race([
         Promise.allSettled([drainTheaterSaves(), drainSyncRequests()]),
         new Promise((resolve) => setTimeout(resolve, 2000)),
