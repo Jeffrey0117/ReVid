@@ -10,10 +10,13 @@ const {
     isCancelledFfmpegProc,
     cancelFfmpegJobs,
     killAllFfmpegJobs,
+    getCancelEpoch,
+    getH264Encoder,
     runFfmpeg,
     fileSizeOrZero,
     ffmpegFailure
 } = require('./ffmpeg-runner.cjs');
+const { extractEnvelope, findSegmentOffset, FRAMES_PER_SECOND } = require('./segment-matcher.cjs');
 const { registerTheaterStore, drainTheaterSaves } = require('./theater-store.cjs');
 const { registerSyncClient, drainSyncRequests } = require('./sync-client.cjs');
 const { registerLocalVideoProtocol } = require('./local-video-protocol.cjs');
@@ -47,6 +50,86 @@ protocol.registerSchemesAsPrivileged([
 
 let mainWindow = null;
 let miniPlayerWindow = null;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Swap a freshly encoded temp file in over the original. Windows refuses to
+// rename a file that is still open (the viewer may hold a handle briefly),
+// so renames retry before giving up. The original survives every failure
+// path: it is only removed after the new file is verifiably in place.
+//
+// The temp is always an MP4; a non-mp4 original therefore gets a NEW name
+// (<base>.mp4) and the old file is deleted — renaming MP4 bytes onto a
+// .mkv/.webm path would corrupt the library. Returns { newPath } so the
+// renderer can follow the file.
+async function replaceOriginalFile(tempPath, originalPath) {
+    // Never swap in a suspiciously tiny output: ffmpeg can exit 0 with an
+    // empty file (disk full at close, killed-but-reaped child).
+    if (fileSizeOrZero(tempPath) < 1024) {
+        try { await fs.promises.unlink(tempPath); } catch (e) { /* none written */ }
+        return { success: false, error: 'Encoded file is empty — original left untouched' };
+    }
+
+    const ext = path.extname(originalPath).toLowerCase();
+    const finalPath = ext === '.mp4'
+        ? originalPath
+        : originalPath.slice(0, originalPath.length - ext.length) + '.mp4';
+
+    if (finalPath !== originalPath) {
+        // Container change: place the new .mp4 beside the original, then
+        // remove the original. Both files existing briefly is safe.
+        if (fs.existsSync(finalPath)) {
+            try { await fs.promises.unlink(tempPath); } catch (e) { /* keep */ }
+            return { success: false, error: `${path.basename(finalPath)} already exists` };
+        }
+        try {
+            await fs.promises.rename(tempPath, finalPath);
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+        for (let i = 0; i < 10; i++) {
+            try { await fs.promises.unlink(originalPath); break; } catch (e) { await sleep(300); }
+        }
+        return { success: true, newPath: finalPath };
+    }
+
+    const backupPath = finalPath + '.revid-bak';
+    let lastErr = null;
+    for (let i = 0; i < 10; i++) {
+        try {
+            await fs.promises.rename(finalPath, backupPath);
+            lastErr = null;
+            break;
+        } catch (e) {
+            lastErr = e;
+            await sleep(300);
+        }
+    }
+    if (lastErr) {
+        try { await fs.promises.unlink(tempPath); } catch (e) { /* keep temp as evidence */ }
+        return { success: false, error: `Original file is in use: ${lastErr.message}` };
+    }
+    try {
+        await fs.promises.rename(tempPath, finalPath);
+    } catch (e) {
+        try {
+            await fs.promises.rename(backupPath, finalPath);
+        } catch (e2) {
+            return { success: false, error: `Replace failed; your original is saved as ${backupPath}` };
+        }
+        return { success: false, error: e.message };
+    }
+    try { await fs.promises.unlink(backupPath); } catch (e) { /* stray .revid-bak */ }
+    return { success: true, newPath: finalPath };
+}
+
+// Per-encoder quality flags roughly matching libx264 crf 18.
+const H264_ENCODE_ARGS = {
+    libx264: ['-crf', '18', '-preset', 'veryfast', '-pix_fmt', 'yuv420p'],
+    h264_nvenc: ['-rc', 'vbr', '-cq', '19', '-b:v', '0', '-preset', 'p4', '-pix_fmt', 'yuv420p'],
+    h264_qsv: ['-global_quality', '19', '-pix_fmt', 'nv12'],
+    h264_amf: ['-rc', 'cqp', '-qp_i', '19', '-qp_p', '19', '-pix_fmt', 'yuv420p']
+};
 
 // ffmpeg progress percentages go to the main window
 setFfmpegProgressWindowGetter(() => mainWindow);
@@ -544,35 +627,286 @@ function setupIpcHandlers() {
         }
     });
 
-    // Crop + trim video using ffmpeg (runs in main process)
+    // Crop + trim video using ffmpeg (runs in main process).
+    // crop is optional (null = keep full frame). fastCopy stream-copies the
+    // trim range without re-encoding — near-instant, but cuts land on the
+    // keyframe at/before the requested start.
     ipcMain.handle('crop-video', async (_event, params) => {
-        const { inputPath, outputPath, crop, trim, totalDuration } = params;
+        const { inputPath, outputPath, crop, trim, totalDuration, fastCopy, replaceOriginal, opId } = params;
 
-        const args = ['-y'];
+        // The editor's background export gets its own op + progress channel,
+        // so it can't cancel (or be cancelled by) BatchCropDialog jobs that
+        // share this handler, and their progress events never interleave.
+        const op = opId === 'editor-export' ? 'editor-export' : 'crop-video';
+        const progressChannel = op === 'editor-export' ? 'editor-export-progress' : 'crop-progress';
 
-        if (trim) {
-            args.push('-ss', String(trim.startTime), '-to', String(trim.endTime));
+        // ffmpeg runs with -y: writing onto the file it is reading destroys it.
+        const samePath = process.platform === 'win32'
+            ? path.resolve(inputPath).toLowerCase() === path.resolve(outputPath).toLowerCase()
+            : path.resolve(inputPath) === path.resolve(outputPath);
+        if (samePath) {
+            return { success: false, error: 'Output file must differ from the source video' };
         }
-
-        args.push('-i', inputPath);
-        args.push('-vf', `crop=${crop.width}:${crop.height}:${crop.x}:${crop.y}`);
-        args.push('-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-pix_fmt', 'yuv420p');
-        args.push('-c:a', 'copy');
-        args.push('-progress', 'pipe:1');
-        args.push(outputPath);
+        const nums = [
+            ...(crop ? [crop.x, crop.y, crop.width, crop.height] : []),
+            ...(trim ? [trim.startTime, trim.endTime] : [])
+        ];
+        if (!nums.every(Number.isFinite)) {
+            return { success: false, error: 'Invalid crop/trim values' };
+        }
 
         // When trimming, the output only spans the trimmed range — measure
         // progress against that, not the full input duration.
         const outputDuration = trim
             ? Math.max(trim.endTime - trim.startTime, 0.001)
             : (totalDuration || 1);
-        const r = await runFfmpeg({
-            op: 'crop-video',
-            args,
-            progressChannel: 'crop-progress',
+
+        const useCopy = Boolean(fastCopy) && !crop;
+
+        const buildArgs = (encoder, copy, transcodeAudio) => {
+            const args = ['-y'];
+            if (trim) {
+                args.push('-ss', String(trim.startTime));
+            }
+            args.push('-i', inputPath);
+            if (copy) {
+                if (trim) args.push('-t', String(outputDuration));
+                args.push('-c', 'copy', '-avoid_negative_ts', 'make_zero');
+            } else {
+                if (trim) args.push('-t', String(outputDuration));
+                // yuv420p/nv12 encoders reject odd dimensions; when there is
+                // no user crop, still trim stray odd rows/columns off sources
+                // like window captures (e.g. 1365x767).
+                args.push('-vf', crop
+                    ? `crop=${crop.width}:${crop.height}:${crop.x}:${crop.y}`
+                    : 'crop=trunc(iw/2)*2:trunc(ih/2)*2');
+                args.push('-c:v', encoder, ...H264_ENCODE_ARGS[encoder]);
+                // The fallback also re-encodes audio: an mp4-incompatible
+                // audio codec (Opus in MKV) fails identically under -c:a copy.
+                if (transcodeAudio) args.push('-c:a', 'aac', '-b:a', '192k');
+                else args.push('-c:a', 'copy');
+            }
+            args.push('-movflags', '+faststart');
+            args.push('-progress', 'pipe:1');
+            args.push(outputPath);
+            return args;
+        };
+
+        const run = (encoder, copy, transcodeAudio) => runFfmpeg({
+            op,
+            args: buildArgs(encoder, copy, transcodeAudio),
+            progressChannel,
             totalUs: outputDuration * 1_000_000
         });
-        return ffmpegFailure(r) || { success: true };
+
+        // The encoder probe and the retry below both leave windows where no
+        // ffmpeg process exists for cancel-ffmpeg to kill — compare the cancel
+        // epoch around each await so a cancel landing there still sticks.
+        const epoch = getCancelEpoch(op);
+        const cancelledResult = { success: false, cancelled: true, error: 'Cancelled' };
+
+        const encoder = useCopy ? 'libx264' : await getH264Encoder();
+        if (getCancelEpoch(op) !== epoch) return cancelledResult;
+
+        let r = await run(encoder, useCopy, false);
+
+        // Fall back once to a software re-encode: a hardware encoder that
+        // probed OK can still fail on a real input, and a stream copy can hit
+        // codecs the mp4 container refuses (e.g. Opus audio from an MKV).
+        if (r.code !== 0 && !r.cancelled && (useCopy || encoder !== 'libx264')) {
+            if (getCancelEpoch(op) !== epoch) return cancelledResult;
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send(progressChannel, 0);
+            }
+            r = await run('libx264', false, true);
+        }
+
+        const failure = ffmpegFailure(r);
+        if (failure) {
+            // Never leave a corrupt partial output at the destination.
+            try { await fs.promises.unlink(outputPath); } catch (e) { /* none written */ }
+            return failure;
+        }
+        if (replaceOriginal) {
+            return await replaceOriginalFile(outputPath, inputPath);
+        }
+        return { success: true };
+    });
+
+    // Scan a batch of videos for the position of a known audio segment
+    // (the batch-cut "template"). Sequential; per-file progress events on
+    // 'segment-scan-progress'. Cancellable via cancel-ffmpeg('segment-scan').
+    ipcMain.handle('find-segment-matches', async (_event, params) => {
+        const { templatePath, templateStart, templateEnd, targets } = params;
+        if (!Array.isArray(targets) || targets.length === 0) {
+            return { success: false, error: 'No target files' };
+        }
+        if (![templateStart, templateEnd].every(Number.isFinite) || templateEnd - templateStart < 0.5) {
+            return { success: false, error: 'Invalid template range' };
+        }
+
+        const epoch = getCancelEpoch('segment-scan');
+        const sendProgress = (payload) => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('segment-scan-progress', payload);
+            }
+        };
+
+        const templateEnv = await extractEnvelope(templatePath, {
+            op: 'segment-scan',
+            start: templateStart,
+            duration: templateEnd - templateStart
+        });
+        // A cancel can kill the template decode itself — report it as a
+        // cancel, not as "no audio", and never scan with a truncated template.
+        if (getCancelEpoch('segment-scan') !== epoch) {
+            return { success: false, cancelled: true, error: 'Cancelled' };
+        }
+        if (!templateEnv) {
+            return { success: false, error: 'Template segment has no usable audio' };
+        }
+
+        const results = [];
+        for (let i = 0; i < targets.length; i++) {
+            if (getCancelEpoch('segment-scan') !== epoch) {
+                return { success: false, cancelled: true, error: 'Cancelled' };
+            }
+            const target = targets[i];
+            sendProgress({ index: i, path: target, phase: 'scanning' });
+
+            const env = await extractEnvelope(target, { op: 'segment-scan' });
+            if (getCancelEpoch('segment-scan') !== epoch) {
+                return { success: false, cancelled: true, error: 'Cancelled' };
+            }
+
+            let result;
+            if (!env) {
+                result = { path: target, found: false, score: 0, matchStart: 0, targetDuration: 0, noAudio: true };
+            } else {
+                const m = findSegmentOffset(env, templateEnv);
+                result = {
+                    path: target,
+                    found: m.found,
+                    score: m.score,
+                    matchStart: m.offsetSeconds,
+                    // Audio length ≈ video length; lets the dialog reject cut
+                    // points that fall at/after the end of the file.
+                    targetDuration: env.length / FRAMES_PER_SECOND
+                };
+            }
+            results.push(result);
+            sendProgress({ index: i, path: target, phase: 'done', result });
+        }
+        return { success: true, results };
+    });
+
+    // Cut each video so only [0, cutAt) survives. Sequential; progress via
+    // 'batch-cut-progress' ({index, path} on file start, {index, pct} during).
+    // fastCopy keeps streams as-is (start at 0 is naturally keyframe-aligned);
+    // otherwise re-encode on the detected H.264 encoder.
+    ipcMain.handle('batch-cut-videos', async (_event, params) => {
+        const { jobs, replaceOriginal: replaceAll, fastCopy } = params;
+        if (!Array.isArray(jobs) || jobs.length === 0) {
+            return { success: false, error: 'No cut jobs' };
+        }
+
+        const epoch = getCancelEpoch('batch-cut');
+        const sendProgress = (payload) => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('batch-cut-progress', payload);
+            }
+        };
+
+        const encoder = fastCopy ? 'libx264' : await getH264Encoder();
+        const results = [];
+
+        // Output names must never collide with another job's INPUT (a prior
+        // run's "-cut.mp4" may itself be in the batch) nor silently overwrite
+        // an existing file — this is a bulk operation with no save dialog.
+        const normalizePath = (p) => (process.platform === 'win32'
+            ? path.resolve(p).toLowerCase()
+            : path.resolve(p));
+        const reserved = new Set(jobs.map(j => normalizePath(j.inputPath)));
+        const pickOutputPath = (dir, base) => {
+            let candidate = path.join(dir, `${base}-cut.mp4`);
+            for (let n = 2; reserved.has(normalizePath(candidate)) || fs.existsSync(candidate); n++) {
+                candidate = path.join(dir, `${base}-cut-${n}.mp4`);
+            }
+            reserved.add(normalizePath(candidate));
+            return candidate;
+        };
+
+        for (let i = 0; i < jobs.length; i++) {
+            if (getCancelEpoch('batch-cut') !== epoch) {
+                return { success: false, cancelled: true, results, error: 'Cancelled' };
+            }
+            const { inputPath, cutAt } = jobs[i];
+            if (!Number.isFinite(cutAt) || cutAt <= 0.1) {
+                const result = { path: inputPath, success: false, error: 'Invalid cut point' };
+                results.push(result);
+                sendProgress({ index: i, path: inputPath, phase: 'done', result });
+                continue;
+            }
+            sendProgress({ index: i, path: inputPath, phase: 'start' });
+
+            const ext = path.extname(inputPath);
+            const base = path.basename(inputPath, ext);
+            const dir = path.dirname(inputPath);
+            const outputPath = replaceAll
+                ? path.join(dir, `${base}.revid-tmp.mp4`)
+                : pickOutputPath(dir, base);
+
+            const buildArgs = (enc, copy, transcodeAudio) => {
+                const args = ['-y', '-i', inputPath, '-t', String(cutAt)];
+                if (copy) {
+                    args.push('-c', 'copy', '-avoid_negative_ts', 'make_zero');
+                } else {
+                    args.push('-vf', 'crop=trunc(iw/2)*2:trunc(ih/2)*2');
+                    args.push('-c:v', enc, ...H264_ENCODE_ARGS[enc]);
+                    if (transcodeAudio) args.push('-c:a', 'aac', '-b:a', '192k');
+                    else args.push('-c:a', 'copy');
+                }
+                args.push('-movflags', '+faststart', '-progress', 'pipe:1', outputPath);
+                return args;
+            };
+
+            let r = await runFfmpeg({
+                op: 'batch-cut',
+                args: buildArgs(encoder, Boolean(fastCopy), false),
+                progressChannel: 'batch-cut-progress-pct',
+                totalUs: cutAt * 1_000_000
+            });
+            // Same fallback as single export: software re-encode (with audio
+            // transcode — mp4-incompatible audio fails -c:a copy identically).
+            // Retrying an identical libx264 command would just double the cost.
+            if (r.code !== 0 && !r.cancelled && (fastCopy || encoder !== 'libx264')) {
+                if (getCancelEpoch('batch-cut') !== epoch) {
+                    return { success: false, cancelled: true, results, error: 'Cancelled' };
+                }
+                r = await runFfmpeg({
+                    op: 'batch-cut',
+                    args: buildArgs('libx264', false, true),
+                    progressChannel: 'batch-cut-progress-pct',
+                    totalUs: cutAt * 1_000_000
+                });
+            }
+
+            const failure = ffmpegFailure(r);
+            if (failure) {
+                try { await fs.promises.unlink(outputPath); } catch (e) { /* none written */ }
+                results.push({ path: inputPath, success: false, error: failure.error, cancelled: failure.cancelled });
+                if (failure.cancelled) {
+                    return { success: false, cancelled: true, results, error: 'Cancelled' };
+                }
+            } else if (replaceAll) {
+                const swapped = await replaceOriginalFile(outputPath, inputPath);
+                results.push({ path: inputPath, success: swapped.success, error: swapped.error, newPath: swapped.newPath });
+            } else {
+                results.push({ path: inputPath, success: true, outputPath });
+            }
+            sendProgress({ index: i, path: inputPath, phase: 'done', result: results[results.length - 1] });
+        }
+        return { success: true, results };
     });
 
     // --- Mini Player IPC Handlers ---
@@ -1439,6 +1773,9 @@ app.whenReady().then(async () => {
     setupIpcHandlers();
     createWindow();
     setupAutoUpdater();
+
+    // Warm the hardware-encoder probe so the first export doesn't stall on it.
+    getH264Encoder();
 
     // After the window loads, open any file passed on the command line (Windows/
     // Linux) or queued from a macOS open-file event before the window existed.

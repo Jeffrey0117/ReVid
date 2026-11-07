@@ -24,11 +24,16 @@ export function getDefaultCrop(vw, vh, ar) {
         const w = vh * ar;
         return { x: Math.round((vw - w) / 2), y: 0, width: Math.round(w), height: vh };
     }
-    const m = 0.1;
-    return {
-        x: Math.round(vw * m), y: Math.round(vh * m),
-        width: Math.round(vw * (1 - 2 * m)), height: Math.round(vh * (1 - 2 * m))
-    };
+    // Free preset starts as the full frame — trimming without cropping is the
+    // common case, so the default must not cut into the picture.
+    return { x: 0, y: 0, width: vw, height: vh };
+}
+
+// A crop that still covers the whole frame means "no crop" at export time.
+export function isFullFrameCrop(crop, vw, vh) {
+    if (!crop) return true;
+    return Math.round(crop.x) <= 0 && Math.round(crop.y) <= 0
+        && Math.round(crop.width) >= vw - 1 && Math.round(crop.height) >= vh - 1;
 }
 
 const EDGES = {
@@ -42,7 +47,7 @@ const CURSORS = {
     n: 'ns-resize', s: 'ns-resize', w: 'ew-resize', e: 'ew-resize'
 };
 
-export function CropOverlay({ displayRect, videoDimensions, aspectRatio, crop, onCropChange }) {
+export function CropOverlay({ displayRect, videoDimensions, aspectRatio, crop, onCropChange, onTap }) {
     const [drag, setDrag] = useState(null);
 
     const startDrag = useCallback((e, type) => {
@@ -63,6 +68,9 @@ export function CropOverlay({ displayRect, videoDimensions, aspectRatio, crop, o
             const vh = videoDimensions.height;
 
             if (drag.type === 'move') {
+                // When the crop is full frame these clamps collapse to [0,0],
+                // so tap-with-jitter (see onUp) can never nudge a full-frame
+                // crop into an accidental real crop. Keep it that way.
                 onCropChange({
                     ...sc,
                     x: clamp(sc.x + dx, 0, vw - sc.width),
@@ -94,14 +102,23 @@ export function CropOverlay({ displayRect, videoDimensions, aspectRatio, crop, o
             onCropChange({ x: l, y: t, width: r - l, height: b - t });
         };
 
-        const onUp = () => setDrag(null);
+        // A "move" drag that never actually moved is a tap on the video —
+        // let the editor treat it as play/pause instead of a no-op crop drag.
+        const onUp = (e) => {
+            if (drag.type === 'move'
+                && Math.abs(e.clientX - drag.sx) < 4
+                && Math.abs(e.clientY - drag.sy) < 4) {
+                onTap?.();
+            }
+            setDrag(null);
+        };
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
         return () => {
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
         };
-    }, [drag, displayRect, videoDimensions, aspectRatio, onCropChange]);
+    }, [drag, displayRect, videoDimensions, aspectRatio, onCropChange, onTap]);
 
     if (!crop || !displayRect) return null;
 

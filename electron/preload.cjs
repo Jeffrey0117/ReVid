@@ -37,6 +37,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
             const files = fs.readdirSync(dirPath);
             return files
                 .filter(file => extensions.includes(path.extname(file).toLowerCase()))
+                // Replace-in-place working files must never surface as videos.
+                .filter(file => !/\.revid-(tmp|bak)(\.[^.]+)?$/i.test(file))
                 .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
                 .map(file => path.join(dirPath, file));
         } catch (e) {
@@ -136,12 +138,41 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
 
     cropVideo: async (params, onProgress) => {
+        // The editor's background export has its own channel so its progress
+        // never interleaves with BatchCropDialog's (both use this handler).
+        const channel = params.opId === 'editor-export' ? 'editor-export-progress' : 'crop-progress';
         const handler = (_event, pct) => onProgress(pct);
-        ipcRenderer.on('crop-progress', handler);
+        ipcRenderer.on(channel, handler);
         try {
             return await ipcRenderer.invoke('crop-video', params);
         } finally {
-            ipcRenderer.removeListener('crop-progress', handler);
+            ipcRenderer.removeListener(channel, handler);
+        }
+    },
+
+    // Batch cut: scan a set of videos for the position of a template segment.
+    findSegmentMatches: async (params, onProgress) => {
+        const handler = (_event, payload) => onProgress(payload);
+        ipcRenderer.on('segment-scan-progress', handler);
+        try {
+            return await ipcRenderer.invoke('find-segment-matches', params);
+        } finally {
+            ipcRenderer.removeListener('segment-scan-progress', handler);
+        }
+    },
+
+    // Batch cut: trim each file to [0, cutAt). onFileEvent gets structured
+    // {index, path, phase} events; onPct gets the active file's percentage.
+    batchCutVideos: async (params, onFileEvent, onPct) => {
+        const fileHandler = (_event, payload) => onFileEvent(payload);
+        const pctHandler = (_event, pct) => onPct(pct);
+        ipcRenderer.on('batch-cut-progress', fileHandler);
+        ipcRenderer.on('batch-cut-progress-pct', pctHandler);
+        try {
+            return await ipcRenderer.invoke('batch-cut-videos', params);
+        } finally {
+            ipcRenderer.removeListener('batch-cut-progress', fileHandler);
+            ipcRenderer.removeListener('batch-cut-progress-pct', pctHandler);
         }
     },
 

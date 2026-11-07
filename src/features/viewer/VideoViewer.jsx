@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import Plyr from 'plyr';
 import 'plyr/dist/plyr.css';
 import { useI18n } from '../../i18n.jsx';
+import { getCachedThumbnail } from '../../utils/videoThumbnails';
 
 const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 // Gain multipliers for volume boost (1 = native 100%, >1 amplifies past it).
@@ -15,7 +16,7 @@ const readNum = (key, fallback) => {
     return Number.isFinite(n) && n > 0 ? n : fallback;
 };
 
-export const VideoViewer = ({ src }) => {
+export const VideoViewer = ({ src, timeRef }) => {
     const { t } = useI18n();
     const wrapperRef = useRef(null);
     const plyrRef = useRef(null);
@@ -95,26 +96,24 @@ export const VideoViewer = ({ src }) => {
         } catch { /* unsupported */ }
     }, []);
 
-    // (Re)build Plyr whenever the source changes.
+    // The current src, readable from listeners that outlive a single source.
+    const srcRef = useRef(src);
+    srcRef.current = src;
+    const flashTimerRef = useRef(0);
+
+    // Build the <video> + Plyr ONCE. Switching videos only swaps the src on
+    // the same element — no player teardown, no DOM churn, and the Web Audio
+    // boost graph (bound to the element, not the source) survives switches.
     useEffect(() => {
         const wrapper = wrapperRef.current;
-        if (!wrapper || !src) return;
+        if (!wrapper) return;
 
-        if (plyrRef.current) {
-            plyrRef.current.destroy();
-            plyrRef.current = null;
-        }
-        // Drop the previous element's audio graph (its source node is dead).
-        try { sourceRef.current?.disconnect(); } catch {}
-        try { gainRef.current?.disconnect(); } catch {}
-        sourceRef.current = null;
-        gainRef.current = null;
         wrapper.innerHTML = '';
-
         const video = document.createElement('video');
         video.style.width = '100%';
         video.style.height = '100%';
         video.style.objectFit = 'contain';
+        video.preload = 'auto';
         wrapper.appendChild(video);
         videoElRef.current = video;
 
@@ -132,34 +131,18 @@ export const VideoViewer = ({ src }) => {
             seekTime: 5,
             autoplay: true
         });
-
-        player.source = {
-            type: 'video',
-            sources: [{ src, type: 'video/mp4' }]
-        };
-
         plyrRef.current = player;
 
-        // Each new video starts at the natural 1x; volume boost carries over.
-        setSpeed(1);
-        const { boost: b, loop: l } = prefsRef.current;
-        video.loop = l;
-        const reapply = () => {
-            video.playbackRate = 1;
-            if (b !== 1) {
-                const gain = ensureGain();
-                if (gain) gain.gain.value = b;
-            }
-            // "Open and it plays": kick off playback once the video is ready.
-            // Electron allows autoplay with sound; ignore the promise rejection
-            // if a browser policy ever blocks it.
-            const p = player.play();
-            if (p && typeof p.catch === 'function') p.catch(() => {});
+        // Share the playback position with the editor. Tagged with src so a
+        // stale position from another video is never applied.
+        const onTimeUpdate = () => {
+            if (timeRef) timeRef.current = { src: srcRef.current, time: video.currentTime };
         };
-        player.on('loadedmetadata', reapply);
+        video.addEventListener('timeupdate', onTimeUpdate);
 
         return () => {
-            player.off?.('loadedmetadata', reapply);
+            clearTimeout(flashTimerRef.current);
+            video.removeEventListener('timeupdate', onTimeUpdate);
             player.destroy();
             plyrRef.current = null;
             videoElRef.current = null;
@@ -168,6 +151,59 @@ export const VideoViewer = ({ src }) => {
             sourceRef.current = null;
             gainRef.current = null;
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Source switch: swap src on the existing element and re-apply playback
+    // prefs once metadata arrives. A cached thumbnail doubles as the poster so
+    // the frame area isn't black while the first frame decodes.
+    useEffect(() => {
+        const video = videoElRef.current;
+        const player = plyrRef.current;
+        if (!video || !player || !src) return;
+
+        // Each new video starts at the natural 1x; volume boost carries over.
+        setSpeed(1);
+        const poster = getCachedThumbnail(src);
+        if (poster) video.poster = poster;
+        video.loop = prefsRef.current.loop;
+        video.src = src;
+
+        // Perceived responsiveness: pop the control bar out the instant a new
+        // video is entered, so the UI visibly reacts while the first frame is
+        // still decoding. toggleControls() loses the race against autoplay's
+        // idle auto-hide, so force visibility with a CSS override class and
+        // hand control back to Plyr when it drops.
+        const container = player.elements?.container;
+        if (container) {
+            container.classList.add('revid-flash-controls');
+            clearTimeout(flashTimerRef.current);
+            flashTimerRef.current = setTimeout(() => {
+                container.classList.remove('revid-flash-controls');
+            }, 2500);
+        }
+
+        const reapply = () => {
+            video.playbackRate = 1;
+            const { boost: b } = prefsRef.current;
+            if (b !== 1) {
+                const gain = ensureGain();
+                if (gain) gain.gain.value = b;
+            }
+            // Coming back from the editor (or the grid), resume where this
+            // same video last was instead of restarting from zero.
+            const saved = timeRef?.current;
+            if (saved && saved.src === src && Number.isFinite(saved.time) && saved.time > 0) {
+                video.currentTime = saved.time;
+            }
+            // "Open and it plays": kick off playback once the video is ready.
+            // Electron allows autoplay with sound; ignore the promise rejection
+            // if a browser policy ever blocks it.
+            const p = player.play();
+            if (p && typeof p.catch === 'function') p.catch(() => {});
+        };
+        video.addEventListener('loadedmetadata', reapply, { once: true });
+        return () => video.removeEventListener('loadedmetadata', reapply);
     }, [src, ensureGain]);
 
     // Close the AudioContext when the viewer unmounts entirely.

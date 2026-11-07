@@ -26,6 +26,17 @@ function registerLocalVideoProtocol(protocol) {
             const rangeHeader = request.headers.get('range');
             const contentType = VIDEO_MIME_TYPES[path.extname(filePath).toLowerCase()] || 'video/mp4';
 
+            // Validator-based caching: the viewer and the editor load the same
+            // URL back-to-back, so letting Chromium's media cache reuse ranges
+            // avoids reading the file from disk twice. The ETag embeds size +
+            // mtime, so a replaced-in-place file invalidates automatically.
+            const etag = `"${fileSize}-${Math.round(stat.mtimeMs)}"`;
+            const cacheHeaders = {
+                'Cache-Control': 'max-age=86400',
+                'ETag': etag,
+                'Last-Modified': stat.mtime.toUTCString()
+            };
+
             // Streams the file after the Response has been handed back, so a
             // file deleted mid-playback errors on the stream with no listener —
             // swallow it instead of crashing the main process.
@@ -65,7 +76,8 @@ function registerLocalVideoProtocol(protocol) {
                             'Content-Range': `bytes ${start}-${end}/${fileSize}`,
                             'Accept-Ranges': 'bytes',
                             'Content-Length': String(chunkSize),
-                            'Content-Type': contentType
+                            'Content-Type': contentType,
+                            ...cacheHeaders
                         }
                     });
                 }
@@ -76,7 +88,8 @@ function registerLocalVideoProtocol(protocol) {
                 headers: {
                     'Content-Length': String(fileSize),
                     'Content-Type': contentType,
-                    'Accept-Ranges': 'bytes'
+                    'Accept-Ranges': 'bytes',
+                    ...cacheHeaders
                 }
             });
         } catch (e) {

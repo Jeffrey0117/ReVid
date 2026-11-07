@@ -88,3 +88,11 @@ button {
 [data-theme="light"] .plyr {
     --plyr-color-main: #6a9fd4;
 }
+
+/* Entering/switching a video force-shows the control bar briefly (perceived
+   responsiveness) — overrides Plyr's idle auto-hide until the class drops. */
+.plyr.revid-flash-controls .plyr__controls {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    transform: none !important;
+}

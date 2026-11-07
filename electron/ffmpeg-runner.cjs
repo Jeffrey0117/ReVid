@@ -15,6 +15,9 @@ const ffmpegPath = app.isPackaged
 
 const activeFfmpegJobs = new Map(); // op -> Set<ChildProcess>
 const cancelledFfmpegProcs = new WeakSet();
+// Bumped on every cancel so multi-step handlers (probe → encode → retry) can
+// notice a cancel that arrived while no process was alive to kill.
+const cancelEpochs = new Map(); // op -> number
 
 // Where progress percentages are sent. main.cjs points this at the main
 // window once it exists.
@@ -40,6 +43,7 @@ function isCancelledFfmpegProc(proc) {
 }
 
 function cancelFfmpegJobs(op) {
+    cancelEpochs.set(op, (cancelEpochs.get(op) || 0) + 1);
     const jobs = activeFfmpegJobs.get(op);
     if (!jobs) return 0;
     let count = 0;
@@ -57,6 +61,10 @@ function cancelFfmpegJobs(op) {
 
 function killAllFfmpegJobs() {
     for (const op of activeFfmpegJobs.keys()) cancelFfmpegJobs(op);
+}
+
+function getCancelEpoch(op) {
+    return cancelEpochs.get(op) || 0;
 }
 
 // Runs ffmpeg with uniform '-progress pipe:1' percentage reporting.
@@ -82,15 +90,56 @@ function runFfmpeg({ op, args, progressChannel, totalUs }) {
                 }
             }
         });
-        proc.stderr.on('data', () => {});
+        // Keep the tail of stderr so a non-zero exit can report WHY ffmpeg
+        // failed ("width not divisible by 2", bad codec for container, …).
+        let stderrTail = '';
+        proc.stderr.on('data', (data) => {
+            stderrTail = (stderrTail + data.toString()).slice(-2048);
+        });
 
         proc.on('close', (code) => {
-            resolve({ code, cancelled: cancelledFfmpegProcs.has(proc) });
+            resolve({ code, cancelled: cancelledFfmpegProcs.has(proc), stderrTail });
         });
         proc.on('error', (err) => {
-            resolve({ code: -1, cancelled: cancelledFfmpegProcs.has(proc), error: err.message });
+            resolve({ code: -1, cancelled: cancelledFfmpegProcs.has(proc), error: err.message, stderrTail });
         });
     });
+}
+
+// Hardware H.264 encoder detection. ffmpeg-static compiles in nvenc/qsv/amf,
+// but whether they actually work depends on this machine's GPU and drivers —
+// the only reliable test is a tiny real encode. Detected once, then cached.
+const HW_H264_CANDIDATES = ['h264_nvenc', 'h264_qsv', 'h264_amf'];
+let h264EncoderPromise = null;
+
+function probeEncoder(name) {
+    return new Promise((resolve) => {
+        const proc = spawn(ffmpegPath, [
+            '-hide_banner', '-v', 'error',
+            '-f', 'lavfi', '-i', 'color=black:s=256x256:d=0.1',
+            '-c:v', name, '-f', 'null', '-'
+        ]);
+        // Track like any job so quit-time killAllFfmpegJobs reaps a hung probe.
+        trackFfmpegProc('encoder-probe', proc);
+        const timer = setTimeout(() => {
+            try { proc.kill(); } catch (e) { /* already exited */ }
+        }, 5000);
+        timer.unref();
+        proc.on('close', (code) => { clearTimeout(timer); resolve(code === 0); });
+        proc.on('error', () => { clearTimeout(timer); resolve(false); });
+    });
+}
+
+function getH264Encoder() {
+    if (!h264EncoderPromise) {
+        h264EncoderPromise = (async () => {
+            for (const name of HW_H264_CANDIDATES) {
+                if (await probeEncoder(name)) return name;
+            }
+            return 'libx264';
+        })();
+    }
+    return h264EncoderPromise;
 }
 
 function fileSizeOrZero(p) {
@@ -105,7 +154,15 @@ function fileSizeOrZero(p) {
 function ffmpegFailure(r) {
     if (r.cancelled) return { success: false, cancelled: true, error: 'Cancelled' };
     if (r.error) return { success: false, error: r.error };
-    if (r.code !== 0) return { success: false, error: `ffmpeg exited with code ${r.code}` };
+    if (r.code !== 0) {
+        const lastLine = (r.stderrTail || '').trim().split('\n').filter(Boolean).pop();
+        return {
+            success: false,
+            error: lastLine
+                ? `ffmpeg exited with code ${r.code}: ${lastLine.trim()}`
+                : `ffmpeg exited with code ${r.code}`
+        };
+    }
     return null;
 }
 
@@ -116,6 +173,8 @@ module.exports = {
     isCancelledFfmpegProc,
     cancelFfmpegJobs,
     killAllFfmpegJobs,
+    getCancelEpoch,
+    getH264Encoder,
     runFfmpeg,
     fileSizeOrZero,
     ffmpegFailure

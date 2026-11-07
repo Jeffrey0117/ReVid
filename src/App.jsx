@@ -36,6 +36,7 @@ import { UploadSettings } from './features/theater/UploadSettings';
 import { UploadDialog } from './features/theater/UploadDialog';
 import { SpeedControl } from './components/SpeedControl';
 import { InfoPanel } from './components/InfoPanel';
+import { BatchCutDialog } from './components/BatchCutDialog';
 import { validateRevidFile } from './utils/revidFile';
 import { detectPlatform } from './utils/platformDetect';
 
@@ -76,6 +77,16 @@ export default function App() {
     );
 
     const [isEditing, setIsEditing] = useState(false);
+    // Shared playback position: { src, time }. The viewer and the editor both
+    // read and write it, so switching between them lands on the same frame.
+    const viewerTimeRef = useRef(null);
+    // Background export job shown as a corner progress toast.
+    const [exportJob, setExportJob] = useState(null);
+    const exportJobRef = useRef(false);
+    // Batch cut dialog context: { templatePath, start, end } | null.
+    const [batchCutCtx, setBatchCutCtx] = useState(null);
+    // Bumped to remount the viewer after a file is replaced on disk.
+    const [viewerKey, setViewerKey] = useState(0);
     const [showScreenshots, setShowScreenshots] = useState(false);
     const [showGif, setShowGif] = useState(false);
     const [showBatchCrop, setShowBatchCrop] = useState(false);
@@ -565,12 +576,16 @@ export default function App() {
     useKeyboardNav({
         onNext: nextVideo,
         onPrev: prevVideo,
-        enabled: viewMode === 'viewer' && !isEditing
+        enabled: viewMode === 'viewer' && !isEditing && !batchCutCtx
     });
 
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (e.key === 'Escape') {
+                // While files are being rewritten on disk, Escape must not
+                // switch views: mounting the grid opens handles on the very
+                // files batch cut / replace are about to rename.
+                if (batchCutCtx || (exportJob?.status === 'running' && exportJob.replacingPath)) return;
                 if (isEditing) {
                     setIsEditing(false);
                 } else if (viewMode === 'theater') {
@@ -586,7 +601,7 @@ export default function App() {
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isEditing, viewMode]);
+    }, [isEditing, viewMode, batchCutCtx, exportJob]);
 
     const handleOpenFolder = useCallback(async () => {
         const api = getElectronAPI();
@@ -622,13 +637,66 @@ export default function App() {
         });
     }, []);
 
-    const handleCropComplete = useCallback((result) => {
-        setIsEditing(false);
-        if (result?.success) {
-            setToast(t('saved'));
-            setTimeout(() => setToast(null), 2000);
+    // Background export: the editor hands over a prepared ffmpeg job and
+    // closes; progress lives in a corner toast so the viewer stays usable.
+    const handleEditorExport = useCallback(async ({ params, label }) => {
+        const api = getElectronAPI();
+        if (!api) return;
+        if (exportJobRef.current) {
+            setToast(t('exportBusy'));
+            setTimeout(() => setToast(null), 2500);
+            return;
         }
+
+        setIsEditing(false);
+        const replacingPath = params.replaceOriginal ? params.inputPath : null;
+        exportJobRef.current = true;
+        setExportJob({ label, pct: 0, status: 'running', replacingPath });
+
+        let result;
+        try {
+            // opId gives this job its own cancel scope + progress channel so
+            // it can't collide with BatchCropDialog's 'crop-video' jobs.
+            result = await api.cropVideo({ ...params, opId: 'editor-export' }, (pct) => {
+                setExportJob(job => (job && job.status === 'running' ? { ...job, pct } : job));
+            });
+        } catch (err) {
+            result = { success: false, error: err.message || String(err) };
+        }
+        exportJobRef.current = false;
+
+        if (result.success) {
+            if (replacingPath) {
+                // The file on disk changed (possibly under a new .mp4 name when
+                // the source wasn't mp4): forget the old playback position,
+                // re-read the folder, and remount the viewer on the new file.
+                viewerTimeRef.current = null;
+                openVideoFile(result.newPath || replacingPath);
+                setViewerKey(k => k + 1);
+            }
+            setExportJob({ label, pct: 100, status: 'done', replacingPath: null });
+            setTimeout(() => setExportJob(job => (job?.status === 'done' ? null : job)), 4000);
+        } else if (result.cancelled) {
+            setExportJob(null);
+        } else {
+            setExportJob({ label, status: 'error', error: result.error, replacingPath: null });
+        }
+    }, [t, openVideoFile]);
+
+    const handleOpenBatchCut = useCallback((template) => {
+        setIsEditing(false);
+        setBatchCutCtx(template);
     }, []);
+
+    const handleBatchCutClose = useCallback(() => {
+        setBatchCutCtx(null);
+        // Batch cut may have rewritten files in place or created new "-cut"
+        // files — re-read the folder and remount the viewer.
+        viewerTimeRef.current = null;
+        if (currentVideo) openVideoFile(currentVideo);
+        else if (currentPath) loadFolder(currentPath);
+        setViewerKey(k => k + 1);
+    }, [currentVideo, currentPath, openVideoFile, loadFolder]);
 
     const videoSrc = useMemo(() => {
         if (!currentVideo) return null;
@@ -1799,7 +1867,22 @@ export default function App() {
                                 onTogglePin={togglePin}
                             />
                         ) : viewMode === 'viewer' && videoSrc ? (
-                            <VideoViewer src={videoSrc} />
+                            // The viewer is unmounted while the editor is open
+                            // (Plyr's global shortcuts/playback must not run
+                            // behind the overlay), while the current file is
+                            // being replaced on disk, and while batch cut may
+                            // be rewriting files — open handles block renames.
+                            (isEditing || batchCutCtx || (exportJob?.status === 'running' && exportJob.replacingPath === currentVideo))
+                                ? (
+                                    <div style={{
+                                        width: '100%', height: '100%', background: '#000',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        color: 'rgba(255,255,255,0.4)', fontSize: 13
+                                    }}>
+                                        {!isEditing && t('viewerUpdating')}
+                                    </div>
+                                )
+                                : <VideoViewer key={viewerKey} src={videoSrc} timeRef={viewerTimeRef} />
                         ) : null}
 
                         {/* Floating music player — single persistent YT instance.
@@ -1897,9 +1980,11 @@ export default function App() {
 
             </div>
 
-            {/* Editor overlay */}
+            {/* Editor overlay — starts below the 32px custom titlebar so the
+                frameless window can still be dragged/resized/minimized while
+                editing (inset: 0 would swallow the drag region and buttons). */}
             {isEditing && videoSrc && (
-                <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: '#000' }}>
+                <div style={{ position: 'fixed', top: 32, left: 0, right: 0, bottom: 0, zIndex: 200, background: theme.bg }}>
                     <Suspense fallback={
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'rgba(255,255,255,0.5)' }}>
                             Loading editor...
@@ -1908,10 +1993,69 @@ export default function App() {
                         <VideoEditor
                             videoSrc={videoSrc}
                             videoPath={currentVideo}
+                            timeRef={viewerTimeRef}
                             onCancel={() => setIsEditing(false)}
-                            onComplete={handleCropComplete}
+                            onExport={handleEditorExport}
+                            onBatchCut={handleOpenBatchCut}
+                            exportBusy={exportJob?.status === 'running'}
                         />
                     </Suspense>
+                </div>
+            )}
+
+            {/* Batch cut dialog */}
+            {batchCutCtx && (
+                <BatchCutDialog
+                    files={gridFiles}
+                    template={batchCutCtx}
+                    onClose={handleBatchCutClose}
+                />
+            )}
+
+            {/* Background export progress toast (bottom-right) */}
+            {exportJob && (
+                <div style={{
+                    position: 'fixed', right: 16, bottom: 16, zIndex: 400,
+                    width: 300, padding: '12px 14px',
+                    background: theme.dialogBg, border: `1px solid ${theme.border}`,
+                    borderRadius: 10, boxShadow: '0 8px 30px rgba(0,0,0,0.35)'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{
+                            flex: 1, fontSize: 12, color: theme.textSecondary,
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                        }}>
+                            {exportJob.status === 'running' && `${t('editorEncoding')} ${exportJob.pct}% — ${exportJob.label}`}
+                            {exportJob.status === 'done' && `${t('exportSuccess')} — ${exportJob.label}`}
+                            {exportJob.status === 'error' && `${t('exportFailed')} — ${exportJob.label}`}
+                        </span>
+                        <button
+                            title={exportJob.status === 'running' ? t('cancel') : undefined}
+                            onClick={() => {
+                                if (exportJob.status === 'running') getElectronAPI()?.cancelFfmpeg?.('editor-export');
+                                else setExportJob(null);
+                            }}
+                            style={{ color: theme.textTertiary, fontSize: 14, padding: '0 4px' }}
+                        >
+                            {'✕'}
+                        </button>
+                    </div>
+                    {exportJob.status === 'running' && (
+                        <div style={{
+                            marginTop: 8, height: 6, borderRadius: 999,
+                            background: theme.inputBg, overflow: 'hidden'
+                        }}>
+                            <div style={{
+                                height: '100%', width: `${exportJob.pct}%`,
+                                background: theme.accent, transition: 'width 0.3s'
+                            }} />
+                        </div>
+                    )}
+                    {exportJob.status === 'error' && (
+                        <div style={{ marginTop: 6, fontSize: 11, color: theme.error }}>
+                            {exportJob.error}
+                        </div>
+                    )}
                 </div>
             )}
 

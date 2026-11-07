@@ -1,4 +1,12 @@
+export { Icon } from './Icon';
 export { Video } from './Video';
 export { GraduationCap } from './GraduationCap';
 export { PictureInPicture } from './PictureInPicture';
 export { Pin } from './Pin';
+export { Play } from './Play';
+export { Pause } from './Pause';
+export { VolumeOn } from './VolumeOn';
+export { VolumeOff } from './VolumeOff';
+export { StepBack } from './StepBack';
+export { StepForward } from './StepForward';
+export { ArrowDownToLine } from './ArrowDownToLine';
