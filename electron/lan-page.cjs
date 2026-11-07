@@ -45,8 +45,12 @@ exports.render = (token) => `<!doctype html>
   }
   /* Player takes the whole screen: a phone has none to spare. */
   #player { position: fixed; inset: 0; z-index: 10; background: #000; display: none; }
-  #player.on { display: block; }
-  video { width: 100%; height: 100%; background: #000; }
+  #player.on { display: flex; align-items: center; justify-content: center; }
+  /* The stage is the picture, not the screen. A landscape video on a
+     portrait phone leaves most of the screen black, and subtitles anchored
+     to the screen ended up floating in that black, metres from the video. */
+  #stage { position: relative; width: 100%; max-height: 100%; }
+  video { display: block; width: 100%; height: 100%; background: #000; }
   .topbtn {
     position: absolute; top: calc(10px + env(safe-area-inset-top)); z-index: 12;
     min-width: 44px; min-height: 40px; padding: 0 14px; border: 0; border-radius: 20px;
@@ -55,12 +59,18 @@ exports.render = (token) => `<!doctype html>
   }
   #back { left: 10px; }
   #ccBtn { right: 62px; font-weight: 600; font-size: 12px; }
-  #gear { right: 10px; font-size: 17px; }
+  /* A drawn icon, not an emoji: emoji render as whatever glyph the phone
+     happens to ship and sit off the optical centre of the button. */
+  #gear { right: 10px; display: inline-flex; align-items: center; justify-content: center; }
+  #gear svg { width: 19px; height: 19px; }
   #cc {
     position: absolute; left: 50%; z-index: 11;
-    transform: translateX(-50%); max-width: 92%;
-    padding: 6px 14px; border-radius: 8px;
+    transform: translateX(-50%); max-width: 94%;
+    padding: 5px 10px; border-radius: 8px;
     text-align: center; pointer-events: none; white-space: pre-wrap;
+    /* A long English line on a 400px screen wrapped to eight lines and
+       covered the picture. Keep it to a readable couple of lines. */
+    line-height: 1.25; text-wrap: balance;
   }
   #cc:empty { display: none; }
   #cc .zh { opacity: 0.85; margin-top: 2px; }
@@ -106,9 +116,17 @@ exports.render = (token) => `<!doctype html>
 <div id="player">
   <button id="back" class="topbtn">← 返回</button>
   <button id="ccBtn" class="topbtn">中/EN</button>
-  <button id="gear" class="topbtn">⚙</button>
-  <video id="v" controls playsinline preload="metadata"></video>
-  <div id="cc"></div>
+  <button id="gear" class="topbtn" aria-label="字幕設定">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+         stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="5" width="18" height="14" rx="2"/>
+      <path d="M7 15h4M15 15h2M7 11h2M13 11h4"/>
+    </svg>
+  </button>
+  <div id="stage">
+    <video id="v" controls playsinline preload="metadata"></video>
+    <div id="cc"></div>
+  </div>
 
   <div id="sheet">
     <h3>字幕設定</h3>
@@ -150,11 +168,29 @@ const fmtSize = (n) => (n > 1073741824 ? (n / 1073741824).toFixed(1) + ' GB' : M
 const COLORS = ['#ffffff', '#ffe082', '#aed581', '#81d4fa'];
 const CC_MODES = ['both', 'en', 'zh', 'off'];
 const CC_LABEL = { both: '中/EN', en: 'EN', zh: '中', off: 'OFF' };
-const DEFAULTS = { size: 17, pos: 14, bg: 65, stroke: 0, color: '#ffffff', mode: 'both' };
+// Sized against the screen, not a fixed pixel count: 17px is comfortable on
+// a tablet and enormous on a 390px phone, where it wrapped a line of dialogue
+// into eight rows over the picture.
+const fitSize = () => Math.round(Math.max(13, Math.min(26, window.innerWidth * 0.042)));
+const DEFAULTS = { size: fitSize(), pos: 8, bg: 65, stroke: 0, color: '#ffffff', mode: 'both' };
 
 let prefs = { ...DEFAULTS };
 try { prefs = { ...DEFAULTS, ...JSON.parse(localStorage.getItem('revid-mobile-subs') || '{}') }; } catch (e) {}
 const savePrefs = () => { try { localStorage.setItem('revid-mobile-subs', JSON.stringify(prefs)); } catch (e) {} };
+
+// The stage matches the picture's shape, so subtitles anchored to its
+// bottom sit on the video rather than somewhere in the surrounding black.
+function fitStage() {
+  const stage = document.getElementById('stage');
+  const v = document.getElementById('v');
+  if (!stage || !v || !v.videoWidth || !v.videoHeight) return;
+  stage.style.aspectRatio = v.videoWidth + ' / ' + v.videoHeight;
+  // Tall videos are bounded by height instead, letterboxing left and right.
+  const screenRatio = window.innerWidth / window.innerHeight;
+  const videoRatio = v.videoWidth / v.videoHeight;
+  stage.style.width = videoRatio >= screenRatio ? '100%' : 'auto';
+  stage.style.height = videoRatio >= screenRatio ? 'auto' : '100%';
+}
 
 function applyPrefs() {
   cc.style.bottom = prefs.pos + '%';
@@ -245,6 +281,10 @@ function render() {
     cc.appendChild(d);
   }
 }
+
+video.addEventListener('loadedmetadata', fitStage);
+window.addEventListener('resize', fitStage);
+window.addEventListener('orientationchange', () => setTimeout(fitStage, 200));
 
 video.addEventListener('timeupdate', () => {
   if (!cues.length) return;

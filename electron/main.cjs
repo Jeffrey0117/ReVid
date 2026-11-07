@@ -20,6 +20,7 @@ const {
     extractEnvelope, findSegmentOffset, probeDuration, FRAMES_PER_SECOND
 } = require('./segment-matcher.cjs');
 const { parallelMap, STOP } = require('./parallel-map.cjs');
+const { createAnchor } = require('./scan-anchor.cjs');
 const os = require('os');
 const {
     getWhisperStatus, ensureWhisper, transcribeVideo, cleanupWhisperTemp,
@@ -801,10 +802,12 @@ function setupIpcHandlers() {
         const lanes = Math.max(2, Math.min(6, Math.floor(os.cpus().length / 2)));
 
         // The same segment sits at nearly the same place in every episode of
-        // a show. So: learn where from a few full scans, then decode only a
-        // window around it for the rest — measured at 7x on this library —
-        // and fall back to a full decode whenever the window comes up empty.
-        const ANCHOR_SAMPLE = 3;
+        // a season, so a window around it decodes a fraction of the file —
+        // measured at 7x on this library. Across seasons the position moves,
+        // so the anchor follows the scan rather than being fixed by the
+        // first few files; a fixed one would be right for season one and
+        // wrong for the other seven, making a whole-show scan slower than
+        // having no anchor at all.
         const WINDOW_MARGIN = 120;
         const templateLen = templateEnd - templateStart;
 
@@ -847,47 +850,47 @@ function setupIpcHandlers() {
         };
 
         const results = new Array(targets.length);
-        const report = (i, result) => {
-            results[i] = result;
-            sendProgress({ index: i, path: targets[i], phase: 'done', result });
+        // One anchor per folder: seasons are folders, and that is exactly
+        // where the segment's position changes.
+        const anchors = new Map();
+        const anchorFor = (target) => {
+            const dir = path.dirname(target);
+            if (!anchors.has(dir)) anchors.set(dir, createAnchor());
+            return anchors.get(dir);
         };
 
-        // Pass one: enough full scans to place the segment.
-        const sample = targets.slice(0, ANCHOR_SAMPLE);
-        await parallelMap(sample, lanes, async (target, i) => {
-            if (aborted()) return stop();
-            sendProgress({ index: i, path: target, phase: 'scanning' });
-            const r = await fullScan(target);
-            if (aborted()) return stop();
-            report(i, r);
-            return r;
-        });
-        if (cancelled) return { success: false, cancelled: true, error: 'Cancelled' };
+        let windowed = 0;
+        let full = 0;
 
-        const confident = results
-            .filter(r => r?.found)
-            .map(r => r.matchStart)
-            .sort((a, b) => a - b);
-        const anchor = confident.length ? confident[Math.floor(confident.length / 2)] : null;
-
-        // Pass two: the rest, windowed when there is somewhere to look.
-        const rest = targets.slice(ANCHOR_SAMPLE);
-        await parallelMap(rest, lanes, async (target, k) => {
-            const i = k + ANCHOR_SAMPLE;
+        await parallelMap(targets, lanes, async (target, i) => {
             if (aborted()) return stop();
             sendProgress({ index: i, path: target, phase: 'scanning' });
 
-            let r = anchor === null ? null : await windowScan(target, anchor);
-            if (aborted()) return stop();
-            if (!r) r = await fullScan(target);
-            if (aborted()) return stop();
+            const anchor = anchorFor(target);
+            const guess = anchor.get();
 
-            report(i, r);
+            let r = null;
+            if (guess !== null) {
+                r = await windowScan(target, guess);
+                if (aborted()) return stop();
+                if (r) windowed += 1;
+                else anchor.miss();
+            }
+            if (!r) {
+                r = await fullScan(target);
+                if (aborted()) return stop();
+                full += 1;
+            }
+            if (r.found) anchor.record(r.matchStart);
+
+            results[i] = r;
+            sendProgress({ index: i, path: target, phase: 'done', result: r });
             return r;
         });
-        if (cancelled) return { success: false, cancelled: true, error: 'Cancelled' };
 
-        return { success: true, results: results.filter(Boolean), anchor };
+        if (cancelled) return { success: false, cancelled: true, error: 'Cancelled' };
+        console.log(`[scan] ${targets.length} files: ${windowed} windowed, ${full} full`);
+        return { success: true, results: results.filter(Boolean), windowed, full };
     });
 
     // Cut each video so only [0, cutAt) survives. Sequential; progress via
