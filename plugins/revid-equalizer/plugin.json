@@ -1,0 +1,9 @@
+{
+  "id": "revid-equalizer",
+  "name": "Equalizer",
+  "version": "1.0.0",
+  "description": "5-band equalizer with 22 presets, stereo width and reverb. Built on audio-dsp-kit.",
+  "author": "Jeffrey0117",
+  "entry": "index.js",
+  "permissions": ["audio", "ui", "storage"]
+}

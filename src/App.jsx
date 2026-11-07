@@ -37,6 +37,8 @@ import { UploadDialog } from './features/theater/UploadDialog';
 import { SpeedControl } from './components/SpeedControl';
 import { InfoPanel } from './components/InfoPanel';
 import { BatchCutDialog } from './components/BatchCutDialog';
+import { PluginsDialog } from './features/plugins/PluginsDialog';
+import { reloadPlugins } from './features/plugins/pluginRuntime';
 import { validateRevidFile } from './utils/revidFile';
 import { detectPlatform } from './utils/platformDetect';
 
@@ -87,6 +89,8 @@ export default function App() {
     const [batchCutCtx, setBatchCutCtx] = useState(null);
     // Bumped to remount the viewer after a file is replaced on disk.
     const [viewerKey, setViewerKey] = useState(0);
+    // Folder-wide background transcription: { running, pending, done }.
+    const [subsQueue, setSubsQueue] = useState(null);
     const [showScreenshots, setShowScreenshots] = useState(false);
     const [showGif, setShowGif] = useState(false);
     const [showBatchCrop, setShowBatchCrop] = useState(false);
@@ -97,6 +101,7 @@ export default function App() {
     const [showConcat, setShowConcat] = useState(false);
     const [showPinnedOnly, setShowPinnedOnly] = useState(false);
     const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+    const [showPlugins, setShowPlugins] = useState(false);
     const [showAbout, setShowAbout] = useState(false);
     const [toast, setToast] = useState(null);
     const [alertModal, setAlertModal] = useState(null); // { message }
@@ -697,6 +702,48 @@ export default function App() {
         else if (currentPath) loadFolder(currentPath);
         setViewerKey(k => k + 1);
     }, [currentVideo, currentPath, openVideoFile, loadFolder]);
+
+    // Opening a folder queues every video without subtitles for background
+    // transcription, so the library fills in while the user watches instead of
+    // each video only being transcribed when it is first opened.
+    useEffect(() => {
+        const api = getElectronAPI();
+        if (!api?.queueFolderTranscriptions || files.length === 0) return;
+        if (localStorage.getItem('revid-auto-subs') === 'off') return;
+        let cancelled = false;
+        // Let the current video claim the queue first.
+        const timer = setTimeout(() => {
+            if (!cancelled) api.queueFolderTranscriptions(files).catch(() => {});
+        }, 4000);
+        return () => { cancelled = true; clearTimeout(timer); };
+    }, [files]);
+
+    // Load user plugins once the app is up. A plugin that fails to activate is
+    // reported in the plugins dialog rather than breaking startup.
+    useEffect(() => {
+        let cancelled = false;
+        reloadPlugins().then((r) => {
+            if (cancelled || !r.plugins) return;
+            const failed = r.plugins.filter(p => p.enabled && !p.activated && p.error);
+            for (const p of failed) console.error(`[plugin:${p.id}] ${p.error}`);
+        });
+        return () => { cancelled = true; };
+    }, []);
+
+    useEffect(() => {
+        const api = getElectronAPI();
+        if (!api?.onTranscriptionQueue) return;
+        let doneCount = 0;
+        return api.onTranscriptionQueue((e) => {
+            if (e.type === 'done') doneCount += 1;
+            if (e.type === 'cleared') doneCount = 0;
+            setSubsQueue(
+                e.running || e.pending > 0
+                    ? { running: e.running, pending: e.pending, done: doneCount }
+                    : null
+            );
+        });
+    }, []);
 
     const videoSrc = useMemo(() => {
         if (!currentVideo) return null;
@@ -1347,6 +1394,23 @@ export default function App() {
                                             <path d="M17.5 14v7M14 17.5h7" />
                                         </svg>
                                         <span>{t('familyMenu')}</span>
+                                    </button>
+                                    {/* 外掛：小功能用套件裝,不塞進核心 */}
+                                    <button
+                                        onClick={() => { setShowPlugins(true); setShowSettingsMenu(false); }}
+                                        style={{
+                                            width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+                                            padding: '8px 12px', fontSize: 13, color: theme.textSecondary,
+                                            transition: 'background 0.1s'
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.background = theme.hoverBg}
+                                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                    >
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M12 2v4M12 18v4M4.9 4.9l2.9 2.9M16.2 16.2l2.9 2.9M2 12h4M18 12h4M4.9 19.1l2.9-2.9M16.2 7.8l2.9-2.9" />
+                                            <circle cx="12" cy="12" r="3" />
+                                        </svg>
+                                        <span>{t('pluginsTitle')}</span>
                                     </button>
                                     <button
                                         onClick={() => { setShowSyncSettings(true); setShowSettingsMenu(false); }}
@@ -2012,6 +2076,36 @@ export default function App() {
                 />
             )}
 
+            {/* Folder-wide transcription progress (above the export toast) */}
+            {subsQueue && (
+                <div style={{
+                    position: 'fixed', right: 16, bottom: exportJob ? 108 : 16, zIndex: 399,
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '8px 12px', maxWidth: 300,
+                    background: theme.dialogBg, border: `1px solid ${theme.border}`,
+                    borderRadius: 10, boxShadow: '0 8px 30px rgba(0,0,0,0.35)'
+                }}>
+                    <span style={{
+                        flex: 1, fontSize: 12, color: theme.textSecondary,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                    }}>
+                        {t('subsQueueRunning')} {subsQueue.done + (subsQueue.running ? 1 : 0)}
+                        /{subsQueue.done + (subsQueue.running ? 1 : 0) + subsQueue.pending}
+                        {subsQueue.running && ` — ${subsQueue.running.split(/[\\/]/).pop()}`}
+                    </span>
+                    <button
+                        title={t('cancel')}
+                        onClick={() => {
+                            getElectronAPI()?.clearTranscriptionQueue?.();
+                            setSubsQueue(null);
+                        }}
+                        style={{ color: theme.textTertiary, fontSize: 14, padding: '0 4px' }}
+                    >
+                        {'✕'}
+                    </button>
+                </div>
+            )}
+
             {/* Background export progress toast (bottom-right) */}
             {exportJob && (
                 <div style={{
@@ -2132,6 +2226,8 @@ export default function App() {
 
             {/* Cloud sync settings */}
             <FamilyDialog isOpen={showFamily} onClose={() => setShowFamily(false)} />
+
+            {showPlugins && <PluginsDialog onClose={() => setShowPlugins(false)} />}
             <SyncSettingsDialog
                 isOpen={showSyncSettings}
                 onClose={() => setShowSyncSettings(false)}

@@ -7,6 +7,8 @@ import { parseSubtitles, findActiveCueIndex } from '../../utils/subtitles';
 import { TranscriptPanel } from './TranscriptPanel';
 import { SubtitleSettings, readSubtitleStyle } from './SubtitleSettings';
 import { Captions, PanelRight, Sliders } from '../../components/icons';
+import { setAudioSlot, setAudioSlotProvider, setPlayerBridge } from '../plugins/pluginRuntime';
+import { PluginPanelHost } from '../plugins/PluginPanelHost';
 
 const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 // Gain multipliers for volume boost (1 = native 100%, >1 amplifies past it).
@@ -75,6 +77,8 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
     const audioCtxRef = useRef(null);
     const gainRef = useRef(null);
     const sourceRef = useRef(null);
+    // Insertion point audio plugins (e.g. an equalizer) route themselves into.
+    const slotRef = useRef(null);
 
     const [speed, setSpeed] = useState(1); // always starts at 1x per video
     const [boost, setBoost] = useState(() => readNum(BOOST_KEY, 1));
@@ -139,7 +143,16 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
             try {
                 sourceRef.current = ctx.createMediaElementSource(video);
                 gainRef.current = ctx.createGain();
-                sourceRef.current.connect(gainRef.current).connect(ctx.destination);
+                // source → slotIn → slotOut → gain → speakers. slotIn/slotOut
+                // are a fixed pair audio plugins splice themselves between, so
+                // the player can rebuild its own chain independently of them.
+                const slotIn = ctx.createGain();
+                const slotOut = ctx.createGain();
+                slotIn.connect(slotOut);
+                sourceRef.current.connect(slotIn);
+                slotOut.connect(gainRef.current).connect(ctx.destination);
+                slotRef.current = { context: ctx, input: slotIn, output: slotOut };
+                setAudioSlot(slotRef.current);
             } catch {
                 return gainRef.current; // already wired (or unsupported)
             }
@@ -176,8 +189,13 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
         setAutoSubs(prev => {
             const next = !prev;
             localStorage.setItem(AUTO_SUBS_KEY, next ? 'on' : 'off');
-            if (!next) getElectronAPI()?.cancelFfmpeg?.('whisper');
-            else setSubsRetry(n => n + 1);
+            if (!next) {
+                // Drop the folder sweep and stop the running job outright.
+                getElectronAPI()?.clearTranscriptionQueue?.();
+                getElectronAPI()?.cancelFfmpeg?.('whisper');
+            } else {
+                setSubsRetry(n => n + 1);
+            }
             return next;
         });
     }, []);
@@ -422,11 +440,11 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
             }
         })();
 
-        return () => {
-            cancelled = true;
-            // Leaving this video kills its in-flight transcription.
-            api.cancelFfmpeg?.('whisper');
-        };
+        // Leaving the video does NOT stop its transcription: the main process
+        // serialises jobs in a queue, so letting it finish costs nothing extra
+        // and the result is saved. Stopping it would throw away the work and
+        // force a full re-run the next time this video is opened.
+        return () => { cancelled = true; };
     }, [videoPath, subsRetry]);
 
     // One-time Whisper engine/model download, then transcribe this video.
@@ -530,8 +548,36 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
 
     // Close the AudioContext when the viewer unmounts entirely.
     useEffect(() => () => {
+        setAudioSlot(null);
+        slotRef.current = null;
         try { audioCtxRef.current?.close(); } catch {}
         audioCtxRef.current = null;
+    }, []);
+
+    // Expose player + subtitle state to plugins. Reads go through refs so the
+    // bridge identity stays stable for a plugin that holds onto it.
+    const cuesForPluginsRef = useRef({ cues, activeCueIndex });
+    cuesForPluginsRef.current = { cues, activeCueIndex };
+    useEffect(() => {
+        setAudioSlotProvider(() => ensureGain());
+        return () => setAudioSlotProvider(null);
+    }, [ensureGain]);
+
+    useEffect(() => {
+        setPlayerBridge({
+            play: () => videoElRef.current?.play().catch(() => {}),
+            pause: () => videoElRef.current?.pause(),
+            seek: (time) => { if (videoElRef.current) videoElRef.current.currentTime = time; },
+            getCurrentTime: () => videoElRef.current?.currentTime ?? 0,
+            getDuration: () => videoElRef.current?.duration ?? 0,
+            isPaused: () => videoElRef.current?.paused ?? true,
+            getCues: () => cuesForPluginsRef.current.cues,
+            getActiveCue: () => {
+                const { cues: c, activeCueIndex: i } = cuesForPluginsRef.current;
+                return i >= 0 ? c[i] : null;
+            }
+        });
+        return () => setPlayerBridge(null);
     }, []);
 
     // Press "0" to restart the current video from the beginning (and keep
@@ -713,6 +759,7 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                     >
                         <PanelRight size={16} />
                     </button>
+                    <PluginPanelHost />
                 </div>
 
                 {styleOpen && (

@@ -208,6 +208,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
     },
 
+    // Background-transcribe the whole folder; progress via onQueueEvent.
+    queueFolderTranscriptions: (videoPaths) =>
+        ipcRenderer.invoke('queue-folder-transcriptions', { videoPaths }),
+
+    clearTranscriptionQueue: () => ipcRenderer.invoke('clear-transcription-queue'),
+
+    onTranscriptionQueue: (callback) => {
+        const handler = (_event, payload) => callback(payload);
+        ipcRenderer.on('whisper-queue', handler);
+        return () => ipcRenderer.removeListener('whisper-queue', handler);
+    },
+
     transcribeVideo: async (videoPath, onEvent) => {
         const handler = (_event, payload) => {
             if (payload.videoPath === videoPath) onEvent(payload);
@@ -264,6 +276,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
             ipcRenderer.removeListener('translate-progress', handler);
         }
     },
+
+    // --- Plugins ---
+
+    pluginsList: () => ipcRenderer.invoke('plugins-list'),
+    pluginSetEnabled: (id, enabled) => ipcRenderer.invoke('plugin-set-enabled', { id, enabled }),
+    pluginInstall: () => ipcRenderer.invoke('plugin-install'),
+    pluginUninstall: (id) => ipcRenderer.invoke('plugin-uninstall', { id }),
+    pluginsOpenFolder: () => ipcRenderer.invoke('plugins-open-folder'),
 
     startDrag: (filePath) => {
         ipcRenderer.send('start-drag', filePath);

@@ -22,6 +22,8 @@ const {
     cachedSubtitlePath, DEFAULT_MODEL
 } = require('./whisper-runner.cjs');
 const { translateLines } = require('./translator.cjs');
+const { createWhisperQueue } = require('./whisper-queue.cjs');
+const pluginHost = require('./plugin-host.cjs');
 const { registerTheaterStore, drainTheaterSaves } = require('./theater-store.cjs');
 const { registerSyncClient, drainSyncRequests } = require('./sync-client.cjs');
 const { registerLocalVideoProtocol } = require('./local-video-protocol.cjs');
@@ -950,36 +952,35 @@ function setupIpcHandlers() {
         }
     });
 
-    // Transcribe one video to <video>.srt. Single-flight: the renderer cancels
-    // the previous job (cancel-ffmpeg('whisper')) before starting a new one.
-    let whisperBusy = false;
-    ipcMain.handle('transcribe-video', async (_event, { videoPath }) => {
-        if (!videoPath || !fs.existsSync(videoPath)) {
-            return { success: false, error: 'File not found' };
-        }
+    // Transcription is serialised through one queue: whisper saturates the
+    // machine, and the video being watched must not wait behind a folder sweep.
+    const subtitlesExist = (videoPath) => {
         const base = videoPath.replace(/\.[^.]+$/, '');
-        const cachedSrt = cachedSubtitlePath(videoPath, '.srt');
-        if (fs.existsSync(`${base}.srt`) || fs.existsSync(`${base}.vtt`) || fs.existsSync(cachedSrt)) {
-            return { success: true, skipped: true, srtPath: `${base}.srt` };
-        }
-        const status = getWhisperStatus(DEFAULT_MODEL);
-        if (!status.binaryReady || !status.modelReady) {
-            return { success: false, notReady: true, error: 'Whisper not set up' };
-        }
+        return fs.existsSync(`${base}.srt`)
+            || fs.existsSync(`${base}.vtt`)
+            || fs.existsSync(cachedSubtitlePath(videoPath, '.srt'));
+    };
 
-        // Wait briefly for a just-cancelled job to wind down.
-        for (let i = 0; whisperBusy && i < 30; i++) await sleep(100);
-        if (whisperBusy) return { success: false, busy: true, error: 'Transcription already running' };
+    const sendWhisper = (videoPath, payload) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('whisper-event', { videoPath, ...payload });
+        }
+    };
 
-        whisperBusy = true;
-        const epoch = getCancelEpoch('whisper');
-        const send = (payload) => {
+    const whisperQueue = createWhisperQueue({
+        hasSubtitles: subtitlesExist,
+        onEvent: (e) => {
             if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('whisper-event', { videoPath, ...payload });
+                mainWindow.webContents.send('whisper-queue', e);
             }
-        };
-        try {
-            send({ type: 'start' });
+        },
+        runJob: async (videoPath) => {
+            const status = getWhisperStatus(DEFAULT_MODEL);
+            if (!status.binaryReady || !status.modelReady) {
+                return { success: false, notReady: true, error: 'Whisper not set up' };
+            }
+            const epoch = getCancelEpoch('whisper');
+            sendWhisper(videoPath, { type: 'start' });
             const result = await transcribeVideo(
                 {
                     videoPath,
@@ -989,25 +990,57 @@ function setupIpcHandlers() {
                     op: 'whisper'
                 },
                 {
-                    onCue: (cue) => send({ type: 'cue', cue }),
-                    onProgress: (pct) => send({ type: 'progress', pct })
+                    onCue: (cue) => sendWhisper(videoPath, { type: 'cue', cue }),
+                    onProgress: (pct) => sendWhisper(videoPath, { type: 'progress', pct })
                 }
             );
-            if (getCancelEpoch('whisper') !== epoch) {
-                // Cancelled. Only discard the .srt if the run did NOT finish:
-                // a completed transcription is valid work and must survive a
-                // cancel that merely raced the finish (switching videos, a
-                // remount) — deleting it would silently redo minutes of work.
-                if (!result.success) {
-                    try { await fs.promises.unlink(`${base}.srt`); } catch (e) { /* none */ }
-                    return { success: false, cancelled: true, error: 'Cancelled' };
-                }
+            // Cancelled: only discard the .srt if the run did NOT finish. A
+            // completed transcription is valid work and must survive a cancel
+            // that merely raced the finish — deleting it silently redoes
+            // minutes of work on the next open.
+            if (getCancelEpoch('whisper') !== epoch && !result.success) {
+                const base = videoPath.replace(/\.[^.]+$/, '');
+                try { await fs.promises.unlink(`${base}.srt`); } catch (e) { /* none */ }
+                return { success: false, cancelled: true, error: 'Cancelled' };
             }
-            send({ type: 'done', success: result.success, srtPath: result.srtPath, error: result.error });
+            sendWhisper(videoPath, {
+                type: 'done', success: result.success, srtPath: result.srtPath, error: result.error
+            });
             return result;
-        } finally {
-            whisperBusy = false;
         }
+    });
+
+    ipcMain.handle('transcribe-video', async (_event, { videoPath }) => {
+        if (!videoPath || !fs.existsSync(videoPath)) {
+            return { success: false, error: 'File not found' };
+        }
+        if (subtitlesExist(videoPath)) {
+            return { success: true, skipped: true, srtPath: `${videoPath.replace(/\.[^.]+$/, '')}.srt` };
+        }
+        const status = getWhisperStatus(DEFAULT_MODEL);
+        if (!status.binaryReady || !status.modelReady) {
+            return { success: false, notReady: true, error: 'Whisper not set up' };
+        }
+        // The video on screen outranks anything queued by the folder sweep.
+        const pending = whisperQueue.enqueue(videoPath, 0);
+        return pending ? await pending : { success: true, skipped: true };
+    });
+
+    // Background-transcribe every video in the open folder that has no
+    // subtitles yet, so the library fills in while the user watches.
+    ipcMain.handle('queue-folder-transcriptions', async (_event, { videoPaths }) => {
+        if (!Array.isArray(videoPaths)) return { success: false, error: 'No files' };
+        const status = getWhisperStatus(DEFAULT_MODEL);
+        if (!status.binaryReady || !status.modelReady) {
+            return { success: false, notReady: true, error: 'Whisper not set up' };
+        }
+        const added = whisperQueue.enqueueFolder(videoPaths.filter(p => fs.existsSync(p)));
+        return { success: true, added, ...whisperQueue.status() };
+    });
+
+    ipcMain.handle('clear-transcription-queue', () => {
+        whisperQueue.clearPending();
+        return { success: true };
     });
 
     // Translate a cue list and persist it as a <video>.zh.srt sidecar, so the
@@ -1063,6 +1096,37 @@ function setupIpcHandlers() {
                 return { success: true, translations: result.translations, saveError: e.message };
             }
         }
+    });
+
+    // --- Plugins ---
+
+    ipcMain.handle('plugins-list', () => {
+        try {
+            return { success: true, plugins: pluginHost.listPlugins(), dir: pluginHost.pluginsDir() };
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    });
+
+    ipcMain.handle('plugin-set-enabled', (_event, { id, enabled }) => ({
+        success: pluginHost.setPluginEnabled(id, Boolean(enabled))
+    }));
+
+    ipcMain.handle('plugin-install', async () => {
+        if (!mainWindow) return { success: false, error: 'No window' };
+        const picked = await dialog.showOpenDialog(mainWindow, {
+            title: 'Select a plugin folder',
+            properties: ['openDirectory']
+        });
+        if (picked.canceled || !picked.filePaths[0]) return { success: false, canceled: true };
+        return pluginHost.installPluginFromFolder(picked.filePaths[0]);
+    });
+
+    ipcMain.handle('plugin-uninstall', (_event, { id }) => pluginHost.uninstallPlugin(id));
+
+    ipcMain.handle('plugins-open-folder', () => {
+        shell.openPath(pluginHost.pluginsDir());
+        return { success: true };
     });
 
     // --- Mini Player IPC Handlers ---
@@ -1933,9 +1997,16 @@ app.whenReady().then(async () => {
     // Warm the hardware-encoder probe so the first export doesn't stall on it.
     getH264Encoder();
 
-    // Reclaim transcription temp files abandoned by a crash or a hard kill
+    // Reclaim transcription temp files abandoned by a crash or a hard stop
     // (an interrupted run leaves a wav of ~2MB per minute of video).
     cleanupWhisperTemp();
+
+    // Make the bundled plugins available on first run.
+    try {
+        pluginHost.seedBundledPlugins(path.join(__dirname, '..'));
+    } catch (e) {
+        console.error('[plugins] seeding failed:', e?.message || e);
+    }
 
     // After the window loads, open any file passed on the command line (Windows/
     // Linux) or queued from a macOS open-file event before the window existed.
