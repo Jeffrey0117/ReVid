@@ -6,6 +6,8 @@ import { useTheme } from '../../theme.jsx';
 import { getCachedThumbnail } from '../../utils/videoThumbnails';
 import { parseSubtitles, findActiveCueIndex } from '../../utils/subtitles';
 import { TranscriptPanel } from './TranscriptPanel';
+import { WordbookPanel } from './WordbookPanel';
+import { BookMarked } from '../../components/icons';
 import { SubtitleSettings, readSubtitleStyle } from './SubtitleSettings';
 import {
     WordCard, ClickableText, readDifficulty, writeDifficulty, readKnownWords
@@ -110,6 +112,7 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
     const [knownWords, setKnownWords] = useState(readKnownWords);
     const learnMode = difficulty.mark;
     const [transcriptOpen, setTranscriptOpen] = useState(() => readBool(TRANSCRIPT_KEY, false));
+    const [wordbookOpen, setWordbookOpen] = useState(false);
     const [transcribing, setTranscribing] = useState(null); // { pct } | null
     const [whisperMissing, setWhisperMissing] = useState(false);
     const [installing, setInstalling] = useState(null); // { stage, pct } | null
@@ -912,6 +915,13 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                         {t('learnMode')}
                     </button>
                     <button
+                        title={t('wordbookTitle')}
+                        onClick={() => { setWordbookOpen(o => !o); setTranscriptOpen(false); }}
+                        style={iconBtn(wordbookOpen)}
+                    >
+                        <BookMarked size={16} />
+                    </button>
+                    <button
                         title={t('transcriptToggle')}
                         onClick={toggleTranscript}
                         style={iconBtn(transcriptOpen)}
@@ -1031,8 +1041,20 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                 />
             )}
 
+            {wordbookOpen && (
+                <WordbookPanel
+                    onClose={() => setWordbookOpen(false)}
+                    onSeekToExample={(example) => {
+                        // Jump back to where the word was met, if it came from
+                        // the video currently open.
+                        const hit = cuesRef.current.find(c => c.text === example);
+                        if (hit) seekTo(hit.start + subShiftRef.current);
+                    }}
+                />
+            )}
+
             {/* Transcript / language-learning panel */}
-            {transcriptOpen && (
+            {transcriptOpen && !wordbookOpen && (
                 <TranscriptPanel
                     cues={cues}
                     activeIndex={activeCueIndex}

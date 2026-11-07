@@ -296,6 +296,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     dictWordBank: (cues, options) => ipcRenderer.invoke('dict-word-bank', { cues, options }),
 
     savePdf: (data, defaultName) => ipcRenderer.invoke('save-pdf', { data, defaultName }),
+    saveTextFile: (data, defaultName) => ipcRenderer.invoke('save-text-file', { data, defaultName }),
     revealInFolder: (target) => ipcRenderer.invoke('open-path', { target }),
 
     // --- Plugins ---

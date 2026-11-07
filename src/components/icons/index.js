@@ -14,3 +14,4 @@ export { Captions } from './Captions';
 export { PanelRight } from './PanelRight';
 export { Sliders } from './Sliders';
 export { Repeat } from './Repeat';
+export { BookMarked } from './BookMarked';

@@ -1170,6 +1170,23 @@ function setupIpcHandlers() {
         }
     });
 
+    // Generic byte writer for exports that aren't PDFs (word list CSV).
+    ipcMain.handle('save-text-file', async (_event, { data, defaultName }) => {
+        if (!mainWindow) return { success: false, error: 'No window' };
+        const ext = path.extname(defaultName || '').replace('.', '') || 'txt';
+        const picked = await dialog.showSaveDialog(mainWindow, {
+            defaultPath: defaultName || 'export.txt',
+            filters: [{ name: ext.toUpperCase(), extensions: [ext] }]
+        });
+        if (picked.canceled || !picked.filePath) return { success: false, canceled: true };
+        try {
+            await fs.promises.writeFile(picked.filePath, Buffer.from(data));
+            return { success: true, path: picked.filePath };
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    });
+
     ipcMain.handle('open-path', (_event, { target }) => {
         shell.showItemInFolder(target);
         return { success: true };
