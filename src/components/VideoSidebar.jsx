@@ -226,23 +226,6 @@ export const VideoSidebar = ({
                 onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
                 onMouseLeave={(e) => e.currentTarget.style.transform = ''}
               >
-                {/* The number is part of the selection, not a separate label:
-                    highlighting only the thumbnail leaves the index looking
-                    like it belongs to nothing. */}
-                <div style={{
-                  fontSize: 10, fontWeight: isActive ? 700 : 400,
-                  color: isActive ? '#fff' : 'rgba(255,255,255,0.4)',
-                  background: isActive ? '#3b82f6' : 'transparent',
-                  borderRadius: 999,
-                  minWidth: 18, padding: '1px 6px',
-                  textAlign: 'center',
-                  marginBottom: 4,
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  transition: 'background 0.2s, color 0.2s'
-                }}>
-                  {index + 1}
-                </div>
-
                 <div style={{
                   width: thumbSize, height: thumbHeight,
                   borderRadius: 8, overflow: 'hidden',
@@ -273,6 +256,22 @@ export const VideoSidebar = ({
                       }} />
                     </div>
                   )}
+
+                  {/* The index sits ON its own thumbnail. Above the image it
+                      read as belonging to the item before it, which made the
+                      list easy to miscount. */}
+                  <div style={{
+                    position: 'absolute', top: 3, left: 3,
+                    minWidth: 15, padding: '1px 5px', borderRadius: 4,
+                    fontSize: 10, fontWeight: isActive ? 700 : 500,
+                    textAlign: 'center',
+                    background: isActive ? '#3b82f6' : 'rgba(0,0,0,0.65)',
+                    color: isActive ? '#fff' : 'rgba(255,255,255,0.75)',
+                    transition: 'background 0.2s, color 0.2s',
+                    pointerEvents: 'none'
+                  }}>
+                    {index + 1}
+                  </div>
                 </div>
 
                 <div style={{
