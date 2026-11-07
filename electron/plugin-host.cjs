@@ -173,34 +173,62 @@ function installPluginFromFolder(sourceDir) {
     return { success: true, id: folderName };
 }
 
+// Semver-ish compare, enough for "is the bundled copy newer".
+function isNewer(a, b) {
+    const pa = String(a).split('.').map(n => parseInt(n, 10) || 0);
+    const pb = String(b).split('.').map(n => parseInt(n, 10) || 0);
+    for (let i = 0; i < 3; i++) {
+        if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+    }
+    return false;
+}
+
+function readVersion(dir) {
+    try {
+        return JSON.parse(fs.readFileSync(path.join(dir, 'plugin.json'), 'utf8')).version || '0.0.0';
+    } catch (e) {
+        return null;
+    }
+}
+
 // Plugins shipped with the app live in <app>/plugins and are copied into the
-// user's plugin folder on first run, so they behave exactly like installed
-// ones (can be disabled, inspected, even edited) rather than being special.
+// user's plugin folder, so they behave exactly like installed ones (can be
+// disabled, inspected, even edited) rather than being special. A bundled
+// plugin is refreshed only when its version is higher than the installed one,
+// so shipping a fix reaches users without stomping a folder they edited.
 function seedBundledPlugins(appRoot) {
     const src = path.join(appRoot, 'plugins');
-    if (!fs.existsSync(src)) return { seeded: [] };
+    if (!fs.existsSync(src)) return { seeded: [], updated: [] };
     const seeded = [];
+    const updated = [];
     let entries;
     try {
         entries = fs.readdirSync(src, { withFileTypes: true });
     } catch (e) {
-        return { seeded };
+        return { seeded, updated };
     }
     for (const dirent of entries) {
         if (!dirent.isDirectory()) continue;
         const from = path.join(src, dirent.name);
         const to = path.join(pluginsDir(), dirent.name);
-        if (fs.existsSync(to)) continue; // user may have edited or removed it
+
+        const installedVersion = fs.existsSync(to) ? readVersion(to) : null;
+        if (installedVersion !== null) {
+            const bundledVersion = readVersion(from);
+            if (!bundledVersion || !isNewer(bundledVersion, installedVersion)) continue;
+        }
+
         try {
+            if (fs.existsSync(to)) fs.rmSync(to, { recursive: true, force: true });
             fs.cpSync(from, to, { recursive: true });
             // Build artifacts, not part of the plugin.
             for (const junk of ['_vendor.js', '_plugin.js']) {
                 try { fs.unlinkSync(path.join(to, junk)); } catch (e) { /* absent */ }
             }
-            seeded.push(dirent.name);
+            (installedVersion === null ? seeded : updated).push(dirent.name);
         } catch (e) { /* skip this one */ }
     }
-    return { seeded };
+    return { seeded, updated };
 }
 
 function uninstallPlugin(id) {

@@ -130,17 +130,45 @@ function buildUi(root, api) {
     };
     root.appendChild(select);
 
-    // Bands
+    // Bands — vertical faders, the way a mixer lays them out. Horizontal
+    // sliders crammed side by side are unusable at this width.
     root.appendChild(label('Bands (dB)'));
-    const bandRow = make('div', { display: 'flex', gap: '6px', alignItems: 'flex-end' });
+    const bandRow = make('div', {
+        display: 'flex', gap: '2px', alignItems: 'stretch', justifyContent: 'space-between'
+    });
+
+    // dB scale down the left so the fader positions mean something.
+    const scale = make('div', {
+        display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+        fontSize: '9px', opacity: '0.4', height: '118px', paddingRight: '2px', textAlign: 'right'
+    });
+    ['+12', '0', '-12'].forEach(tick => scale.appendChild(make('div', null, tick)));
+    bandRow.appendChild(scale);
+
     state.bands.forEach((gain, i) => {
-        const col = make('div', { flex: '1', textAlign: 'center' });
-        const slider = make('input', { width: '100%', accentColor: '#3b82f6' });
+        const col = make('div', {
+            flex: '1', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px'
+        });
+        const slider = make('input', {
+            // Chromium's standard vertical range: writing-mode + rtl puts the
+            // maximum at the top, like a fader.
+            writingMode: 'vertical-lr',
+            direction: 'rtl',
+            width: '18px',
+            height: '118px',
+            accentColor: '#3b82f6',
+            cursor: 'ns-resize'
+        });
         slider.type = 'range';
         slider.min = '-12';
         slider.max = '12';
         slider.step = '1';
         slider.value = String(gain);
+
+        const readout = make('div', {
+            fontSize: '10px', opacity: '0.75', fontVariantNumeric: 'tabular-nums'
+        }, String(gain));
+
         slider.oninput = () => {
             state.bands[i] = Number(slider.value);
             state.preset = 'custom';
@@ -148,7 +176,12 @@ function buildUi(root, api) {
             applyState();
             save(api);
         };
-        const readout = make('div', { fontSize: '10px', opacity: '0.6' }, String(gain));
+        // Double-click a fader to re-centre just that band.
+        slider.ondblclick = () => {
+            slider.value = '0';
+            slider.dispatchEvent(new Event('input'));
+        };
+
         col.appendChild(slider);
         col.appendChild(readout);
         col.appendChild(make('div', { fontSize: '10px', opacity: '0.45' }, BAND_LABELS[i]));
