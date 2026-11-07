@@ -297,6 +297,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     savePdf: (data, defaultName) => ipcRenderer.invoke('save-pdf', { data, defaultName }),
     saveTextFile: (data, defaultName) => ipcRenderer.invoke('save-text-file', { data, defaultName }),
+    cutRanges: async (params, onProgress) => {
+        const handler = (_event, pct) => onProgress?.(pct);
+        ipcRenderer.on('cut-ranges-progress', handler);
+        try {
+            return await ipcRenderer.invoke('cut-ranges', params);
+        } finally {
+            ipcRenderer.removeListener('cut-ranges-progress', handler);
+        }
+    },
+
     saveSubtitles: (videoPath, cues, translated) =>
         ipcRenderer.invoke('save-subtitles', { videoPath, cues, translated }),
     revealInFolder: (target) => ipcRenderer.invoke('open-path', { target }),

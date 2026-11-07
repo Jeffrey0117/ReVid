@@ -15,7 +15,7 @@ function fmt(s) {
 // per-line repeat for drilling one sentence.
 export const TranscriptPanel = ({
     cues, activeIndex, onSeekTo, onClose, transcribing, loopCueIndex, onLoopCue,
-    difficultMarks, onWordClick, onEditCue
+    difficultMarks, onWordClick, onEditCue, onCutSelection
 }) => {
     const { t } = useI18n();
     const { theme } = useTheme();
@@ -23,6 +23,30 @@ export const TranscriptPanel = ({
     const activeRef = useRef(null);
     const [editing, setEditing] = useState(-1);
     const [draft, setDraft] = useState('');
+    // Picking lines to cut: the transcript doubles as the edit decision list.
+    const [picking, setPicking] = useState(false);
+    const [picked, setPicked] = useState(() => new Set());
+    const lastPickRef = useRef(-1);
+
+    const togglePick = (i, shiftKey) => {
+        setPicked(prev => {
+            const next = new Set(prev);
+            const turningOn = !next.has(i);
+            if (shiftKey && lastPickRef.current >= 0) {
+                const lo = Math.min(lastPickRef.current, i);
+                const hi = Math.max(lastPickRef.current, i);
+                for (let k = lo; k <= hi; k++) {
+                    if (turningOn) next.add(k); else next.delete(k);
+                }
+            } else if (turningOn) {
+                next.add(i);
+            } else {
+                next.delete(i);
+            }
+            return next;
+        });
+        lastPickRef.current = i;
+    };
 
     useEffect(() => {
         // Following the playhead while typing would yank the field away.
@@ -54,6 +78,20 @@ export const TranscriptPanel = ({
                 <span style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>
                     {t('transcriptTitle')}
                 </span>
+                <div style={{ flex: 1 }} />
+                {onCutSelection && cues.length > 0 && (
+                    <button
+                        title={t('transcriptCutHint')}
+                        onClick={() => { setPicking(p => !p); setPicked(new Set()); }}
+                        style={{
+                            fontSize: 11, padding: '3px 8px', borderRadius: 4, marginRight: 6,
+                            background: picking ? theme.accent : theme.inputBg,
+                            color: picking ? '#fff' : theme.textSecondary
+                        }}
+                    >
+                        {t('transcriptCut')}
+                    </button>
+                )}
                 <button onClick={onClose} style={{ color: theme.textTertiary, fontSize: 16, padding: '0 4px' }}>
                     {'✕'}
                 </button>
@@ -69,13 +107,14 @@ export const TranscriptPanel = ({
                     <div
                         key={`${cue.start}-${i}`}
                         ref={i === activeIndex ? activeRef : undefined}
-                        onClick={() => onSeekTo(cue.start)}
+                        onClick={(e) => (picking ? togglePick(i, e.shiftKey) : onSeekTo(cue.start))}
                         style={{
                             display: 'flex', gap: 10, padding: '7px 14px', cursor: 'pointer',
                             position: 'relative',
-                            background: i === loopCueIndex
+                            background: picked.has(i)
                                 ? theme.accentBg
-                                : (i === activeIndex ? theme.accentBg : 'transparent'),
+                                : (i === loopCueIndex || i === activeIndex ? theme.accentBg : 'transparent'),
+                            outline: picked.has(i) ? `1px solid ${theme.accent}` : 'none',
                             borderLeft: i === loopCueIndex
                                 ? `3px solid ${theme.pin}`
                                 : (i === activeIndex ? `3px solid ${theme.accent}` : '3px solid transparent')
@@ -174,6 +213,42 @@ export const TranscriptPanel = ({
                     </div>
                 )}
             </div>
+
+            {picking && (
+                <div style={{ padding: '10px 14px', borderTop: `1px solid ${theme.border}` }}>
+                    <div style={{ fontSize: 11, color: theme.textTertiary, marginBottom: 6 }}>
+                        {t('transcriptCutPick')}
+                    </div>
+                    <button
+                        className="btn btn-primary"
+                        disabled={picked.size === 0}
+                        onClick={() => {
+                            // Adjacent lines become one clip, so picking a run
+                            // of dialogue does not produce ten tiny files.
+                            const sorted = [...picked].sort((a, b) => a - b);
+                            const ranges = [];
+                            for (const i of sorted) {
+                                const last = ranges[ranges.length - 1];
+                                if (last && last.endIndex === i - 1) {
+                                    last.endIndex = i;
+                                    last.end = cues[i].end;
+                                } else {
+                                    ranges.push({
+                                        startIndex: i, endIndex: i,
+                                        start: cues[i].start, end: cues[i].end
+                                    });
+                                }
+                            }
+                            onCutSelection(ranges);
+                            setPicking(false);
+                            setPicked(new Set());
+                        }}
+                        style={{ width: '100%' }}
+                    >
+                        {t('transcriptCutGo')} ({picked.size})
+                    </button>
+                </div>
+            )}
         </div>
     );
 };

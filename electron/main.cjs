@@ -1170,6 +1170,93 @@ function setupIpcHandlers() {
         }
     });
 
+    // Cut the chosen ranges out of a video and join them into one clip —
+    // "edit by picking lines in the transcript". Each range is extracted to a
+    // temp file first because concat needs uniform streams, and a single
+    // filter_complex over many inputs blows up on long videos.
+    ipcMain.handle('cut-ranges', async (_event, params) => {
+        const { inputPath, ranges, outputPath } = params;
+        if (!inputPath || !Array.isArray(ranges) || ranges.length === 0) {
+            return { success: false, error: 'Nothing to cut' };
+        }
+        if (!ranges.every(r => Number.isFinite(r.start) && Number.isFinite(r.end) && r.end > r.start)) {
+            return { success: false, error: 'Invalid range' };
+        }
+
+        const epoch = getCancelEpoch('cut-ranges');
+        const encoder = await getH264Encoder();
+        if (getCancelEpoch('cut-ranges') !== epoch) {
+            return { success: false, cancelled: true, error: 'Cancelled' };
+        }
+
+        const work = path.join(app.getPath('temp'), `revid-cut-${Date.now()}`);
+        await fs.promises.mkdir(work, { recursive: true });
+        const parts = [];
+        const total = ranges.reduce((n, r) => n + (r.end - r.start), 0);
+        let elapsed = 0;
+
+        const sendProgress = (pct) => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('cut-ranges-progress', Math.min(99, pct));
+            }
+        };
+
+        try {
+            for (const [i, r] of ranges.entries()) {
+                if (getCancelEpoch('cut-ranges') !== epoch) {
+                    return { success: false, cancelled: true, error: 'Cancelled' };
+                }
+                const part = path.join(work, `part-${String(i).padStart(3, '0')}.mp4`);
+                const dur = r.end - r.start;
+                // Re-encoded, not stream-copied: parts must start on a real
+                // frame or the join stutters at every seam.
+                const r1 = await runFfmpeg({
+                    op: 'cut-ranges',
+                    args: [
+                        '-y', '-ss', String(r.start), '-i', inputPath, '-t', String(dur),
+                        '-vf', 'crop=trunc(iw/2)*2:trunc(ih/2)*2',
+                        '-c:v', encoder, ...H264_ENCODE_ARGS[encoder],
+                        '-c:a', 'aac', '-b:a', '192k',
+                        '-avoid_negative_ts', 'make_zero',
+                        '-progress', 'pipe:1', part
+                    ],
+                    totalUs: dur * 1_000_000
+                });
+                const failure = ffmpegFailure(r1);
+                if (failure) return failure;
+                parts.push(part);
+                elapsed += dur;
+                sendProgress(Math.round((elapsed / total) * 90));
+            }
+
+            if (parts.length === 1) {
+                await fs.promises.copyFile(parts[0], outputPath);
+            } else {
+                const listFile = path.join(work, 'list.txt');
+                await fs.promises.writeFile(
+                    listFile,
+                    parts.map(p => `file '${p.replace(/'/g, "'\\''")}'`).join('\n'),
+                    'utf8'
+                );
+                const r2 = await runFfmpeg({
+                    op: 'cut-ranges',
+                    args: [
+                        '-y', '-f', 'concat', '-safe', '0', '-i', listFile,
+                        '-c', 'copy', '-movflags', '+faststart',
+                        '-progress', 'pipe:1', outputPath
+                    ],
+                    totalUs: total * 1_000_000
+                });
+                const failure = ffmpegFailure(r2);
+                if (failure) return failure;
+            }
+            sendProgress(100);
+            return { success: true, outputPath, clips: parts.length };
+        } finally {
+            try { await fs.promises.rm(work, { recursive: true, force: true }); } catch (e) { /* leave it */ }
+        }
+    });
+
     // Overwrite a video's subtitles after the user corrects them. Whisper
     // mishears names and jargon, and a wrong transcript poisons the
     // translation, the word list and every export built from it.

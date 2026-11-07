@@ -113,6 +113,7 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
     const learnMode = difficulty.mark;
     const [transcriptOpen, setTranscriptOpen] = useState(() => readBool(TRANSCRIPT_KEY, false));
     const [wordbookOpen, setWordbookOpen] = useState(false);
+    const [cutting, setCutting] = useState(null); // { pct } | null
     const [transcribing, setTranscribing] = useState(null); // { pct } | null
     const [whisperMissing, setWhisperMissing] = useState(false);
     const [installing, setInstalling] = useState(null); // { stage, pct } | null
@@ -656,6 +657,44 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
         });
     }, [videoPath]);
 
+    // Cut the picked lines out of the video and join them — editing by
+    // choosing sentences rather than dragging on a timeline.
+    const cutSelection = useCallback(async (ranges) => {
+        const api = getElectronAPI();
+        if (!api?.cutRanges || !videoPath || ranges.length === 0) return;
+
+        const ext = api.path.extname(videoPath);
+        const base = api.path.basename(videoPath, ext);
+        const picked = await api.showSaveDialog(
+            api.path.join(api.path.dirname(videoPath), `${base}-highlights.mp4`)
+        );
+        if (picked.canceled || !picked.filePath) return;
+
+        setCutting({ pct: 0 });
+        let result;
+        try {
+            result = await api.cutRanges(
+                {
+                    inputPath: videoPath,
+                    // Pad each end slightly: a cue boundary clips the first
+                    // and last syllable when taken literally.
+                    ranges: ranges.map(r => ({
+                        start: Math.max(0, r.start - 0.15),
+                        end: r.end + 0.25
+                    })),
+                    outputPath: picked.filePath
+                },
+                (pct) => setCutting({ pct })
+            );
+        } catch (e) {
+            result = { success: false, error: e.message };
+        }
+        setCutting(null);
+        if (!result.success && !result.cancelled) {
+            setTranslateError(result.error);
+        }
+    }, [videoPath]);
+
     // Discard this video's subtitles and run them again.
     const retranscribe = useCallback(async () => {
         const api = getElectronAPI();
@@ -892,6 +931,9 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                             {t('whisperSetupNeeded')}
                         </button>
                     )}
+                    {cutting && (
+                        <span style={pill}>{t('transcriptCutting')} {cutting.pct}%</span>
+                    )}
                     {translating && (
                         <span style={pill}>{t('translating')} {translating.pct}%</span>
                     )}
@@ -1079,6 +1121,7 @@ export const VideoViewer = ({ src, videoPath, timeRef }) => {
                     difficultMarks={difficultMarks}
                     onWordClick={openWordCard}
                     onEditCue={editCue}
+                    onCutSelection={cutSelection}
                 />
             )}
         </div>
