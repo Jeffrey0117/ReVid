@@ -30,6 +30,21 @@ test('the stage takes the shape of the video it is showing', () => {
     assert.match(page, /orientationchange/);
 });
 
+// The reported bug: turning the size up made the block taller until it
+// covered the picture entirely.
+test('the subtitle is sized to fit rather than growing without limit', () => {
+    assert.match(page, /function fittedSize/);
+    assert.match(page, /MIN_CC_SIZE/);
+    assert.match(page, /maxHeight/);
+});
+
+test('it moves into the black below the video when there is room', () => {
+    assert.match(page, /classList\.add\('below'\)/);
+    assert.match(page, /#cc\.below/);
+    // And back over the picture when the video fills the screen.
+    assert.match(page, /classList\.remove\('below'\)/);
+});
+
 test('subtitle size follows the screen width rather than a fixed count', () => {
     assert.match(page, /window\.innerWidth\s*\*/);
     assert.match(page, /function fitSize|const fitSize/);

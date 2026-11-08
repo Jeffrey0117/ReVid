@@ -63,14 +63,21 @@ exports.render = (token) => `<!doctype html>
      happens to ship and sit off the optical centre of the button. */
   #gear { right: 10px; display: inline-flex; align-items: center; justify-content: center; }
   #gear svg { width: 19px; height: 19px; }
+  /* Two homes for the subtitle. Over the picture when the video fills the
+     screen, and in the black below it when it does not — which on a
+     portrait phone is most of the screen, sitting empty while the text
+     covered the only part worth looking at. */
   #cc {
     position: absolute; left: 50%; z-index: 11;
     transform: translateX(-50%); max-width: 94%;
     padding: 5px 10px; border-radius: 8px;
     text-align: center; pointer-events: none; white-space: pre-wrap;
-    /* A long English line on a 400px screen wrapped to eight lines and
-       covered the picture. Keep it to a readable couple of lines. */
     line-height: 1.25; text-wrap: balance;
+    overflow: hidden;
+  }
+  #cc.below {
+    position: fixed; left: 50%; bottom: auto;
+    max-width: 96%;
   }
   #cc:empty { display: none; }
   #cc .zh { opacity: 0.85; margin-top: 2px; }
@@ -178,8 +185,10 @@ let prefs = { ...DEFAULTS };
 try { prefs = { ...DEFAULTS, ...JSON.parse(localStorage.getItem('revid-mobile-subs') || '{}') }; } catch (e) {}
 const savePrefs = () => { try { localStorage.setItem('revid-mobile-subs', JSON.stringify(prefs)); } catch (e) {} };
 
-// The stage matches the picture's shape, so subtitles anchored to its
-// bottom sit on the video rather than somewhere in the surrounding black.
+// The stage matches the picture's shape, so the subtitle can be placed
+// against the video rather than against the screen.
+let placement = { mode: 'over', allowance: 200 };
+
 function fitStage() {
   const stage = document.getElementById('stage');
   const v = document.getElementById('v');
@@ -190,12 +199,49 @@ function fitStage() {
   const videoRatio = v.videoWidth / v.videoHeight;
   stage.style.width = videoRatio >= screenRatio ? '100%' : 'auto';
   stage.style.height = videoRatio >= screenRatio ? 'auto' : '100%';
+
+  const box = stage.getBoundingClientRect();
+  const below = Math.max(0, (window.innerHeight - box.height) / 2);
+  // Under the picture when there is real room down there — on a portrait
+  // phone that is most of the screen, and it was sitting empty while the
+  // text covered the only part worth looking at.
+  if (below >= 92) {
+    placement = { mode: 'below', allowance: Math.round(below) - 12 };
+    cc.classList.add('below');
+    cc.style.top = Math.round(box.bottom + 8) + 'px';
+    cc.style.bottom = 'auto';
+  } else {
+    placement = { mode: 'over', allowance: Math.round(box.height * 0.34) };
+    cc.classList.remove('below');
+    cc.style.top = 'auto';
+    cc.style.bottom = prefs.pos + '%';
+  }
+  cc.style.maxHeight = placement.allowance + 'px';
+  renderCue();
+}
+
+// The size slider is a wish, not an instruction: turning it up used to make
+// the block taller until it covered the picture. This finds the largest
+// size up to what was asked for whose text actually fits the allowance.
+const MIN_CC_SIZE = 11;
+
+function fittedSize(chars, wanted) {
+  const width = Math.min(window.innerWidth * 0.94, 900);
+  for (let size = Math.round(wanted); size >= MIN_CC_SIZE; size -= 1) {
+    const perLine = Math.max(1, Math.floor(width / (size * 0.62)));
+    const height = Math.ceil(chars / perLine) * size * 1.25;
+    if (height <= placement.allowance) return size;
+  }
+  return MIN_CC_SIZE;
 }
 
 function applyPrefs() {
-  cc.style.bottom = prefs.pos + '%';
+  // The vertical slider only means anything while overlaying; below the
+  // picture the subtitle is pinned under it and this would fight fitStage.
+  if (placement.mode === 'over') cc.style.bottom = prefs.pos + '%';
   cc.style.background = 'rgba(0,0,0,' + (prefs.bg / 100) + ')';
-  cc.style.fontSize = prefs.size + 'px';
+  // Size is not set here: render() works out what fits this cue, and a
+  // value written here would just be overwritten a moment later.
   cc.style.color = prefs.color;
   if (prefs.stroke > 0) {
     // paint-order puts the stroke behind the glyph, so the requested width
@@ -267,6 +313,16 @@ function render() {
   const zh = zhCues[shown]?.text;
   const wantEn = prefs.mode === 'both' || prefs.mode === 'en';
   const wantZh = prefs.mode === 'both' || prefs.mode === 'zh';
+
+  // Both languages share the allowance, so the size is worked out from what
+  // is actually going on screen this cue — a long line comes out smaller
+  // rather than taller.
+  const enLen = wantEn && en ? en.length : 0;
+  // A Chinese glyph is about twice as wide as a Latin one at the same size.
+  const zhLen = wantZh && zh ? zh.length * 2 : 0;
+  const size = fittedSize(enLen + zhLen * 0.8, prefs.size);
+
+  cc.style.fontSize = size + 'px';
   cc.innerHTML = '';
   if (wantEn && en) {
     const d = document.createElement('div');
@@ -276,11 +332,14 @@ function render() {
   if (wantZh && zh) {
     const d = document.createElement('div');
     d.className = 'zh';
-    d.style.fontSize = Math.round(prefs.size * (wantEn && en ? 0.8 : 1)) + 'px';
+    d.style.fontSize = Math.round(size * (wantEn && en ? 0.8 : 1)) + 'px';
     d.textContent = zh;
     cc.appendChild(d);
   }
 }
+
+// fitStage runs before the first cue exists, so it needs a safe name to call.
+function renderCue() { try { render(); } catch (e) {} }
 
 video.addEventListener('loadedmetadata', fitStage);
 window.addEventListener('resize', fitStage);
