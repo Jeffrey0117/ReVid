@@ -30,12 +30,23 @@ test('the stage takes the shape of the video it is showing', () => {
     assert.match(page, /orientationchange/);
 });
 
-// The reported bug: turning the size up made the block taller until it
-// covered the picture entirely.
-test('the subtitle is sized to fit rather than growing without limit', () => {
-    assert.match(page, /function fittedSize/);
-    assert.match(page, /MIN_CC_SIZE/);
+// The reported bug: a ninety-character cue rendered as four lines of
+// English stacked on four of Chinese, covering the picture. Shrinking the
+// type was the wrong answer; the cue is shown in pieces instead.
+test('a long cue is shown in pieces rather than all at once', () => {
+    assert.match(page, /function chunkText/);
+    assert.match(page, /function visibleCue/);
+    assert.match(page, /MAX_LINES\s*=\s*2/);
+    // Driven by how far through the cue playback is.
+    assert.match(page, /progress/);
+});
+
+test('the block still cannot outgrow the room it has', () => {
     assert.match(page, /maxHeight/);
+});
+
+test('it does not redraw identical text four times a second', () => {
+    assert.match(page, /lastDrawn/);
 });
 
 test('it moves into the black below the video when there is room', () => {

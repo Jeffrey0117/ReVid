@@ -223,16 +223,68 @@ function fitStage() {
 // The size slider is a wish, not an instruction: turning it up used to make
 // the block taller until it covered the picture. This finds the largest
 // size up to what was asked for whose text actually fits the allowance.
-const MIN_CC_SIZE = 11;
+// Subtitles are read in glances, so never more than two lines each.
+//
+// Whisper emits one cue per utterance, and an utterance runs to ninety
+// characters — as a single subtitle that is four lines of English stacked
+// on four of Chinese, covering the picture. Shrinking the type does not
+// fix it: the cue has to be shown in pieces, each for its share of the
+// cue's time, which is what every real subtitle renderer does.
+const MAX_LINES = 2;
+const BREAK_AFTER = /[.!?。！？]/;
+const SOFT_AFTER = /[,;:，；：、]/;
 
-function fittedSize(chars, wanted) {
-  const width = Math.min(window.innerWidth * 0.94, 900);
-  for (let size = Math.round(wanted); size >= MIN_CC_SIZE; size -= 1) {
-    const perLine = Math.max(1, Math.floor(width / (size * 0.62)));
-    const height = Math.ceil(chars / perLine) * size * 1.25;
-    if (height <= placement.allowance) return size;
+function perLineChars(widthPx, fontSize, cjk) {
+  return Math.max(6, Math.floor(widthPx / (fontSize * (cjk ? 1.0 : 0.56))));
+}
+
+function chunkText(text, maxChars) {
+  const clean = (text || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return [];
+  if (clean.length <= maxChars) return [clean];
+
+  const chunks = [];
+  let rest = clean;
+  while (rest.length > maxChars) {
+    // Exactly maxChars: a break at the last index gives a cut of maxChars,
+    // never one past it, which would be an extra line.
+    const win = rest.slice(0, maxChars);
+    const floor = Math.floor(maxChars * 0.4);
+    let cut = -1;
+    for (let i = win.length - 1; i >= floor; i--) {
+      if (BREAK_AFTER.test(win[i])) { cut = i + 1; break; }
+    }
+    if (cut < 0) {
+      for (let i = win.length - 1; i >= floor; i--) {
+        if (SOFT_AFTER.test(win[i])) { cut = i + 1; break; }
+      }
+    }
+    if (cut < 0) {
+      const gap = win.lastIndexOf(' ');
+      if (gap >= floor) cut = gap;
+    }
+    if (cut < 0) cut = maxChars;
+    chunks.push(rest.slice(0, cut).trim());
+    rest = rest.slice(cut).trim();
   }
-  return MIN_CC_SIZE;
+  if (rest) chunks.push(rest);
+  return chunks.filter(Boolean);
+}
+
+// Both languages are the same sentence, so they advance together; the one
+// with more pieces sets the pace rather than one of them going blank.
+function visibleCue(en, zh, progress, size) {
+  const width = Math.min(window.innerWidth * 0.94, 900);
+  const enChunks = chunkText(en, perLineChars(width, size, false) * MAX_LINES);
+  const zhChunks = chunkText(zh, perLineChars(width, Math.round(size * 0.8), true) * MAX_LINES);
+  // Whichever needs more pieces sets the pace; the other is stretched across
+  // those beats, repeating a line rather than having its tail never reached.
+  // Re-splitting it to match looked tidier and silently dropped the end of
+  // the sentence.
+  const steps = Math.max(enChunks.length, zhChunks.length, 1);
+  const step = Math.floor(Math.max(0, Math.min(0.999, progress)) * steps);
+  const pick = (l) => (l.length ? l[Math.min(l.length - 1, Math.floor(step * l.length / steps))] : '');
+  return { en: pick(enChunks), zh: pick(zhChunks) };
 }
 
 function applyPrefs() {
@@ -307,33 +359,44 @@ async function loadSubs(name, hasSubs, hasZh) {
   }
 }
 
+let lastDrawn = '';
+
 function render() {
-  if (prefs.mode === 'off' || shown < 0) { cc.innerHTML = ''; return; }
+  if (prefs.mode === 'off' || shown < 0) {
+    if (lastDrawn !== '') { cc.innerHTML = ''; lastDrawn = ''; }
+    return;
+  }
   const en = cues[shown]?.text;
   const zh = zhCues[shown]?.text;
   const wantEn = prefs.mode === 'both' || prefs.mode === 'en';
   const wantZh = prefs.mode === 'both' || prefs.mode === 'zh';
 
-  // Both languages share the allowance, so the size is worked out from what
-  // is actually going on screen this cue — a long line comes out smaller
-  // rather than taller.
-  const enLen = wantEn && en ? en.length : 0;
-  // A Chinese glyph is about twice as wide as a Latin one at the same size.
-  const zhLen = wantZh && zh ? zh.length * 2 : 0;
-  const size = fittedSize(enLen + zhLen * 0.8, prefs.size);
+  // How far through this cue we are, so a long one is shown in pieces
+  // rather than all at once.
+  const cue = cues[shown];
+  const span = Math.max(0.3, (cue?.end ?? 0) - (cue?.start ?? 0));
+  const progress = (video.currentTime - (cue?.start ?? 0)) / span;
+
+  const size = prefs.size;
+  const piece = visibleCue(wantEn ? en : '', wantZh ? zh : '', progress, size);
+
+  // Redrawing identical text four times a second would flicker.
+  const key = size + '|' + piece.en + '|' + piece.zh;
+  if (key === lastDrawn) return;
+  lastDrawn = key;
 
   cc.style.fontSize = size + 'px';
   cc.innerHTML = '';
-  if (wantEn && en) {
+  if (piece.en) {
     const d = document.createElement('div');
-    d.textContent = en;
+    d.textContent = piece.en;
     cc.appendChild(d);
   }
-  if (wantZh && zh) {
+  if (piece.zh) {
     const d = document.createElement('div');
     d.className = 'zh';
-    d.style.fontSize = Math.round(size * (wantEn && en ? 0.8 : 1)) + 'px';
-    d.textContent = zh;
+    d.style.fontSize = Math.round(size * (piece.en ? 0.8 : 1)) + 'px';
+    d.textContent = piece.zh;
     cc.appendChild(d);
   }
 }
@@ -349,7 +412,11 @@ video.addEventListener('timeupdate', () => {
   if (!cues.length) return;
   const t = video.currentTime;
   const i = cues.findIndex(c => t >= c.start && t <= c.end);
-  if (i !== shown) { shown = i; render(); }
+  // Also within a cue: a long one is shown in pieces, so the text changes
+  // while the index does not. render() only touches the DOM when what it
+  // would draw differs, so running it four times a second does not flicker.
+  if (i !== shown) shown = i;
+  render();
 });
 
 // --- library -------------------------------------------------------------
