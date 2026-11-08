@@ -245,7 +245,11 @@ function perLineChars(widthPx, fontSize, cjk) {
 }
 
 function chunkText(text, maxChars) {
-  const clean = (text || '').replace(/\s+/g, ' ').trim();
+  // Double backslash: this file is one big template literal, so a single
+  // one is eaten before the page is written and /\s+/ ships as /s+/ — a
+  // pattern that deletes every letter s. "best life sentence" arrived on
+  // the phone as "be t life entence".
+  const clean = (text || '').replace(/\\s+/g, ' ').trim();
   if (!clean) return [];
   if (clean.length <= maxChars) return [clean];
 

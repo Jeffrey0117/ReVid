@@ -65,6 +65,26 @@ test('an overflowing line is never clipped away silently', () => {
     assert.doesNotMatch(rule, /overflow:\s*hidden/);
 });
 
+// This file is one big template literal, so a regex written with a single
+// backslash loses it before the page is written: /\s+/ ships as /s+/, which
+// matches the letter s. Every "s" vanished from the subtitles on the phone
+// and the page looked, from the desktop, entirely fine.
+test('no regex in the page lost its backslash on the way out', () => {
+    const eaten = [...page.matchAll(/\/[^/\n]{0,40}\/[gimsuy]*/g)]
+        .map(m => m[0])
+        // A shorthand class that should have a backslash and does not.
+        .filter(re => /(?<!\\)\b[sdwSDWbB]\+?[*+?]?\//.test(re) && !/\\[sdwSDWbB]/.test(re))
+        .filter(re => /replace|split|match|test/.test(
+            page.slice(Math.max(0, page.indexOf(re) - 30), page.indexOf(re))
+        ));
+    assert.deepEqual(eaten, [], `these shipped without their backslash: ${eaten.join(', ')}`);
+});
+
+test('whitespace collapsing survives into the page intact', () => {
+    assert.match(page, /replace\(\/\\s\+\/g/);
+    assert.doesNotMatch(page, /replace\(\/s\+\/g/);
+});
+
 test('the chunker measures the same width the CSS gives it', () => {
     // 94% in the stylesheet, 94% in the measurement, minus the padding.
     assert.match(page, /max-width:\s*94%/);
