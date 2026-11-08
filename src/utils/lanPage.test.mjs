@@ -85,6 +85,31 @@ test('whitespace collapsing survives into the page intact', () => {
     assert.doesNotMatch(page, /replace\(\/s\+\/g/);
 });
 
+// Every control in the settings panel changes how the subtitle looks, and
+// the subtitle is at the bottom — a panel filling the screen meant
+// adjusting blind and finding out afterwards.
+test('the settings panel leaves the subtitle visible while you adjust it', () => {
+    const sheet = /#sheet\s*\{[^}]*\}/.exec(page);
+    assert.ok(sheet, 'no #sheet rule found');
+    const css = sheet[0];
+    assert.match(css, /top:\s*calc\(58px/, 'it should sit at the top, clear of the buttons');
+    assert.match(css, /max-height:\s*46vh/, 'it should not fill the screen');
+    assert.match(css, /max-width:\s*440px/);
+    assert.doesNotMatch(css, /bottom:\s*0/, 'anchoring it to the bottom covers the subtitle');
+});
+
+// Moving the subtitle below the picture left the position slider wired
+// only to the overlay case, so on a portrait phone it did nothing at all.
+test('the position slider works in both placements', () => {
+    assert.match(page, /function placeCc/);
+    // Called when a preference changes, not only when the stage is measured.
+    const applyPrefs = /function applyPrefs\(\)\s*\{[\s\S]{0,200}/.exec(page);
+    assert.ok(applyPrefs, 'no applyPrefs found');
+    assert.match(applyPrefs[0], /placeCc\(\)/);
+    // And the below-the-picture case actually reads the preference.
+    assert.match(page, /prefs\.pos\s*\/\s*45/);
+});
+
 test('the chunker measures the same width the CSS gives it', () => {
     // 94% in the stylesheet, 94% in the measurement, minus the padding.
     assert.match(page, /max-width:\s*94%/);

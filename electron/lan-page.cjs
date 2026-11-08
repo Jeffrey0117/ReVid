@@ -89,22 +89,31 @@ exports.render = (token) => `<!doctype html>
   #cc .zh { opacity: 0.85; margin-top: 2px; }
 
   /* Settings slide up from the bottom, where a thumb is. */
+  /* Pinned to the top and kept small, because every control in it changes
+     how the subtitle looks — and the subtitle is at the bottom. A sheet
+     that filled the screen meant adjusting blind and checking afterwards. */
   #sheet {
-    position: absolute; left: 0; right: 0; bottom: 0; z-index: 13;
-    transform: translateY(102%); transition: transform 0.22s ease;
-    background: #16161a; border-radius: 16px 16px 0 0;
-    padding: 16px 18px calc(22px + env(safe-area-inset-bottom));
-    box-shadow: 0 -8px 30px rgba(0,0,0,0.5);
+    position: fixed; left: 8px; right: 8px; z-index: 13;
+    /* Below the top buttons, so back and the subtitle-mode toggle stay
+       reachable while the panel is open. */
+    top: calc(58px + env(safe-area-inset-top));
+    max-width: 440px; margin-inline: auto;
+    max-height: 46vh; overflow-y: auto;
+    transform: translateY(-120%); transition: transform 0.22s ease;
+    background: rgba(18,18,22,0.93); backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.1); border-radius: 14px;
+    padding: 10px 14px 12px;
+    box-shadow: 0 10px 34px rgba(0,0,0,0.55);
   }
   #sheet.on { transform: translateY(0); }
-  #sheet h3 { margin: 0 0 14px; font-size: 14px; font-weight: 600; }
-  .row { margin-bottom: 15px; }
+  #sheet h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+  .row { margin-bottom: 8px; }
   .row label {
     display: flex; justify-content: space-between;
-    font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 7px;
+    font-size: 11px; color: rgba(255,255,255,0.5); margin-bottom: 2px;
   }
-  /* Chunky enough to hit without aiming. */
-  input[type=range] { width: 100%; height: 30px; accent-color: #3b82f6; }
+  /* Chunky enough to hit without aiming, short enough to fit a small panel. */
+  input[type=range] { width: 100%; height: 24px; accent-color: #3b82f6; }
   .seg { display: flex; gap: 6px; }
   .seg button {
     flex: 1; min-height: 38px; border: 0; border-radius: 8px;
@@ -211,19 +220,32 @@ function fitStage() {
   // Under the picture when there is real room down there — on a portrait
   // phone that is most of the screen, and it was sitting empty while the
   // text covered the only part worth looking at.
-  if (below >= 92) {
-    placement = { mode: 'below', allowance: Math.round(below) - 12 };
+  placement = below >= 92
+    ? { mode: 'below', allowance: Math.round(below) - 12, videoBottom: box.bottom, room: below }
+    : { mode: 'over', allowance: Math.round(box.height * 0.34), videoBottom: box.bottom, room: 0 };
+
+  cc.style.maxHeight = placement.allowance + 'px';
+  placeCc();
+  renderCue();
+}
+
+// Where the subtitle sits vertically, in whichever placement is in force.
+// This used to live inside the two branches above, so moving the subtitle
+// below the picture quietly left the position slider doing nothing at all.
+function placeCc() {
+  if (placement.mode === 'below') {
     cc.classList.add('below');
-    cc.style.top = Math.round(box.bottom + 8) + 'px';
     cc.style.bottom = 'auto';
+    // 0% is tucked right under the picture; higher drops it down the
+    // empty space, which is the same "further from the video" the slider
+    // means when it is overlaying.
+    const slack = Math.max(0, placement.room - 60);
+    cc.style.top = Math.round(placement.videoBottom + 6 + (prefs.pos / 45) * slack) + 'px';
   } else {
-    placement = { mode: 'over', allowance: Math.round(box.height * 0.34) };
     cc.classList.remove('below');
     cc.style.top = 'auto';
     cc.style.bottom = prefs.pos + '%';
   }
-  cc.style.maxHeight = placement.allowance + 'px';
-  renderCue();
 }
 
 // The size slider is a wish, not an instruction: turning it up used to make
@@ -301,9 +323,7 @@ function visibleCue(en, zh, progress, size) {
 }
 
 function applyPrefs() {
-  // The vertical slider only means anything while overlaying; below the
-  // picture the subtitle is pinned under it and this would fight fitStage.
-  if (placement.mode === 'over') cc.style.bottom = prefs.pos + '%';
+  placeCc();
   cc.style.background = 'rgba(0,0,0,' + (prefs.bg / 100) + ')';
   // Size is not set here: render() works out what fits this cue, and a
   // value written here would just be overwritten a moment later.
