@@ -45,6 +45,32 @@ test('the block still cannot outgrow the room it has', () => {
     assert.match(page, /maxHeight/);
 });
 
+// The subtitle box was centred with `left: 50%` plus a transform, which
+// leaves a shrink-to-fit box only half the viewport to lay text in: every
+// line wrapped at half the width available and the block stacked to twice
+// the height. The narrowness was the cause of the height, not a side effect.
+test('the subtitle box may use the full width it is allowed', () => {
+    const rule = /#cc\s*\{[^}]*\}/.exec(page);
+    assert.ok(rule, 'no #cc rule found');
+    const css = rule[0];
+    assert.doesNotMatch(css, /left:\s*50%/,
+        'left: 50% caps a shrink-to-fit box at half the viewport');
+    assert.match(css, /left:\s*0/);
+    assert.match(css, /right:\s*0/);
+    assert.match(css, /margin-inline:\s*auto/);
+});
+
+test('an overflowing line is never clipped away silently', () => {
+    const rule = /#cc\s*\{[^}]*\}/.exec(page)[0];
+    assert.doesNotMatch(rule, /overflow:\s*hidden/);
+});
+
+test('the chunker measures the same width the CSS gives it', () => {
+    // 94% in the stylesheet, 94% in the measurement, minus the padding.
+    assert.match(page, /max-width:\s*94%/);
+    assert.match(page, /innerWidth\s*\*\s*0\.94/);
+});
+
 test('it does not redraw identical text four times a second', () => {
     assert.match(page, /lastDrawn/);
 });

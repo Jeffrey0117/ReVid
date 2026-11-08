@@ -67,16 +67,22 @@ exports.render = (token) => `<!doctype html>
      screen, and in the black below it when it does not — which on a
      portrait phone is most of the screen, sitting empty while the text
      covered the only part worth looking at. */
+  /* Spanning both edges, not anchored at the centre. Centring with
+     left:50% leaves a shrink-to-fit box only half the viewport to lay text
+     in, so every line wrapped at half the width available and the block
+     stacked to twice the height. The narrowness caused the height. */
   #cc {
-    position: absolute; left: 50%; z-index: 11;
-    transform: translateX(-50%); max-width: 94%;
+    position: absolute; left: 0; right: 0; z-index: 11;
+    width: fit-content; max-width: 94%; margin-inline: auto;
     padding: 5px 10px; border-radius: 8px;
     text-align: center; pointer-events: none; white-space: pre-wrap;
     line-height: 1.25; text-wrap: balance;
-    overflow: hidden;
+    /* Never hidden: if a line does overflow its allowance, letting it
+       spill is honest, where clipping silently eats words. */
+    overflow: visible;
   }
   #cc.below {
-    position: fixed; left: 50%; bottom: auto;
+    position: fixed; bottom: auto;
     max-width: 96%;
   }
   #cc:empty { display: none; }
@@ -274,7 +280,10 @@ function chunkText(text, maxChars) {
 // Both languages are the same sentence, so they advance together; the one
 // with more pieces sets the pace rather than one of them going blank.
 function visibleCue(en, zh, progress, size) {
-  const width = Math.min(window.innerWidth * 0.94, 900);
+  // Must match the CSS: 94% of the viewport, less the box's own padding.
+  // Overstating it by even a little makes every piece wrap one line deeper
+  // than the chunker intended.
+  const width = Math.max(120, Math.min(window.innerWidth * 0.94, 900) - 20);
   const enChunks = chunkText(en, perLineChars(width, size, false) * MAX_LINES);
   const zhChunks = chunkText(zh, perLineChars(width, Math.round(size * 0.8), true) * MAX_LINES);
   // Whichever needs more pieces sets the pace; the other is stretched across
