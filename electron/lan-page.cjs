@@ -97,35 +97,38 @@ exports.render = (token) => `<!doctype html>
     /* Below the top buttons, so back and the subtitle-mode toggle stay
        reachable while the panel is open. */
     top: calc(58px + env(safe-area-inset-top));
-    max-width: 440px; margin-inline: auto;
-    max-height: 46vh; overflow-y: auto;
-    transform: translateY(-120%); transition: transform 0.22s ease;
-    background: rgba(18,18,22,0.93); backdrop-filter: blur(10px);
-    border: 1px solid rgba(255,255,255,0.1); border-radius: 14px;
-    padding: 10px 14px 12px;
+    /* A card, not a sheet. Every control in it changes the subtitle, so it
+       has to leave the subtitle on screen — and it is reached often enough
+       that it should get out of the way fast. */
+    width: 248px; margin-left: auto; margin-right: 8px;
+    max-height: 62vh; overflow-y: auto;
+    transform: translateY(-120%); transition: transform 0.2s ease;
+    background: rgba(18,18,22,0.94); backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.1); border-radius: 12px;
+    padding: 8px 11px 10px;
     box-shadow: 0 10px 34px rgba(0,0,0,0.55);
   }
   #sheet.on { transform: translateY(0); }
-  #sheet h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
-  .row { margin-bottom: 8px; }
+  #sheet h3 { margin: 0 0 6px; font-size: 12px; font-weight: 600; }
+  .row { margin-bottom: 4px; }
   .row label {
     display: flex; justify-content: space-between;
-    font-size: 11px; color: rgba(255,255,255,0.5); margin-bottom: 2px;
+    font-size: 10.5px; color: rgba(255,255,255,0.45); margin-bottom: 0;
   }
-  /* Chunky enough to hit without aiming, short enough to fit a small panel. */
-  input[type=range] { width: 100%; height: 24px; accent-color: #3b82f6; }
+  /* Still a 20px target, with the slack trimmed off the sides. */
+  input[type=range] { width: 100%; height: 20px; margin: 0; accent-color: #3b82f6; }
   .seg { display: flex; gap: 6px; }
   .seg button {
     flex: 1; min-height: 38px; border: 0; border-radius: 8px;
     background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.75); font-size: 13px;
   }
   .seg button.on { background: #3b82f6; color: #fff; font-weight: 600; }
-  .swatches { display: flex; gap: 8px; }
-  .swatches button { flex: 1; height: 34px; border-radius: 8px; border: 2px solid transparent; }
+  .swatches { display: flex; gap: 6px; }
+  .swatches button { flex: 1; height: 26px; border-radius: 6px; border: 2px solid transparent; }
   .swatches button.on { border-color: #3b82f6; }
   #sheetClose {
-    width: 100%; min-height: 40px; margin-top: 4px; border: 0; border-radius: 8px;
-    background: rgba(255,255,255,0.1); color: #fff; font-size: 14px;
+    width: 100%; min-height: 32px; margin-top: 6px; border: 0; border-radius: 7px;
+    background: rgba(255,255,255,0.1); color: #fff; font-size: 13px;
   }
   #empty { padding: 40px 16px; text-align: center; color: rgba(255,255,255,0.4); }
 </style>
@@ -220,32 +223,40 @@ function fitStage() {
   // Under the picture when there is real room down there — on a portrait
   // phone that is most of the screen, and it was sitting empty while the
   // text covered the only part worth looking at.
-  placement = below >= 92
-    ? { mode: 'below', allowance: Math.round(below) - 12, videoBottom: box.bottom, room: below }
-    : { mode: 'over', allowance: Math.round(box.height * 0.34), videoBottom: box.bottom, room: 0 };
+  placement = {
+    mode: below >= 92 ? 'below' : 'over',
+    allowance: below >= 92 ? Math.round(below) - 12 : Math.round(box.height * 0.34),
+    videoBottom: box.bottom,
+    videoHeight: box.height
+  };
 
   cc.style.maxHeight = placement.allowance + 'px';
   placeCc();
   renderCue();
 }
 
-// Where the subtitle sits vertically, in whichever placement is in force.
-// This used to live inside the two branches above, so moving the subtitle
-// below the picture quietly left the position slider doing nothing at all.
+// One continuous sweep rather than two modes. At 0 the subtitle sits over
+// the lower part of the picture, the way a subtitle normally does; turning
+// it up slides it down, out of the picture and into whatever black is
+// below. Splitting this into an overlay case and a below-the-video case
+// meant the slider only reached one of them.
+const POS_MAX = 45;
+
 function placeCc() {
-  if (placement.mode === 'below') {
-    cc.classList.add('below');
-    cc.style.bottom = 'auto';
-    // 0% is tucked right under the picture; higher drops it down the
-    // empty space, which is the same "further from the video" the slider
-    // means when it is overlaying.
-    const slack = Math.max(0, placement.room - 60);
-    cc.style.top = Math.round(placement.videoBottom + 6 + (prefs.pos / 45) * slack) + 'px';
-  } else {
-    cc.classList.remove('below');
-    cc.style.top = 'auto';
-    cc.style.bottom = prefs.pos + '%';
-  }
+  cc.classList.add('below'); // fixed positioning; the width cap comes with it
+  cc.style.bottom = 'auto';
+
+  const h = cc.offsetHeight || 40;
+  const bottom = placement.videoBottom || window.innerHeight;
+  const videoH = placement.videoHeight || window.innerHeight;
+
+  // Highest: inside the picture, clear of its very bottom edge.
+  const highest = bottom - h - videoH * 0.06;
+  // Lowest: resting on the bottom of the screen.
+  const lowest = window.innerHeight - h - 8;
+
+  const t = Math.min(1, Math.max(0, prefs.pos / POS_MAX));
+  cc.style.top = Math.round(highest + t * Math.max(0, lowest - highest)) + 'px';
 }
 
 // The size slider is a wish, not an instruction: turning it up used to make

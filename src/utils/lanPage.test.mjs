@@ -93,21 +93,32 @@ test('the settings panel leaves the subtitle visible while you adjust it', () =>
     assert.ok(sheet, 'no #sheet rule found');
     const css = sheet[0];
     assert.match(css, /top:\s*calc\(58px/, 'it should sit at the top, clear of the buttons');
-    assert.match(css, /max-height:\s*46vh/, 'it should not fill the screen');
-    assert.match(css, /max-width:\s*440px/);
+    assert.match(css, /width:\s*248px/, 'a card, not a sheet');
     assert.doesNotMatch(css, /bottom:\s*0/, 'anchoring it to the bottom covers the subtitle');
+});
+
+// "0% 的位置也太低 我要能蓋到影片上那種" — the range has to start on the
+// picture, not under it. Two separate placements could never do that.
+test('the position range starts over the picture and ends at the screen bottom', () => {
+    assert.match(page, /POS_MAX/);
+    // The top of the range is computed from inside the video's own height.
+    assert.match(page, /videoH\s*\*\s*0\.06/);
+    // And the bottom from the screen, not from the video.
+    assert.match(page, /window\.innerHeight\s*-\s*h\s*-\s*8/);
+    // Measured, because where it can go depends on how tall it is.
+    assert.match(page, /cc\.offsetHeight/);
 });
 
 // Moving the subtitle below the picture left the position slider wired
 // only to the overlay case, so on a portrait phone it did nothing at all.
-test('the position slider works in both placements', () => {
+// One placement function now, called from both paths.
+test('the position slider is wired to the only placement there is', () => {
     assert.match(page, /function placeCc/);
     // Called when a preference changes, not only when the stage is measured.
     const applyPrefs = /function applyPrefs\(\)\s*\{[\s\S]{0,200}/.exec(page);
     assert.ok(applyPrefs, 'no applyPrefs found');
     assert.match(applyPrefs[0], /placeCc\(\)/);
-    // And the below-the-picture case actually reads the preference.
-    assert.match(page, /prefs\.pos\s*\/\s*45/);
+    assert.match(page, /prefs\.pos\s*\/\s*POS_MAX/);
 });
 
 test('the chunker measures the same width the CSS gives it', () => {
@@ -120,11 +131,12 @@ test('it does not redraw identical text four times a second', () => {
     assert.match(page, /lastDrawn/);
 });
 
-test('it moves into the black below the video when there is room', () => {
-    assert.match(page, /classList\.add\('below'\)/);
+test('it can reach the black below the video, where there is room', () => {
     assert.match(page, /#cc\.below/);
-    // And back over the picture when the video fills the screen.
-    assert.match(page, /classList\.remove\('below'\)/);
+    assert.match(page, /classList\.add\('below'\)/);
+    // The stage is measured so the range knows where the picture ends.
+    assert.match(page, /videoBottom/);
+    assert.match(page, /videoHeight/);
 });
 
 test('subtitle size follows the screen width rather than a fixed count', () => {
