@@ -12,6 +12,8 @@ export function canToggleRow(phase, row, nothingToCut) {
     if (phase === 'setup') return true;
     if (phase === 'scanning' || phase === 'cutting') return false;
     // review and done behave the same: anything still merely 'found'.
+    // 'alreadycut' is deliberately not toggleable — cutting a trimmed file
+    // again is how twenty episodes lost three seconds each.
     return row.status === 'found' && !nothingToCut(row);
 }
 

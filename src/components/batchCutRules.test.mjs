@@ -31,6 +31,17 @@ test('rows that are finished or hopeless stay untickable', () => {
     }
 });
 
+// A season that was already trimmed has nothing left to find, so the
+// matcher latches onto whatever is near the end: twenty episodes of
+// season three were cut a second time and lost three seconds each.
+test('a file already cut cannot be cut again', () => {
+    const row = { path: 'E30', status: 'alreadycut', selected: false };
+    for (const phase of ['review', 'done', 'scanning', 'cutting']) {
+        assert.equal(canToggleRow(phase, row, nothingToCut), false, phase);
+    }
+    assert.deepEqual(pendingRows([{ ...row, selected: true }], nothingToCut), []);
+});
+
 test('nothing is tickable while the work is actually running', () => {
     const row = afterRun.find(r => r.path === 'E06');
     assert.equal(canToggleRow('scanning', row, nothingToCut), false);

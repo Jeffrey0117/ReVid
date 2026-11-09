@@ -387,6 +387,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     askEpisodes: (params) => ipcRenderer.invoke('ask-episodes', params),
     libraryGuides: (folder) => ipcRenderer.invoke('library-guides', { folder }),
     setFolderFollow: (folder, on) => ipcRenderer.invoke('set-folder-follow', { folder, on }),
+    markFolderCut: (folder, note) => ipcRenderer.invoke('mark-folder-cut', { folder, note }),
     getFolderFollow: (folder) => ipcRenderer.invoke('get-folder-follow', { folder }),
     showSeasons: (folder) => ipcRenderer.invoke('show-seasons', { folder }),
     importShow: (folder, show, lang) => ipcRenderer.invoke('import-show', { folder, show, lang }),

@@ -196,6 +196,49 @@ function getFollow(folder) {
     }
 }
 
+// Remembering that a file has had its fixed segment removed.
+//
+// Without this, every rescan re-decodes and re-matches seasons that were
+// finished weeks ago — the expensive half of the work, done for nothing.
+// Worse, a season that is already trimmed has nothing left to find, so the
+// matcher latches onto whatever is near the end: twenty episodes of season
+// three were cut a second time and lost three seconds each.
+function setCut(videoPath, info) {
+    const folder = path.dirname(videoPath);
+    const lib = read(folder);
+    const key = keyFor(videoPath);
+    lib.videos[key] = {
+        ...(lib.videos[key] || { name: key }),
+        cut: { at: Date.now(), ...info }
+    };
+    return write(folder, lib);
+}
+
+function wasCut(videoPath) {
+    const entry = getEntry(videoPath);
+    return Boolean(entry?.cut);
+}
+
+// Mark a whole folder without cutting anything — for seasons that were
+// trimmed before any of this was recorded.
+function markFolderCut(folder, { note } = {}) {
+    const lib = read(folder);
+    let marked = 0;
+    let names;
+    try { names = fs.readdirSync(folder); } catch (e) { return { success: false, error: 'Cannot read folder' }; }
+    for (const name of names) {
+        if (!/\.(mp4|webm|mov|avi|mkv|m4v)$/i.test(name)) continue;
+        if (lib.videos[name]?.cut) continue;
+        lib.videos[name] = {
+            ...(lib.videos[name] || { name }),
+            cut: { at: Date.now(), note: note || 'marked by hand' }
+        };
+        marked += 1;
+    }
+    const r = write(folder, lib);
+    return r.success ? { ...r, marked } : r;
+}
+
 // Show-level facts live on the folder that holds the seasons, which has no
 // videos of its own — so this is the one thing in a library not keyed by file.
 function setShow(folder, show) {
@@ -240,6 +283,9 @@ module.exports = {
     getShow,
     setFollow,
     getFollow,
+    setCut,
+    wasCut,
+    markFolderCut,
     packCue,
     unpackCue
 };

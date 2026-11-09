@@ -136,7 +136,7 @@ export const BatchCutDialog = ({ files, template, onClose }) => {
                 updateRow(p.path, { status: 'scanning' });
             } else if (p.phase === 'done' && p.result) {
                 updateRow(p.path, {
-                    status: p.result.found ? 'found' : 'notfound',
+                    status: p.result.alreadyCut ? 'alreadycut' : (p.result.found ? 'found' : 'notfound'),
                     matchStart: p.result.matchStart,
                     score: p.result.score,
                     targetDuration: p.result.targetDuration || 0,
@@ -209,6 +209,7 @@ export const BatchCutDialog = ({ files, template, onClose }) => {
             case 'found':
                 if (nothingToCut(row)) return t('batchCutNothingToCut');
                 return `${formatTimePrecise(cutPointOf(row))} (${Math.round(row.score * 100)}%)`;
+            case 'alreadycut': return t('batchCutAlready');
             case 'notfound': return row.error || t('batchCutNotFound');
             case 'cutting': return `${activePct}%`;
             case 'done': return t('batchCutRowDone');
@@ -222,6 +223,7 @@ export const BatchCutDialog = ({ files, template, onClose }) => {
             case 'found':
                 if (nothingToCut(row)) return theme.textTertiary;
                 return row.score >= AUTO_SELECT_SCORE ? theme.success : theme.pin;
+            case 'alreadycut': return theme.textTertiary;
             case 'notfound': case 'failed': return theme.error;
             case 'cutting': return theme.accent;
             case 'done': return theme.success;

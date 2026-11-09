@@ -864,6 +864,17 @@ function setupIpcHandlers() {
 
         await parallelMap(targets, lanes, async (target, i) => {
             if (aborted()) return stop();
+
+            // Already done: skip without touching the file. This is the
+            // whole difference between rescanning a show and rescanning
+            // only the part of it that still needs work.
+            if (library.wasCut(target)) {
+                const r = { path: target, found: false, score: 0, matchStart: 0, targetDuration: 0, alreadyCut: true };
+                results[i] = r;
+                sendProgress({ index: i, path: target, phase: 'done', result: r });
+                return r;
+            }
+
             sendProgress({ index: i, path: target, phase: 'scanning' });
 
             const anchor = anchorFor(target);
@@ -994,8 +1005,15 @@ function setupIpcHandlers() {
             } else if (replaceAll) {
                 const swapped = await replaceOriginalFile(outputPath, inputPath);
                 results.push({ path: inputPath, success: swapped.success, error: swapped.error, newPath: swapped.newPath });
+                // Recorded so a later scan skips it. Without this a trimmed
+                // season gets scanned again, finds nothing real, and latches
+                // onto whatever is near the end.
+                if (swapped.success) {
+                    try { library.setCut(swapped.newPath || inputPath, { cutAt, replaced: true }); } catch (e) { /* not fatal */ }
+                }
             } else {
                 results.push({ path: inputPath, success: true, outputPath });
+                try { library.setCut(outputPath, { cutAt, replaced: false, from: inputPath }); } catch (e) { /* not fatal */ }
             }
             sendProgress({ index: i, path: inputPath, phase: 'done', result: results[results.length - 1] });
         }
@@ -1696,6 +1714,17 @@ function setupIpcHandlers() {
         }
 
         return { success: true, show: meta, guided, seasons: dirs.length, failures };
+    });
+
+    // Record a folder as already trimmed, for seasons that were done before
+    // any of this was written down.
+    ipcMain.handle('mark-folder-cut', (_event, { folder, note } = {}) => {
+        if (!folder) return { success: false, error: 'No folder' };
+        try {
+            return library.markFolderCut(folder, { note });
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
     });
 
     ipcMain.handle('reel-renderer-status', () => ({
