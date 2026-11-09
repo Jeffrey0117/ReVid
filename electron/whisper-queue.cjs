@@ -4,7 +4,10 @@
 const fs = require('fs');
 const path = require('path');
 
-const PRIORITY = { HIGH: 0, LOW: 1 };
+// HIGH: the video on screen. LOW: the rest of its folder. IDLE: the other
+// seasons — queued so the library finishes on its own, but never ahead of
+// the season actually being watched.
+const PRIORITY = { HIGH: 0, LOW: 1, IDLE: 2 };
 
 function createWhisperQueue({ runJob, hasSubtitles, onEvent }) {
     const queue = [];          // { videoPath, priority, resolve, reject }
@@ -78,11 +81,17 @@ function createWhisperQueue({ runJob, hasSubtitles, onEvent }) {
         emit({ type: 'cleared' });
     }
 
-    function enqueueFolder(videoPaths) {
+    function enqueueFolder(videoPaths, priority = PRIORITY.LOW) {
         let added = 0;
         for (const p of videoPaths) {
             if (hasSubtitles(p)) continue;
-            if (enqueue(p, PRIORITY.LOW) !== null) added += 1;
+            // enqueue() hands back the existing promise for something
+            // already waiting, so counting a non-null result reported work
+            // that was already queued as newly added. A sweep that runs on
+            // every folder open would then claim twenty each time.
+            const isNew = !queued.has(p) && running !== p;
+            enqueue(p, priority);
+            if (isNew) added += 1;
         }
         return added;
     }

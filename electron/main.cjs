@@ -1175,22 +1175,85 @@ function setupIpcHandlers() {
 
     ipcMain.handle('ensure-library', (_event, { folder }) => library.ensureLibrary(folder));
 
+    // Folders swept at least once, so the work survives a restart. The queue
+    // itself lives in memory: without this, every relaunch threw away
+    // everything still pending and only whatever folder was open next got
+    // picked up again. A season nobody happened to open stayed at zero.
+    const sweptFile = () => path.join(app.getPath('userData'), 'transcribe-folders.json');
+    const readSwept = () => {
+        try { return JSON.parse(fs.readFileSync(sweptFile(), 'utf8')).folders || []; } catch (e) { return []; }
+    };
+    const rememberSwept = (folder) => {
+        const all = new Set(readSwept());
+        all.add(folder);
+        try {
+            fs.writeFileSync(sweptFile(), JSON.stringify({ folders: [...all] }), 'utf8');
+        } catch (e) { /* a sweep that cannot be remembered still runs now */ }
+    };
+
+    const videosIn = (dir) => {
+        try {
+            return fs.readdirSync(dir)
+                .filter(n => /\.(mp4|webm|mov|avi|mkv|m4v)$/i.test(n))
+                .map(n => path.join(dir, n));
+        } catch (e) {
+            return [];
+        }
+    };
+
+    // The folder, then every season beside it. Opening one season used to
+    // queue only that season, so the rest of a show was never transcribed
+    // unless it was visited by hand.
+    const sweepFolder = (folder, { withSiblings = true } = {}) => {
+        if (!library.getFollow(folder)) return { added: 0, skipped: 'not-followed' };
+        let added = whisperQueue.enqueueFolder(videosIn(folder), 1 /* LOW */);
+        rememberSwept(folder);
+
+        if (withSiblings) {
+            const parent = path.dirname(folder);
+            let siblings = [];
+            try {
+                siblings = fs.readdirSync(parent, { withFileTypes: true })
+                    .filter(d => d.isDirectory())
+                    .map(d => path.join(parent, d.name))
+                    .filter(d => d !== folder);
+            } catch (e) { /* no parent to read */ }
+
+            for (const dir of siblings) {
+                const files = videosIn(dir);
+                if (files.length === 0 || !library.getFollow(dir)) continue;
+                added += whisperQueue.enqueueFolder(files, 2 /* IDLE */);
+                rememberSwept(dir);
+            }
+        }
+        return { added };
+    };
+
     ipcMain.handle('queue-folder-transcriptions', async (_event, { videoPaths }) => {
         if (!Array.isArray(videoPaths) || videoPaths.length === 0) {
             return { success: false, error: 'No files' };
         }
-        // Swept unless this folder was explicitly switched off.
         const folder = path.dirname(videoPaths[0]);
-        if (!library.getFollow(folder)) {
-            return { success: true, added: 0, skipped: 'not-followed' };
-        }
         const status = getWhisperStatus(DEFAULT_MODEL);
         if (!status.binaryReady || !status.modelReady) {
             return { success: false, notReady: true, error: 'Whisper not set up' };
         }
-        const added = whisperQueue.enqueueFolder(videoPaths.filter(p => fs.existsSync(p)));
-        return { success: true, added, ...whisperQueue.status() };
+        const r = sweepFolder(folder);
+        return { success: true, ...r, ...whisperQueue.status() };
     });
+
+    // Pick the library back up where the last run left off.
+    const resumeSweeps = () => {
+        const status = getWhisperStatus(DEFAULT_MODEL);
+        if (!status.binaryReady || !status.modelReady) return;
+        let added = 0;
+        for (const dir of readSwept()) {
+            if (!fs.existsSync(dir) || !library.getFollow(dir)) continue;
+            added += whisperQueue.enqueueFolder(videosIn(dir), 2 /* IDLE */);
+        }
+        if (added > 0) console.log(`[whisper] resumed: ${added} episodes still to transcribe`);
+    };
+    setTimeout(resumeSweeps, 8000);
 
     // Following a folder: subtitles for the whole thing, filled in while the
     // machine is otherwise idle. Turning it off also drops what is waiting.
