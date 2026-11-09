@@ -1304,7 +1304,11 @@ export const VideoViewer = ({
                 <div ref={wrapperRef} style={{ position: 'absolute', inset: 0, zIndex: 1 }} />
 
                 {/* CC subtitle overlay — original on top, translation below */}
-                {ccMode !== 'off' && activeCue && (showOrig || showZh) && (
+                {/* A cue that was nothing but a speaker marker is empty once
+                    it is cleaned; an empty box over the picture is worse than
+                    no box. */}
+                {ccMode !== 'off' && activeCue && (showOrig || showZh)
+                    && ((showOrig && activeCue.text) || (showZh && activeCue.zh)) && (
                     <div
                         ref={subBoxRef}
                         onPointerDown={startSubDrag}

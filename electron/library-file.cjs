@@ -8,6 +8,7 @@
 // where an entry points at a cloud copy instead of a local file.
 const fs = require('fs');
 const path = require('path');
+const { cleanCueText } = require('./cue-text.cjs');
 
 const VERSION = 2;
 const TYPE = 'revid-library';
@@ -15,7 +16,15 @@ const TYPE = 'revid-library';
 // Cues are stored as tuples, not objects. An episode is ~700 lines and keys
 // repeated 700 times is most of the file.
 const packCue = (c) => (c.zh ? [c.start, c.end, c.text, c.zh] : [c.start, c.end, c.text]);
-const unpackCue = (a) => ({ start: a[0], end: a[1], text: a[2], ...(a[3] ? { zh: a[3] } : {}) });
+// Cleaned here, which is the one place every reader goes through — the
+// player, the phone page, search, the transcript, the exports. Cleaning at
+// each of those instead would mean the next reader added quietly misses out.
+const unpackCue = (a) => ({
+    start: a[0],
+    end: a[1],
+    text: cleanCueText(a[2]),
+    ...(a[3] ? { zh: cleanCueText(a[3]) } : {})
+});
 
 function libraryPathFor(folder) {
     return path.join(folder, `${path.basename(folder)}.revid`);
