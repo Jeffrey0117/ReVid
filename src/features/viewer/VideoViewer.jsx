@@ -1060,6 +1060,10 @@ export const VideoViewer = ({
         };
     }, [Boolean(subResize)]);
 
+    // The editing chrome is on while the pointer is over the subtitle, and
+    // stays on through a drag that has wandered off it.
+    const subUiOn = subHover || Boolean(subDrag) || Boolean(subResize);
+
     // Back where it started, for when a drag has put it somewhere silly.
     const resetSubPosition = useCallback(() => {
         setSubStyle(s => ({
@@ -1332,7 +1336,12 @@ export const VideoViewer = ({
                             // pointer events so words stay clickable.
                             pointerEvents: 'auto',
                             cursor: subDrag ? 'grabbing' : 'grab',
-                            outline: subDrag ? '1px solid rgba(255,255,255,0.5)' : 'none',
+                            // A hairline frame while the pointer is on it, so
+                            // the handles read as the corners of one object
+                            // rather than marks floating over the picture.
+                            outline: subUiOn
+                                ? `1px solid rgba(255,255,255,${subDrag || subResize ? 0.45 : 0.25})`
+                                : 'none',
                             userSelect: 'none',
                             backdropFilter: subStyle.bgOpacity > 0 ? 'blur(2px)' : 'none'
                         }}>
@@ -1343,37 +1352,53 @@ export const VideoViewer = ({
                             <div
                                 key={side}
                                 onPointerDown={startSubResize('width')}
+                                // The grab area is generous; only the tick
+                                // inside it is drawn, so the pointer target
+                                // does not have to be the eyesore.
                                 style={{
-                                    position: 'absolute', [side]: -3, top: '18%',
-                                    width: 6, height: '64%',
-                                    borderRadius: 3, cursor: 'ew-resize',
-                                    background: 'rgba(255,255,255,0.85)',
-                                    opacity: subHover || subResize?.kind === 'width' ? 1 : 0,
+                                    position: 'absolute', [side]: -7, top: '50%',
+                                    width: 14, height: 34, marginTop: -17,
+                                    cursor: 'ew-resize',
+                                    display: 'flex', alignItems: 'center',
+                                    justifyContent: 'center',
+                                    opacity: subUiOn ? 1 : 0,
                                     transition: 'opacity 0.12s'
                                 }}
-                            />
+                            >
+                                <div style={{
+                                    width: 3, height: 18, borderRadius: 2,
+                                    background: 'rgba(255,255,255,0.8)',
+                                    boxShadow: '0 0 2px rgba(0,0,0,0.6)'
+                                }} />
+                            </div>
                         ))}
                         {/* Four corners, like a crop frame. Each one scales
                             the whole subtitle, background included. */}
                         {[
-                            { top: -5, left: -5, cursor: 'nwse-resize' },
-                            { top: -5, right: -5, cursor: 'nesw-resize' },
-                            { bottom: -5, left: -5, cursor: 'nesw-resize' },
-                            { bottom: -5, right: -5, cursor: 'nwse-resize' }
-                        ].map((pos, i) => (
+                            { top: -8, left: -8, cursor: 'nwse-resize' },
+                            { top: -8, right: -8, cursor: 'nesw-resize' },
+                            { bottom: -8, left: -8, cursor: 'nesw-resize' },
+                            { bottom: -8, right: -8, cursor: 'nwse-resize' }
+                        ].map(({ cursor, ...pos }, i) => (
                             <div
                                 key={i}
                                 onPointerDown={startSubResize('scale')}
                                 title={t('subResizeHint')}
                                 style={{
-                                    position: 'absolute', ...pos,
-                                    width: 11, height: 11, borderRadius: 2,
-                                    background: '#fff',
-                                    boxShadow: '0 0 0 1px rgba(0,0,0,0.45)',
-                                    opacity: subHover || subResize?.kind === 'scale' ? 1 : 0,
+                                    position: 'absolute', ...pos, cursor,
+                                    width: 16, height: 16,
+                                    display: 'flex', alignItems: 'center',
+                                    justifyContent: 'center',
+                                    opacity: subUiOn ? 1 : 0,
                                     transition: 'opacity 0.12s'
                                 }}
-                            />
+                            >
+                                <div style={{
+                                    width: 7, height: 7, borderRadius: 1,
+                                    background: '#fff',
+                                    boxShadow: '0 0 0 1px rgba(0,0,0,0.55)'
+                                }} />
+                            </div>
                         ))}
                         <SubtitleCue
                             videoRef={videoElRef}
