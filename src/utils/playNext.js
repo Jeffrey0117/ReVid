@@ -1,11 +1,4 @@
-// Which video follows this one when the current one ends.
-//
-// Not the same question as the `n` key answers. That walks the raw folder
-// listing and wraps around at the end; this walks the list actually on
-// screen — filtered, sorted, pinned-only — because advancing to a file the
-// viewer cannot see reads as the player losing its place. And it stops at
-// the end rather than looping back to episode one, which is a surprise
-// nobody wants after a season finale.
+// Playing on to the next episode when one ends.
 
 export const COUNTDOWN_SECONDS = 5;
 
@@ -17,10 +10,25 @@ export function nextInOrder(visibleFiles, current) {
     return visibleFiles[at + 1];
 }
 
-// Whether the player should offer to continue at all. Kept here so the
-// conditions are in one place and testable rather than spread across a
-// component's render.
-export function shouldOfferNext({ enabled, editing, visibleFiles, current }) {
-    if (!enabled || editing) return null;
+// `marking` means a range selection is part-made — an A point set with no B
+// yet. Moving the file out from under that loses the work. It deliberately
+// does NOT mean "the editor is open": the editor is a mode the viewer sits in
+// for as long as the user likes, and gating on that switched the whole feature
+// off for anyone who had ever opened it.
+export function shouldOfferNext({ enabled, marking, visibleFiles, current }) {
+    if (!enabled || marking) return null;
     return nextInOrder(visibleFiles, current);
+}
+
+// An absolute deadline, not a counter that gets decremented. The viewer
+// re-renders constantly while a video plays, and a counter driven from an
+// effect can be torn down and re-armed by that churn before it ever reaches
+// zero — a countdown frozen at 5 forever. A deadline cannot be moved by a
+// re-render.
+export function deadlineFrom(now) {
+    return now + COUNTDOWN_SECONDS * 1000;
+}
+
+export function secondsLeft(deadline, now) {
+    return Math.max(0, Math.ceil((deadline - now) / 1000));
 }

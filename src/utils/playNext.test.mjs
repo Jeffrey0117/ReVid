@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { nextInOrder, shouldOfferNext, COUNTDOWN_SECONDS } from './playNext.js';
+import {
+    nextInOrder, shouldOfferNext, COUNTDOWN_SECONDS, deadlineFrom, secondsLeft
+} from './playNext.js';
 
 const list = ['e01.mp4', 'e02.mp4', 'e03.mp4'];
 
@@ -36,19 +38,57 @@ test('an empty or missing list is not an error', () => {
 });
 
 test('it offers nothing unless the folder was switched on', () => {
-    const base = { visibleFiles: list, current: 'e01.mp4', editing: false };
+    const base = { visibleFiles: list, current: 'e01.mp4', marking: false };
     assert.equal(shouldOfferNext({ ...base, enabled: false }), null);
     assert.equal(shouldOfferNext({ ...base, enabled: true }), 'e02.mp4');
 });
 
-// Every click in the editor may be setting a cut point; the video ending
-// must not move the file out from under that.
-test('it never fires while the editor is open', () => {
+// A half-made range selection is work in progress; advancing loses it.
+test('it holds off while a range is half-marked', () => {
     assert.equal(shouldOfferNext({
-        enabled: true, editing: true, visibleFiles: list, current: 'e01.mp4'
+        enabled: true, marking: true, visibleFiles: list, current: 'e01.mp4'
     }), null);
+});
+
+// This gate was first written as "editing", fed from the viewer's mode
+// toggle. That mode is sticky — the user had left the editor open, so the
+// feature was dead for them from the moment it shipped. Only an actual
+// in-progress selection may hold it back.
+test('merely having the editor open is not a reason to decline', () => {
+    assert.equal(shouldOfferNext({
+        enabled: true, marking: false, visibleFiles: list, current: 'e01.mp4'
+    }), 'e02.mp4');
+    // An absent flag reads as "not marking", never as "unknown, so refuse".
+    assert.equal(shouldOfferNext({
+        enabled: true, visibleFiles: list, current: 'e01.mp4'
+    }), 'e02.mp4');
 });
 
 test('the countdown is long enough to catch but short enough to tolerate', () => {
     assert.ok(COUNTDOWN_SECONDS >= 3 && COUNTDOWN_SECONDS <= 10);
+});
+
+test('the countdown counts down and stops at zero', () => {
+    const start = 1_000_000;
+    const deadline = deadlineFrom(start);
+    assert.equal(secondsLeft(deadline, start), COUNTDOWN_SECONDS);
+    assert.equal(secondsLeft(deadline, start + 1000), COUNTDOWN_SECONDS - 1);
+    assert.equal(secondsLeft(deadline, start + COUNTDOWN_SECONDS * 1000), 0);
+    assert.equal(secondsLeft(deadline, start + 60_000), 0);
+});
+
+// The failure this shape exists to rule out: a re-render recomputing the
+// remaining time must not restart it. Reading the same deadline at later and
+// later clock values can only ever go down.
+test('re-reading the deadline cannot reset the countdown', () => {
+    const start = 1_000_000;
+    const deadline = deadlineFrom(start);
+    let previous = Infinity;
+    // Past the deadline, not up to it: stepping by 137ms never lands on it.
+    for (let ms = 0; ms <= COUNTDOWN_SECONDS * 1000 + 137; ms += 137) {
+        const left = secondsLeft(deadline, start + ms);
+        assert.ok(left <= previous, `went up at +${ms}ms: ${previous} -> ${left}`);
+        previous = left;
+    }
+    assert.equal(previous, 0);
 });

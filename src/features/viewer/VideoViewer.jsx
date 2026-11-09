@@ -11,7 +11,7 @@ import { WordbookPanel } from './WordbookPanel';
 import { EpisodePicker } from './EpisodePicker';
 import { RIGHT_PANEL_WIDTH } from './layout';
 import { retimeCues, PAD } from '../../utils/reelSegments';
-import { shouldOfferNext, COUNTDOWN_SECONDS } from '../../utils/playNext';
+import { shouldOfferNext, deadlineFrom, secondsLeft } from '../../utils/playNext';
 import { toReelStyle } from '../../utils/reelStyle';
 import { hasFeature, FEATURES } from '../licensing/entitlements';
 import { SubtitleSettings, readSubtitleStyle, subtitleTextStyle } from './SubtitleSettings';
@@ -145,8 +145,10 @@ export const VideoViewer = ({
     const [episodesOpen, setEpisodesOpen] = useState(false);
     const [controlsSlot, setControlsSlot] = useState(null);
     const [autoNext, setAutoNext] = useState(false);
-    // { target, left } while the countdown is running.
+    // { target, deadline } while the countdown is running.
     const [upNext, setUpNext] = useState(null);
+    // Re-render while it runs; the deadline is what actually decides.
+    const [, tickCountdown] = useState(0);
 
     useEffect(() => {
         const api = getElectronAPI();
@@ -340,10 +342,10 @@ export const VideoViewer = ({
     // first episode's values forever.
     const autoNextRef = useRef(autoNext);
     autoNextRef.current = autoNext;
-    const editingRef = useRef(editMode);
-    editingRef.current = editMode;
     const filesRef = useRef(files);
     filesRef.current = files;
+    const onSelectVideoRef = useRef(onSelectVideo);
+    onSelectVideoRef.current = onSelectVideo;
     const flashTimerRef = useRef(0);
 
     // Build the <video> + Plyr ONCE. Switching videos only swaps the src on
@@ -920,35 +922,40 @@ export const VideoViewer = ({
         const onEnded = () => {
             const target = shouldOfferNext({
                 enabled: autoNextRef.current,
-                editing: Boolean(editingRef.current),
+                // Only a half-made A-B marker counts as work in progress.
+                marking: Boolean(abRef.current && abRef.current.b == null),
                 visibleFiles: filesRef.current,
                 current: videoPathRef.current
             });
-            if (target) setUpNext({ target, left: COUNTDOWN_SECONDS });
+            if (target) setUpNext({ target, deadline: deadlineFrom(Date.now()) });
         };
         video.addEventListener('ended', onEnded);
         return () => video.removeEventListener('ended', onEnded);
     }, []);
 
-    // One tick a second, and anything the user does cancels it.
+    // Anything the user does cancels it. The interval only forces a repaint —
+    // the deadline decides when it fires, so re-render churn cannot stall it.
     useEffect(() => {
         if (!upNext) return;
-        if (upNext.left <= 0) {
-            const go = upNext.target;
-            setUpNext(null);
-            onSelectVideo?.(filesRef.current.indexOf(go));
-            return;
-        }
-        const timer = setTimeout(() => setUpNext(u => (u ? { ...u, left: u.left - 1 } : null)), 1000);
+        const timer = setInterval(() => {
+            if (Date.now() >= upNext.deadline) {
+                clearInterval(timer);
+                const go = upNext.target;
+                setUpNext(null);
+                onSelectVideoRef.current?.(filesRef.current.indexOf(go));
+            } else {
+                tickCountdown(n => n + 1);
+            }
+        }, 250);
         const cancel = () => setUpNext(null);
         window.addEventListener('keydown', cancel);
         window.addEventListener('pointerdown', cancel);
         return () => {
-            clearTimeout(timer);
+            clearInterval(timer);
             window.removeEventListener('keydown', cancel);
             window.removeEventListener('pointerdown', cancel);
         };
-    }, [upNext, onSelectVideo]);
+    }, [upNext?.target, upNext?.deadline]);
 
     // Landing on a line found by search. Switching videos is already handled
     // by the resume path on loadedmetadata; this covers the case where the hit
@@ -1345,7 +1352,7 @@ export const VideoViewer = ({
                         }}
                     >
                         <div style={{ fontSize: 11, opacity: 0.6, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                            {t('upNext').replace('{n}', upNext.left)}
+                            {t('upNext').replace('{n}', secondsLeft(upNext.deadline, Date.now()))}
                         </div>
                         <div
                             style={{
@@ -1359,7 +1366,7 @@ export const VideoViewer = ({
                         </div>
                         <div style={{ display: 'flex', gap: 8 }}>
                             <button
-                                onClick={() => setUpNext(u => (u ? { ...u, left: 0 } : null))}
+                                onClick={() => setUpNext(u => (u ? { ...u, deadline: 0 } : null))}
                                 style={{
                                     flex: 1, padding: '7px 10px', borderRadius: 7, border: 'none',
                                     background: '#fff', color: '#111', fontSize: 12, fontWeight: 600,
