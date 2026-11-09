@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { anchorToTop, dropAnchor, clampTop, DRAG_THRESHOLD } from './subtitlePosition.js';
+import {
+    anchorToTop, dropAnchor, clampTop, DRAG_THRESHOLD,
+    widthPctFrom, scaleFrom, MIN_WIDTH_PCT, MAX_WIDTH_PCT, MIN_FONT, MAX_FONT
+} from './subtitlePosition.js';
 
 const area = { boxHeight: 60, areaHeight: 600 };
 
@@ -61,4 +64,78 @@ test('a nonsense measurement does not produce NaN geometry', () => {
 
 test('the click/drag threshold is small enough not to swallow word taps', () => {
     assert.ok(DRAG_THRESHOLD > 0 && DRAG_THRESHOLD <= 8);
+});
+
+// --- resizing ---
+
+// The box is centred, so one side moving out widens it by twice as much.
+test('dragging a side out widens the box from both sides', () => {
+    assert.equal(widthPctFrom({ pointerX: 900, centreX: 500, areaWidth: 1000 }), 80);
+    assert.equal(widthPctFrom({ pointerX: 100, centreX: 500, areaWidth: 1000 }), 80);
+});
+
+test('width is held between a readable minimum and the full picture', () => {
+    assert.equal(widthPctFrom({ pointerX: 505, centreX: 500, areaWidth: 1000 }), MIN_WIDTH_PCT);
+    assert.equal(widthPctFrom({ pointerX: 5000, centreX: 500, areaWidth: 1000 }), MAX_WIDTH_PCT);
+});
+
+test('a picture with no measured width does not divide by zero', () => {
+    assert.equal(widthPctFrom({ pointerX: 900, centreX: 500, areaWidth: 0 }), MAX_WIDTH_PCT);
+});
+
+
+// A corner scales the subtitle as one object. Dragging it out doubles the
+// box AND the text, so the background grows with the words instead of the
+// text swelling inside a box that stayed put.
+test('a corner scales box and text by the same amount', () => {
+    const r = scaleFrom({
+        pointerX: 900, centreX: 500, startHalfWidth: 200,
+        startWidthPct: 40, startFont: 20
+    });
+    assert.deepEqual(r, { widthPct: 80, fontSize: 40 });   // ratio 2
+});
+
+test('dragging a corner inward shrinks both', () => {
+    const r = scaleFrom({
+        pointerX: 600, centreX: 500, startHalfWidth: 200,
+        startWidthPct: 40, startFont: 20
+    });
+    assert.deepEqual(r, { widthPct: 20, fontSize: 10 });   // ratio 0.5
+});
+
+test('grabbing a corner and not moving changes nothing', () => {
+    const r = scaleFrom({
+        pointerX: 700, centreX: 500, startHalfWidth: 200,
+        startWidthPct: 81, startFont: 36
+    });
+    assert.deepEqual(r, { widthPct: 81, fontSize: 36 });
+});
+
+// The point of clamping the ratio rather than each value: once width hits
+// 100% the text must stop growing too, or it spills out of its own box.
+test('proportions hold at the limits instead of one running on', () => {
+    const big = scaleFrom({
+        pointerX: 9999, centreX: 500, startHalfWidth: 200,
+        startWidthPct: 50, startFont: 20
+    });
+    assert.equal(big.widthPct, MAX_WIDTH_PCT);
+    assert.equal(big.fontSize, 20 * (MAX_WIDTH_PCT / 50));   // same ratio, not MAX_FONT
+
+    // Here the font is the binding constraint, so width must stop early.
+    const fontBound = scaleFrom({
+        pointerX: 9999, centreX: 500, startHalfWidth: 200,
+        startWidthPct: 30, startFont: 60
+    });
+    assert.equal(fontBound.fontSize, MAX_FONT);
+    assert.equal(fontBound.widthPct, Math.round(30 * (MAX_FONT / 60)));
+    assert.ok(fontBound.widthPct < MAX_WIDTH_PCT);
+});
+
+test('a corner dragged onto the centre line does not collapse to zero', () => {
+    const r = scaleFrom({
+        pointerX: 500, centreX: 500, startHalfWidth: 200,
+        startWidthPct: 80, startFont: 36
+    });
+    assert.ok(r.widthPct >= MIN_WIDTH_PCT);
+    assert.ok(r.fontSize >= MIN_FONT);
 });

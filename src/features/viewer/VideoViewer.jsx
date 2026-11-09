@@ -13,8 +13,9 @@ import { RIGHT_PANEL_WIDTH } from './layout';
 import { retimeCues, PAD } from '../../utils/reelSegments';
 import { shouldOfferNext, deadlineFrom, secondsLeft } from '../../utils/playNext';
 import {
-    anchorToTop, dropAnchor, clampTop, DRAG_THRESHOLD
+    anchorToTop, dropAnchor, clampTop, DRAG_THRESHOLD, widthPctFrom, scaleFrom
 } from '../../utils/subtitlePosition';
+import { SubtitleCue } from './SubtitleCue';
 import { toReelStyle } from '../../utils/reelStyle';
 import { hasFeature, FEATURES } from '../licensing/entitlements';
 import {
@@ -22,7 +23,7 @@ import {
     DEFAULT_SUBTITLE_STYLE
 } from './SubtitleSettings';
 import {
-    WordCard, ClickableText, readDifficulty, writeDifficulty, readKnownWords, clearKnownWords
+    WordCard, readDifficulty, writeDifficulty, readKnownWords, clearKnownWords
 } from './WordLookup';
 import {
     BookMarked, Captions, ListVideo, Lock, PanelRight, SkipForward
@@ -169,6 +170,23 @@ export const VideoViewer = ({
     // Set once a press has travelled far enough to be a drag; read by the
     // word-lookup click so a drag that ends on a word does not also open it.
     const subMovedRef = useRef(false);
+    const [subHover, setSubHover] = useState(false);
+
+    // The picture's own width, which is what the subtitle is sized against —
+    // not the window's, since a letterboxed video leaves bars either side.
+    const [areaWidth, setAreaWidth] = useState(0);
+    useEffect(() => {
+        const el = wrapperRef.current;
+        if (!el || typeof ResizeObserver === 'undefined') return undefined;
+        const ro = new ResizeObserver(([entry]) => setAreaWidth(entry.contentRect.width));
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
+    // Usable text width: the box's share of the picture, less its padding.
+    const subTextWidth = Math.max(
+        120,
+        Math.round(areaWidth * (subStyle.widthPct / 100)) - 32
+    );
 
     useEffect(() => {
         const api = getElectronAPI();
@@ -984,6 +1002,64 @@ export const VideoViewer = ({
         };
     }, [Boolean(subDrag)]);
 
+    // Resizing: the sides set the width, the corner sets the text size. Both
+    // run through the same press/move/release as moving does, so a handle
+    // never also drags the box.
+    const [subResize, setSubResize] = useState(null);
+    const subResizeRef = useRef(null);
+    subResizeRef.current = subResize;
+
+    const startSubResize = useCallback((kind) => (e) => {
+        const area = wrapperRef.current;
+        const box = subBoxRef.current;
+        if (!area || !box) return;
+        e.stopPropagation();
+        e.preventDefault();
+        const areaRect = area.getBoundingClientRect();
+        const boxRect = box.getBoundingClientRect();
+        const centreX = areaRect.left + areaRect.width / 2;
+        setSubResize({
+            kind,
+            centreX,
+            areaWidth: areaRect.width,
+            // Where the grabbed edge was, so a corner scales relative to the
+            // size it had when grabbed rather than jumping on the first move.
+            startHalfWidth: Math.max(8, Math.abs(e.clientX - centreX)),
+            startWidthPct: subStyle.widthPct,
+            startFont: subStyle.fontSize,
+            boxWidth: boxRect.width
+        });
+    }, [subStyle.widthPct, subStyle.fontSize]);
+
+    useEffect(() => {
+        if (!subResize) return undefined;
+        const onMove = (e) => {
+            const r = subResizeRef.current;
+            if (!r) return;
+            if (r.kind === 'width') {
+                setSubStyle(s => ({
+                    ...s,
+                    widthPct: widthPctFrom({
+                        pointerX: e.clientX, centreX: r.centreX, areaWidth: r.areaWidth
+                    })
+                }));
+            } else {
+                // A corner takes the whole subtitle with it — background and
+                // all — which is what a corner handle does everywhere else.
+                setSubStyle(s => ({ ...s, ...scaleFrom({ ...r, pointerX: e.clientX }) }));
+            }
+        };
+        const onUp = () => setSubResize(null);
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onUp);
+        return () => {
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+            window.removeEventListener('pointercancel', onUp);
+        };
+    }, [Boolean(subResize)]);
+
     // Back where it started, for when a drag has put it somewhere silly.
     const resetSubPosition = useCallback(() => {
         setSubStyle(s => ({
@@ -1233,6 +1309,8 @@ export const VideoViewer = ({
                         ref={subBoxRef}
                         onPointerDown={startSubDrag}
                         onDoubleClick={(e) => { e.stopPropagation(); resetSubPosition(); }}
+                        onPointerEnter={() => setSubHover(true)}
+                        onPointerLeave={() => setSubHover(false)}
                         title={t('subDragHint')}
                         style={{
                             position: 'absolute', left: '50%', zIndex: 4,
@@ -1242,7 +1320,7 @@ export const VideoViewer = ({
                                 ? { top: subDrag.top, bottom: 'auto' }
                                 : { [subStyle.position]: subStyle.offset }),
                             transform: 'translateX(-50%)',
-                            maxWidth: '82%', padding: '7px 16px',
+                            maxWidth: `${subStyle.widthPct}%`, padding: '7px 16px',
                             background: `rgba(0,0,0,${subStyle.bgOpacity})`,
                             borderRadius: 8,
                             textAlign: 'center', whiteSpace: 'pre-wrap',
@@ -1254,43 +1332,67 @@ export const VideoViewer = ({
                             userSelect: 'none',
                             backdropFilter: subStyle.bgOpacity > 0 ? 'blur(2px)' : 'none'
                         }}>
-                        {showOrig && (
-                            <div style={{
-                                ...subtitleTextStyle(subStyle),
-                                fontSize: subStyle.fontSize, lineHeight: 1.4,
-                                pointerEvents: 'auto' // words are clickable
-                            }}>
-                                <ClickableText
-                                    text={activeCue.text}
-                                    marks={difficultMarks[activeCueIndex]}
-                                    markColor={theme.pin}
-                                    // A drag that happens to end on a word
-                                    // moved the subtitle; it did not ask what
-                                    // the word means. Cleared on use so it
-                                    // cannot leak into the next click.
-                                    onWordClick={(w, e) => {
-                                        if (subMovedRef.current) {
-                                            subMovedRef.current = false;
-                                            return;
-                                        }
-                                        openWordCard(w, e, activeCue.text);
-                                    }}
-                                />
-                            </div>
-                        )}
-                        {showZh && activeCue.zh && (
-                            <div style={{
-                                ...subtitleTextStyle(subStyle),
-                                opacity: showOrig ? 0.78 : 1,
-                                fontSize: showOrig
-                                    ? Math.round(subStyle.fontSize * 0.78)
-                                    : subStyle.fontSize,
-                                lineHeight: 1.4,
-                                marginTop: showOrig ? 2 : 0
-                            }}>
-                                {activeCue.zh}
-                            </div>
-                        )}
+                        {/* Editor-style handles: the sides set the width, the
+                            corner sets the text size. Hidden until the pointer
+                            is on the box so they never sit over the picture. */}
+                        {['left', 'right'].map(side => (
+                            <div
+                                key={side}
+                                onPointerDown={startSubResize('width')}
+                                style={{
+                                    position: 'absolute', [side]: -3, top: '18%',
+                                    width: 6, height: '64%',
+                                    borderRadius: 3, cursor: 'ew-resize',
+                                    background: 'rgba(255,255,255,0.85)',
+                                    opacity: subHover || subResize?.kind === 'width' ? 1 : 0,
+                                    transition: 'opacity 0.12s'
+                                }}
+                            />
+                        ))}
+                        {/* Four corners, like a crop frame. Each one scales
+                            the whole subtitle, background included. */}
+                        {[
+                            { top: -5, left: -5, cursor: 'nwse-resize' },
+                            { top: -5, right: -5, cursor: 'nesw-resize' },
+                            { bottom: -5, left: -5, cursor: 'nesw-resize' },
+                            { bottom: -5, right: -5, cursor: 'nwse-resize' }
+                        ].map((pos, i) => (
+                            <div
+                                key={i}
+                                onPointerDown={startSubResize('scale')}
+                                title={t('subResizeHint')}
+                                style={{
+                                    position: 'absolute', ...pos,
+                                    width: 11, height: 11, borderRadius: 2,
+                                    background: '#fff',
+                                    boxShadow: '0 0 0 1px rgba(0,0,0,0.45)',
+                                    opacity: subHover || subResize?.kind === 'scale' ? 1 : 0,
+                                    transition: 'opacity 0.12s'
+                                }}
+                            />
+                        ))}
+                        <SubtitleCue
+                            videoRef={videoElRef}
+                            cue={activeCue}
+                            showOrig={showOrig}
+                            showZh={showZh}
+                            widthPx={subTextWidth}
+                            fontSize={subStyle.fontSize}
+                            marks={difficultMarks[activeCueIndex]}
+                            markColor={theme.pin}
+                            textStyle={subtitleTextStyle(subStyle)}
+                            // A drag that happens to end on a word moved the
+                            // subtitle; it did not ask what the word means.
+                            // Cleared on use so it cannot leak into the next
+                            // click.
+                            onWordClick={(w, e) => {
+                                if (subMovedRef.current) {
+                                    subMovedRef.current = false;
+                                    return;
+                                }
+                                openWordCard(w, e, activeCue.text);
+                            }}
+                        />
                     </div>
                 )}
 

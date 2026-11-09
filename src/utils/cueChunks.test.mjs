@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chunkText, chunkAt, visibleCue, charsPerLine, MAX_LINES } from './cueChunks.js';
+import {
+    chunkText, chunkAt, visibleCue, charsPerLine, marksForChunk, MAX_LINES
+} from './cueChunks.js';
 
 // The cue from the report, exactly as whisper produced it.
 const EN = "Excuse me, excuse me, Hi, I'm Jake Peralta, so thrilled to be here today, as many of you";
@@ -113,4 +115,44 @@ test('a wide screen needs no splitting at all', () => {
     const v = visibleCue({ en: EN, zh: ZH, progress: 0, widthPx: 1600, fontSize: 20 });
     assert.equal(v.en, EN.replace(/\s+/g, ' '));
     assert.equal(v.steps, 1);
+});
+
+// --- difficulty underlines surviving a chunked cue ---
+
+const CUE = 'Alright. I will fire Wilson. Romero is responsible for most of it.';
+
+const markFor = (word) => {
+    const start = CUE.indexOf(word);
+    return { start, end: start + word.length, word };
+};
+
+test('marks are shifted into the piece they belong to', () => {
+    const marks = [markFor('Wilson')];
+    const piece = 'I will fire Wilson.';
+    const out = marksForChunk(marks, CUE, piece);
+    assert.equal(out.length, 1);
+    assert.equal(piece.slice(out[0].start, out[0].end), 'Wilson');
+});
+
+test('a mark outside the piece is dropped, not clamped', () => {
+    const marks = [markFor('Wilson')];
+    assert.deepEqual(marksForChunk(marks, CUE, 'Romero is responsible for most of it.'), []);
+});
+
+test('a mark straddling the cut is dropped rather than half-drawn', () => {
+    const marks = [{ start: 24, end: 35, word: 'on-Romero' }];
+    assert.deepEqual(marksForChunk(marks, CUE, 'Alright. I will fire Wilson.'), []);
+});
+
+// Underlining the wrong word is worse than underlining nothing.
+test('a piece that cannot be located yields no marks at all', () => {
+    const marks = [{ start: 20, end: 26, word: 'Wilson' }];
+    assert.deepEqual(marksForChunk(marks, CUE, 'text that is not in the cue'), []);
+});
+
+test('no marks, no text, no chunk: all empty, never a throw', () => {
+    assert.deepEqual(marksForChunk(null, CUE, 'Alright.'), []);
+    assert.deepEqual(marksForChunk([], CUE, 'Alright.'), []);
+    assert.deepEqual(marksForChunk([{ start: 0, end: 3, word: 'Alr' }], CUE, ''), []);
+    assert.deepEqual(marksForChunk([{ start: 0, end: 3, word: 'Alr' }], undefined, 'Alright.'), []);
 });

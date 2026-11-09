@@ -22,6 +22,7 @@ export const DEFAULT_SUBTITLE_STYLE = {
     bgOpacity: 0.72,
     position: 'bottom', // bottom | top
     offset: 76,         // px from that edge
+    widthPct: 82,       // % of the video area the box may fill
     timeShift: 0,       // seconds added to every cue time
     strokeWidth: 0,     // px; 0 = no outline
     strokeColor: '#000000',
@@ -293,6 +294,15 @@ export const SubtitleSettings = ({
                     type="range" min="0" max="100" step="5"
                     value={Math.round(style.shadow * 100)}
                     onChange={(e) => set({ shadow: Number(e.target.value) / 100 })}
+                    style={{ width: '100%', accentColor: theme.accent }}
+                />
+            </Row>
+
+            <Row label={`${t('subStyleWidth')} ${style.widthPct}%`}>
+                <input
+                    type="range" min="20" max="100" step="2"
+                    value={style.widthPct}
+                    onChange={(e) => set({ widthPct: Number(e.target.value) })}
                     style={{ width: '100%', accentColor: theme.accent }}
                 />
             </Row>

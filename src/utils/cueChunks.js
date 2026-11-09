@@ -73,6 +73,25 @@ export function chunkAt(chunks, progress) {
     return chunks[Math.floor(p * chunks.length)];
 }
 
+// Difficulty underlines are character offsets into the whole cue, so showing
+// one piece of it moves every word out from under its mark. Shift them into
+// the piece's own coordinates and drop the ones that fall outside it.
+//
+// Chunking normalises whitespace, so a piece is not always a literal slice of
+// the source. When it cannot be located exactly, this returns nothing rather
+// than a guess: a missing underline costs the reader little, one drawn under
+// the wrong word teaches them something false. Words stay clickable either
+// way — the underline is the only thing at stake.
+export function marksForChunk(marks, text, chunk) {
+    if (!marks?.length || !chunk) return [];
+    const at = (text || '').indexOf(chunk);
+    if (at < 0) return [];
+    const end = at + chunk.length;
+    return marks
+        .filter(m => m.start >= at && m.end <= end)
+        .map(m => ({ ...m, start: m.start - at, end: m.end - at }));
+}
+
 // The whole job: what English and Chinese should read right now.
 export function visibleCue({ en, zh, progress, widthPx, fontSize }) {
     const enMax = charsPerLine(widthPx, fontSize, false) * MAX_LINES;

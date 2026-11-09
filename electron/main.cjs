@@ -39,6 +39,7 @@ const { createRemotionRunner, findRemotionDir } = require('./remotion-runner.cjs
 let remotionRunner = null;
 const reelRunner = () => (remotionRunner ||= createRemotionRunner());
 const library = require('./library-file.cjs');
+const { looksLikeSeason } = require('./season-folder.cjs');
 const srt = require('./srt.cjs');
 const librarySearch = require('./library-search.cjs');
 const wikiEpisodes = require('./wiki-episodes.cjs');
@@ -1209,12 +1210,17 @@ function setupIpcHandlers() {
         let added = whisperQueue.enqueueFolder(videosIn(folder), 1 /* LOW */);
         rememberSwept(folder);
 
-        if (withSiblings) {
+        // Only between seasons. The fan-out assumes this folder sits inside a
+        // show folder; when it does not, "every folder beside this one" is the
+        // user's home directory — opening one clip in Videos\ swept Downloads\
+        // and queued 194 unrelated files, permanently, because the swept list
+        // is replayed on every launch.
+        if (withSiblings && looksLikeSeason(path.basename(folder))) {
             const parent = path.dirname(folder);
             let siblings = [];
             try {
                 siblings = fs.readdirSync(parent, { withFileTypes: true })
-                    .filter(d => d.isDirectory())
+                    .filter(d => d.isDirectory() && looksLikeSeason(d.name))
                     .map(d => path.join(parent, d.name))
                     .filter(d => d !== folder);
             } catch (e) { /* no parent to read */ }
