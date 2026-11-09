@@ -1328,7 +1328,16 @@ export const VideoViewer = ({
                                 ? { top: subDrag.top, bottom: 'auto' }
                                 : { [subStyle.position]: subStyle.offset }),
                             transform: 'translateX(-50%)',
-                            maxWidth: `${subStyle.widthPct}%`, padding: '7px 16px',
+                            // The width that was asked for, not a cap on one.
+                            // As a maxWidth the box shrank to fit its text, so
+                            // dragging a side wider did nothing visible until
+                            // a cue happened to be long enough to fill it —
+                            // the handle felt broken. Fixed also stops the
+                            // background jittering from cue to cue.
+                            width: `${subStyle.widthPct}%`,
+                            maxWidth: '100%',
+                            padding: '7px 16px',
+                            boxSizing: 'border-box',
                             background: `rgba(0,0,0,${subStyle.bgOpacity})`,
                             borderRadius: 8,
                             textAlign: 'center', whiteSpace: 'pre-wrap',
