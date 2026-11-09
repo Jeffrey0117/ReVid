@@ -52,6 +52,14 @@ export function subtitleTextStyle(style) {
     return css;
 }
 
+export function writeSubtitleStyle(style) {
+    try {
+        localStorage.setItem(SUBTITLE_STYLE_KEY, JSON.stringify(style));
+    } catch (e) {
+        // Storage disabled or full: the look still applies for this session.
+    }
+}
+
 export function readSubtitleStyle() {
     try {
         const saved = JSON.parse(localStorage.getItem(SUBTITLE_STYLE_KEY));
@@ -89,11 +97,11 @@ export const SubtitleSettings = ({
     const [page, setPage] = useState('main');
     const [translate, setTranslateState] = useState(readTranslateSettings);
 
-    const set = (patch) => {
-        const next = { ...style, ...patch };
-        localStorage.setItem(SUBTITLE_STYLE_KEY, JSON.stringify(next));
-        onChange(next);
-    };
+    // Storing happens where the state lives, not here. This panel used to be
+    // the only thing that could change the style, so it wrote the key itself;
+    // now that the subtitle can also be dragged, a writer per caller means
+    // whichever one is forgotten silently loses the setting on reload.
+    const set = (patch) => onChange({ ...style, ...patch });
 
     const setTranslate = (patch) => {
         const next = { ...translate, ...patch };
@@ -305,12 +313,32 @@ export const SubtitleSettings = ({
                         </button>
                     ))}
                 </div>
+                {/* From 0, because dragging can park the box flush against the
+                    edge and the slider must be able to show that rather than
+                    snapping it back inside an arbitrary margin. */}
                 <input
-                    type="range" min="8" max="240" step="4"
+                    type="range" min="0" max="400" step="2"
                     value={style.offset}
                     onChange={(e) => set({ offset: Number(e.target.value) })}
                     style={{ width: '100%', accentColor: theme.accent }}
                 />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                    <span style={{ fontSize: 10, color: theme.textTertiary, flex: 1 }}>
+                        {t('subDragHint')}
+                    </span>
+                    <button
+                        onClick={() => set({
+                            position: DEFAULT_SUBTITLE_STYLE.position,
+                            offset: DEFAULT_SUBTITLE_STYLE.offset
+                        })}
+                        style={{
+                            padding: '4px 8px', borderRadius: 5, fontSize: 11,
+                            background: theme.inputBg, color: theme.textSecondary
+                        }}
+                    >
+                        {t('subPositionReset')}
+                    </button>
+                </div>
             </Row>
 
             <button

@@ -12,9 +12,15 @@ import { EpisodePicker } from './EpisodePicker';
 import { RIGHT_PANEL_WIDTH } from './layout';
 import { retimeCues, PAD } from '../../utils/reelSegments';
 import { shouldOfferNext, deadlineFrom, secondsLeft } from '../../utils/playNext';
+import {
+    anchorToTop, dropAnchor, clampTop, DRAG_THRESHOLD
+} from '../../utils/subtitlePosition';
 import { toReelStyle } from '../../utils/reelStyle';
 import { hasFeature, FEATURES } from '../licensing/entitlements';
-import { SubtitleSettings, readSubtitleStyle, subtitleTextStyle } from './SubtitleSettings';
+import {
+    SubtitleSettings, readSubtitleStyle, writeSubtitleStyle, subtitleTextStyle,
+    DEFAULT_SUBTITLE_STYLE
+} from './SubtitleSettings';
 import {
     WordCard, ClickableText, readDifficulty, writeDifficulty, readKnownWords, clearKnownWords
 } from './WordLookup';
@@ -119,6 +125,9 @@ export const VideoViewer = ({
         return CC_MODES.includes(saved) ? saved : 'both';
     });
     const [subStyle, setSubStyle] = useState(readSubtitleStyle);
+    // One writer, so every way of changing the look is remembered: the panel,
+    // a preset, and a drag of the box all land here.
+    useEffect(() => { writeSubtitleStyle(subStyle); }, [subStyle]);
     const [styleOpen, setStyleOpen] = useState(false);
     const [translating, setTranslating] = useState(null); // { pct } | null
     const [translateError, setTranslateError] = useState(null);
@@ -149,6 +158,17 @@ export const VideoViewer = ({
     const [upNext, setUpNext] = useState(null);
     // Re-render while it runs; the deadline is what actually decides.
     const [, tickCountdown] = useState(0);
+
+    // Dragging the subtitle box. `subDrag` holds the live top while the
+    // pointer is down so the box follows it without a write per mouse move;
+    // the edge-and-offset form is stored once, on release.
+    const subBoxRef = useRef(null);
+    const [subDrag, setSubDrag] = useState(null);
+    const subDragRef = useRef(null);
+    subDragRef.current = subDrag;
+    // Set once a press has travelled far enough to be a drag; read by the
+    // word-lookup click so a drag that ends on a word does not also open it.
+    const subMovedRef = useRef(false);
 
     useEffect(() => {
         const api = getElectronAPI();
@@ -913,6 +933,66 @@ export const VideoViewer = ({
         }
     }, [videoPath, subStyle, t]);
 
+    // Drag the subtitle anywhere in the frame. The box is the handle — no grip
+    // to find — and a press that never travels is still a word lookup.
+    const startSubDrag = useCallback((e) => {
+        const box = subBoxRef.current;
+        const area = wrapperRef.current;
+        if (!box || !area) return;
+        const boxRect = box.getBoundingClientRect();
+        const areaRect = area.getBoundingClientRect();
+        e.stopPropagation();   // not a seek, not a play/pause
+        subMovedRef.current = false;
+        setSubDrag({
+            top: boxRect.top - areaRect.top,
+            boxHeight: boxRect.height,
+            areaHeight: areaRect.height,
+            grabY: e.clientY,
+            grabTop: boxRect.top - areaRect.top
+        });
+    }, []);
+
+    useEffect(() => {
+        if (!subDrag) return;
+        const onMove = (e) => {
+            const d = subDragRef.current;
+            if (!d) return;
+            const travelled = Math.abs(e.clientY - d.grabY);
+            if (travelled > DRAG_THRESHOLD) subMovedRef.current = true;
+            setSubDrag({
+                ...d,
+                top: clampTop({
+                    top: d.grabTop + (e.clientY - d.grabY),
+                    boxHeight: d.boxHeight,
+                    areaHeight: d.areaHeight
+                })
+            });
+        };
+        const onUp = () => {
+            const d = subDragRef.current;
+            setSubDrag(null);
+            if (!d || !subMovedRef.current) return;   // a click, not a move
+            setSubStyle(s => ({ ...s, ...dropAnchor(d) }));
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onUp);
+        return () => {
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+            window.removeEventListener('pointercancel', onUp);
+        };
+    }, [Boolean(subDrag)]);
+
+    // Back where it started, for when a drag has put it somewhere silly.
+    const resetSubPosition = useCallback(() => {
+        setSubStyle(s => ({
+            ...s,
+            position: DEFAULT_SUBTITLE_STYLE.position,
+            offset: DEFAULT_SUBTITLE_STYLE.offset
+        }));
+    }, []);
+
     // Playing on to the next episode. The countdown exists so this is an
     // offer rather than something that happens to you — a folder is not
     // always a series, and the player cannot tell.
@@ -1149,17 +1229,31 @@ export const VideoViewer = ({
 
                 {/* CC subtitle overlay — original on top, translation below */}
                 {ccMode !== 'off' && activeCue && (showOrig || showZh) && (
-                    <div style={{
-                        position: 'absolute', left: '50%', zIndex: 4,
-                        [subStyle.position]: subStyle.offset,
-                        transform: 'translateX(-50%)',
-                        maxWidth: '82%', padding: '7px 16px',
-                        background: `rgba(0,0,0,${subStyle.bgOpacity})`,
-                        borderRadius: 8,
-                        textAlign: 'center', whiteSpace: 'pre-wrap',
-                        pointerEvents: 'none',
-                        backdropFilter: subStyle.bgOpacity > 0 ? 'blur(2px)' : 'none'
-                    }}>
+                    <div
+                        ref={subBoxRef}
+                        onPointerDown={startSubDrag}
+                        onDoubleClick={(e) => { e.stopPropagation(); resetSubPosition(); }}
+                        title={t('subDragHint')}
+                        style={{
+                            position: 'absolute', left: '50%', zIndex: 4,
+                            // While dragging, follow the pointer directly; the
+                            // edge-anchored form is written once on release.
+                            ...(subDrag
+                                ? { top: subDrag.top, bottom: 'auto' }
+                                : { [subStyle.position]: subStyle.offset }),
+                            transform: 'translateX(-50%)',
+                            maxWidth: '82%', padding: '7px 16px',
+                            background: `rgba(0,0,0,${subStyle.bgOpacity})`,
+                            borderRadius: 8,
+                            textAlign: 'center', whiteSpace: 'pre-wrap',
+                            // The box is the drag handle. Its text keeps its own
+                            // pointer events so words stay clickable.
+                            pointerEvents: 'auto',
+                            cursor: subDrag ? 'grabbing' : 'grab',
+                            outline: subDrag ? '1px solid rgba(255,255,255,0.5)' : 'none',
+                            userSelect: 'none',
+                            backdropFilter: subStyle.bgOpacity > 0 ? 'blur(2px)' : 'none'
+                        }}>
                         {showOrig && (
                             <div style={{
                                 ...subtitleTextStyle(subStyle),
@@ -1170,7 +1264,17 @@ export const VideoViewer = ({
                                     text={activeCue.text}
                                     marks={difficultMarks[activeCueIndex]}
                                     markColor={theme.pin}
-                                    onWordClick={(w, e) => openWordCard(w, e, activeCue.text)}
+                                    // A drag that happens to end on a word
+                                    // moved the subtitle; it did not ask what
+                                    // the word means. Cleared on use so it
+                                    // cannot leak into the next click.
+                                    onWordClick={(w, e) => {
+                                        if (subMovedRef.current) {
+                                            subMovedRef.current = false;
+                                            return;
+                                        }
+                                        openWordCard(w, e, activeCue.text);
+                                    }}
                                 />
                             </div>
                         )}
