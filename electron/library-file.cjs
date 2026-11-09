@@ -196,6 +196,19 @@ function getFollow(folder) {
     }
 }
 
+// Playing straight on to the next episode. Off unless asked for, and
+// remembered per folder: a season is worth continuing, a folder of
+// unrelated clips is not, and the player cannot tell them apart.
+function setAutoNext(folder, on) {
+    const lib = read(folder);
+    lib.autoNext = Boolean(on);
+    return write(folder, lib);
+}
+
+function getAutoNext(folder) {
+    try { return Boolean(read(folder).autoNext); } catch (e) { return false; }
+}
+
 // Remembering that a file has had its fixed segment removed.
 //
 // Without this, every rescan re-decodes and re-matches seasons that were
@@ -286,6 +299,8 @@ module.exports = {
     setCut,
     wasCut,
     markFolderCut,
+    setAutoNext,
+    getAutoNext,
     packCue,
     unpackCue
 };

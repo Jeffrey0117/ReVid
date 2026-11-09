@@ -9,6 +9,7 @@ export { VolumeOn } from './VolumeOn';
 export { VolumeOff } from './VolumeOff';
 export { StepBack } from './StepBack';
 export { StepForward } from './StepForward';
+export { SkipForward } from './SkipForward';
 export { ArrowDownToLine } from './ArrowDownToLine';
 export { Captions } from './Captions';
 export { PanelRight } from './PanelRight';

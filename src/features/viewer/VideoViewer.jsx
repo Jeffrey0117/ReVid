@@ -11,6 +11,7 @@ import { WordbookPanel } from './WordbookPanel';
 import { EpisodePicker } from './EpisodePicker';
 import { RIGHT_PANEL_WIDTH } from './layout';
 import { retimeCues, PAD } from '../../utils/reelSegments';
+import { shouldOfferNext, COUNTDOWN_SECONDS } from '../../utils/playNext';
 import { toReelStyle } from '../../utils/reelStyle';
 import { hasFeature, FEATURES } from '../licensing/entitlements';
 import { SubtitleSettings, readSubtitleStyle, subtitleTextStyle } from './SubtitleSettings';
@@ -18,7 +19,7 @@ import {
     WordCard, ClickableText, readDifficulty, writeDifficulty, readKnownWords, clearKnownWords
 } from './WordLookup';
 import {
-    BookMarked, Captions, ListVideo, Lock, PanelRight
+    BookMarked, Captions, ListVideo, Lock, PanelRight, SkipForward
 } from '../../components/icons';
 import { setAudioSlot, setAudioSlotProvider, setPlayerBridge } from '../plugins/pluginRuntime';
 import { PluginPanelHost } from '../plugins/PluginPanelHost';
@@ -143,6 +144,30 @@ export const VideoViewer = ({
     const [wordbookOpen, setWordbookOpen] = useState(false);
     const [episodesOpen, setEpisodesOpen] = useState(false);
     const [controlsSlot, setControlsSlot] = useState(null);
+    const [autoNext, setAutoNext] = useState(false);
+    // { target, left } while the countdown is running.
+    const [upNext, setUpNext] = useState(null);
+
+    useEffect(() => {
+        const api = getElectronAPI();
+        if (!api?.getAutoNext || !videoPath) { setAutoNext(false); return; }
+        let dropped = false;
+        api.getAutoNext(api.path.dirname(videoPath)).then(r => {
+            if (!dropped) setAutoNext(Boolean(r.autoNext));
+        });
+        return () => { dropped = true; };
+    }, [videoPath]);
+
+    const toggleAutoNext = useCallback(async () => {
+        const api = getElectronAPI();
+        if (!api?.setAutoNext || !videoPath) return;
+        const want = !autoNext;
+        const r = await api.setAutoNext(api.path.dirname(videoPath), want);
+        if (r.success) {
+            setAutoNext(want);
+            if (!want) setUpNext(null);
+        }
+    }, [autoNext, videoPath]);
 
     // A menu anchored to the bar is orphaned if the bar fades out under it.
     const barMenuOpen = episodesOpen || styleOpen;
@@ -310,6 +335,15 @@ export const VideoViewer = ({
     // The current src, readable from listeners that outlive a single source.
     const srcRef = useRef(src);
     srcRef.current = src;
+    // The 'ended' listener is attached once, for the life of the player, so
+    // everything it reads has to come from a ref — a closure would hold the
+    // first episode's values forever.
+    const autoNextRef = useRef(autoNext);
+    autoNextRef.current = autoNext;
+    const editingRef = useRef(editMode);
+    editingRef.current = editMode;
+    const filesRef = useRef(files);
+    filesRef.current = files;
     const flashTimerRef = useRef(0);
 
     // Build the <video> + Plyr ONCE. Switching videos only swaps the src on
@@ -877,6 +911,45 @@ export const VideoViewer = ({
         }
     }, [videoPath, subStyle, t]);
 
+    // Playing on to the next episode. The countdown exists so this is an
+    // offer rather than something that happens to you — a folder is not
+    // always a series, and the player cannot tell.
+    useEffect(() => {
+        const video = videoElRef.current;
+        if (!video) return;
+        const onEnded = () => {
+            const target = shouldOfferNext({
+                enabled: autoNextRef.current,
+                editing: Boolean(editingRef.current),
+                visibleFiles: filesRef.current,
+                current: videoPathRef.current
+            });
+            if (target) setUpNext({ target, left: COUNTDOWN_SECONDS });
+        };
+        video.addEventListener('ended', onEnded);
+        return () => video.removeEventListener('ended', onEnded);
+    }, []);
+
+    // One tick a second, and anything the user does cancels it.
+    useEffect(() => {
+        if (!upNext) return;
+        if (upNext.left <= 0) {
+            const go = upNext.target;
+            setUpNext(null);
+            onSelectVideo?.(filesRef.current.indexOf(go));
+            return;
+        }
+        const timer = setTimeout(() => setUpNext(u => (u ? { ...u, left: u.left - 1 } : null)), 1000);
+        const cancel = () => setUpNext(null);
+        window.addEventListener('keydown', cancel);
+        window.addEventListener('pointerdown', cancel);
+        return () => {
+            clearTimeout(timer);
+            window.removeEventListener('keydown', cancel);
+            window.removeEventListener('pointerdown', cancel);
+        };
+    }, [upNext, onSelectVideo]);
+
     // Landing on a line found by search. Switching videos is already handled
     // by the resume path on loadedmetadata; this covers the case where the hit
     // is in the video that happens to be playing.
@@ -1220,6 +1293,17 @@ export const VideoViewer = ({
                                 {`${currentIndex + 1}/${files.length}`}
                             </button>
                         )}
+                        {/* Only alongside the episode list: there is nothing to
+                            play on to in a folder of one. */}
+                        {files.length > 1 && (
+                            <button
+                                title={t(autoNext ? 'autoNextOn' : 'autoNextOff')}
+                                onClick={(e) => { e.stopPropagation(); toggleAutoNext(); }}
+                                style={barBtn(autoNext)}
+                            >
+                                <SkipForward size={15} />
+                            </button>
+                        )}
                         {/* Named, never lit: subtitles are on nearly always,
                             so an active tint here would just be permanent
                             blue. Which track is on is the menu's job to say. */}
@@ -1237,6 +1321,65 @@ export const VideoViewer = ({
                         </button>
                     </>,
                     controlsSlot
+                )}
+
+                {/* Bottom right, above the bar: a video that just ended has
+                    nothing to see, but the next one's name does need reading,
+                    and anything the user does cancels it. */}
+                {upNext && (
+                    <div
+                        // The cancel-on-any-input listener lives on window and
+                        // pointerdown beats click, so without this the card's
+                        // own buttons would cancel the countdown out from
+                        // under themselves before firing.
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        style={{
+                            position: 'absolute', bottom: 80, right: 16, zIndex: 7,
+                            width: 300, maxWidth: 'calc(100% - 32px)',
+                            padding: '12px 14px', borderRadius: 10,
+                            background: 'rgba(16,16,20,0.92)',
+                            border: '1px solid rgba(255,255,255,0.14)',
+                            boxShadow: '0 8px 28px rgba(0,0,0,0.45)',
+                            color: '#fff'
+                        }}
+                    >
+                        <div style={{ fontSize: 11, opacity: 0.6, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                            {t('upNext').replace('{n}', upNext.left)}
+                        </div>
+                        <div
+                            style={{
+                                margin: '6px 0 10px', fontSize: 13, fontWeight: 600, lineHeight: 1.35,
+                                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden'
+                            }}
+                            title={upNext.target}
+                        >
+                            {upNext.target.split(/[\\/]/).pop().replace(/\.[^.]+$/, '')}
+                        </div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <button
+                                onClick={() => setUpNext(u => (u ? { ...u, left: 0 } : null))}
+                                style={{
+                                    flex: 1, padding: '7px 10px', borderRadius: 7, border: 'none',
+                                    background: '#fff', color: '#111', fontSize: 12, fontWeight: 600,
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                {t('playNow')}
+                            </button>
+                            <button
+                                onClick={() => setUpNext(null)}
+                                style={{
+                                    padding: '7px 10px', borderRadius: 7, cursor: 'pointer',
+                                    border: '1px solid rgba(255,255,255,0.22)',
+                                    background: 'transparent', color: '#fff', fontSize: 12
+                                }}
+                            >
+                                {t('cancel')}
+                            </button>
+                        </div>
+                    </div>
                 )}
 
                 {episodesOpen && (

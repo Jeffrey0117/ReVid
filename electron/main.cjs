@@ -1790,6 +1790,16 @@ function setupIpcHandlers() {
         }
     });
 
+    ipcMain.handle('set-auto-next', (_event, { folder, on } = {}) => {
+        if (!folder) return { success: false, error: 'No folder' };
+        return { ...library.setAutoNext(folder, on), autoNext: Boolean(on) };
+    });
+
+    ipcMain.handle('get-auto-next', (_event, { folder } = {}) => ({
+        success: true,
+        autoNext: folder ? library.getAutoNext(folder) : false
+    }));
+
     ipcMain.handle('reel-renderer-status', () => ({
         available: Boolean(findRemotionDir()),
         dir: findRemotionDir()

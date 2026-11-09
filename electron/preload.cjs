@@ -388,6 +388,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     libraryGuides: (folder) => ipcRenderer.invoke('library-guides', { folder }),
     setFolderFollow: (folder, on) => ipcRenderer.invoke('set-folder-follow', { folder, on }),
     markFolderCut: (folder, note) => ipcRenderer.invoke('mark-folder-cut', { folder, note }),
+    setAutoNext: (folder, on) => ipcRenderer.invoke('set-auto-next', { folder, on }),
+    getAutoNext: (folder) => ipcRenderer.invoke('get-auto-next', { folder }),
     getFolderFollow: (folder) => ipcRenderer.invoke('get-folder-follow', { folder }),
     showSeasons: (folder) => ipcRenderer.invoke('show-seasons', { folder }),
     importShow: (folder, show, lang) => ipcRenderer.invoke('import-show', { folder, show, lang }),
