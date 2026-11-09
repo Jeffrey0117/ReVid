@@ -10,6 +10,13 @@ export function nextInOrder(visibleFiles, current) {
     return visibleFiles[at + 1];
 }
 
+export function prevInOrder(visibleFiles, current) {
+    if (!Array.isArray(visibleFiles) || visibleFiles.length === 0) return null;
+    const at = visibleFiles.indexOf(current);
+    if (at <= 0) return null;           // not in view, or already the first
+    return visibleFiles[at - 1];
+}
+
 // `marking` means a range selection is part-made — an A point set with no B
 // yet. Moving the file out from under that loses the work. It deliberately
 // does NOT mean "the editor is open": the editor is a mode the viewer sits in

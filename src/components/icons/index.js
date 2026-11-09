@@ -10,6 +10,8 @@ export { VolumeOff } from './VolumeOff';
 export { StepBack } from './StepBack';
 export { StepForward } from './StepForward';
 export { SkipForward } from './SkipForward';
+export { ChevronLeft } from './ChevronLeft';
+export { ChevronRight } from './ChevronRight';
 export { ArrowDownToLine } from './ArrowDownToLine';
 export { Captions } from './Captions';
 export { PanelRight } from './PanelRight';

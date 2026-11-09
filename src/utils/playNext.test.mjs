@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    nextInOrder, shouldOfferNext, COUNTDOWN_SECONDS, deadlineFrom, secondsLeft
+    nextInOrder, prevInOrder, shouldOfferNext, COUNTDOWN_SECONDS, deadlineFrom, secondsLeft
 } from './playNext.js';
 
 const list = ['e01.mp4', 'e02.mp4', 'e03.mp4'];
@@ -91,4 +91,28 @@ test('re-reading the deadline cannot reset the countdown', () => {
         previous = left;
     }
     assert.equal(previous, 0);
+});
+
+// --- stepping backwards, for the on-screen side zones ---
+
+test('it steps back through the order on screen', () => {
+    assert.equal(prevInOrder(list, 'e02.mp4'), 'e01.mp4');
+    assert.equal(prevInOrder(list, 'e03.mp4'), 'e02.mp4');
+});
+
+test('the first one has nothing before it', () => {
+    assert.equal(prevInOrder(list, 'e01.mp4'), null);
+});
+
+test('a video not on screen has nothing before it either', () => {
+    assert.equal(prevInOrder(list, 'hidden.mp4'), null);
+    assert.equal(prevInOrder([], 'e01.mp4'), null);
+    assert.equal(prevInOrder(null, undefined), null);
+});
+
+test('forwards then back returns to where it started', () => {
+    for (const f of list) {
+        const next = nextInOrder(list, f);
+        if (next) assert.equal(prevInOrder(list, next), f);
+    }
 });

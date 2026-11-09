@@ -11,7 +11,10 @@ import { WordbookPanel } from './WordbookPanel';
 import { EpisodePicker } from './EpisodePicker';
 import { RIGHT_PANEL_WIDTH } from './layout';
 import { retimeCues, PAD } from '../../utils/reelSegments';
-import { shouldOfferNext, deadlineFrom, secondsLeft } from '../../utils/playNext';
+import {
+    shouldOfferNext, nextInOrder, prevInOrder, deadlineFrom, secondsLeft
+} from '../../utils/playNext';
+import { zoneAt } from '../../utils/videoZones';
 import {
     anchorToTop, dropAnchor, clampTop, DRAG_THRESHOLD, widthPctFrom, scaleFrom
 } from '../../utils/subtitlePosition';
@@ -26,7 +29,8 @@ import {
     WordCard, readDifficulty, writeDifficulty, readKnownWords, clearKnownWords
 } from './WordLookup';
 import {
-    BookMarked, Captions, ListVideo, Lock, PanelRight, SkipForward
+    BookMarked, Captions, ListVideo, Lock, PanelRight, SkipForward,
+    ChevronLeft, ChevronRight
 } from '../../components/icons';
 import { setAudioSlot, setAudioSlotProvider, setPlayerBridge } from '../plugins/pluginRuntime';
 import { PluginPanelHost } from '../plugins/PluginPanelHost';
@@ -1060,6 +1064,38 @@ export const VideoViewer = ({
         };
     }, [Boolean(subResize)]);
 
+    // Stepping through the folder from the picture itself. Which file comes
+    // before or after follows the order on screen, same as autoplay — the raw
+    // folder order would walk into videos the grid is filtering out.
+    const [hoverZone, setHoverZone] = useState('middle');
+    const goTo = useCallback((target) => {
+        if (!target) return;
+        const at = filesRef.current.indexOf(target);
+        if (at >= 0) onSelectVideoRef.current?.(at);
+    }, []);
+
+    const onPlayerMove = useCallback((e) => {
+        const area = wrapperRef.current;
+        if (!area) return;
+        const r = area.getBoundingClientRect();
+        setHoverZone(zoneAt(e.clientX - r.left, r.width));
+    }, []);
+
+    // Double-click a side to step without aiming for the chevron. Plyr owns
+    // double-click on its own container, so this has to say it was handled.
+    const onPlayerDoubleClick = useCallback((e) => {
+        const area = wrapperRef.current;
+        if (!area) return;
+        const r = area.getBoundingClientRect();
+        const zone = zoneAt(e.clientX - r.left, r.width);
+        if (zone === 'middle') return;   // leave the middle to the player
+        e.preventDefault();
+        e.stopPropagation();
+        goTo(zone === 'left'
+            ? prevInOrder(filesRef.current, videoPathRef.current)
+            : nextInOrder(filesRef.current, videoPathRef.current));
+    }, [goTo]);
+
     // The editing chrome is on while the pointer is over the subtitle, and
     // stays on through a drag that has wandered off it.
     const subUiOn = subHover || Boolean(subDrag) || Boolean(subResize);
@@ -1292,6 +1328,9 @@ export const VideoViewer = ({
             {/* Player area */}
             <div
                 onContextMenu={openMenu}
+                onPointerMove={onPlayerMove}
+                onPointerLeave={() => setHoverZone('middle')}
+                onDoubleClickCapture={onPlayerDoubleClick}
                 style={{ flex: 1, minWidth: 0, position: 'relative', overflow: 'hidden' }}
             >
                 {/* Ambient glow behind the video */}
@@ -1306,6 +1345,37 @@ export const VideoViewer = ({
                     }}
                 />
                 <div ref={wrapperRef} style={{ position: 'absolute', inset: 0, zIndex: 1 }} />
+
+                {/* Step through the folder from the picture. Shown only while
+                    the pointer is on that side, and only when there is
+                    somewhere to go — a chevron that does nothing is worse
+                    than no chevron. */}
+                {[
+                    { zone: 'left', target: prevInOrder(files, videoPath), Icon: ChevronLeft, side: { left: 18 } },
+                    { zone: 'right', target: nextInOrder(files, videoPath), Icon: ChevronRight, side: { right: 18 } }
+                ].map(({ zone, target, Icon, side }) => target && (
+                    <button
+                        key={zone}
+                        title={target.split(/[\\/]/).pop().replace(/\.[^.]+$/, '')}
+                        onClick={(e) => { e.stopPropagation(); goTo(target); }}
+                        style={{
+                            position: 'absolute', ...side, top: '50%', marginTop: -26,
+                            width: 52, height: 52, borderRadius: '50%', zIndex: 5,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            border: 'none', cursor: 'pointer', color: '#fff',
+                            background: 'rgba(0,0,0,0.45)',
+                            backdropFilter: 'blur(3px)',
+                            opacity: hoverZone === zone ? 1 : 0,
+                            // Out of the way of the pointer entirely when not
+                            // shown, so it can never swallow a click meant for
+                            // the video.
+                            pointerEvents: hoverZone === zone ? 'auto' : 'none',
+                            transition: 'opacity 0.15s'
+                        }}
+                    >
+                        <Icon size={26} />
+                    </button>
+                ))}
 
                 {/* CC subtitle overlay — original on top, translation below */}
                 {/* A cue that was nothing but a speaker marker is empty once
