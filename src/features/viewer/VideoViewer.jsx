@@ -15,7 +15,9 @@ import {
     shouldOfferNext, nextInOrder, prevInOrder, deadlineFrom, secondsLeft
 } from '../../utils/playNext';
 import { zoneAt, pictureBox } from '../../utils/videoZones';
-import { chapterAt, chapterBands } from '../../utils/chapters';
+import {
+    chapterAt, chapterBands, chapterCountdown, overlayScale
+} from '../../utils/chapters';
 import Hls from 'hls.js';
 import { isHlsUrl, isRemoteSource } from '../../utils/remoteSource';
 import {
@@ -1200,6 +1202,26 @@ export const VideoViewer = ({
         });
     }, [chapterNow, chaptersOpen]);
 
+    // The countdown ticks every second, so it gets its own clock rather than
+    // riding on timeupdate — which fires four times a second and would
+    // re-render the badge for nothing three of those times.
+    const [chapterTick, setChapterTick] = useState(0);
+    useEffect(() => {
+        if (!chapterNow) return undefined;
+        const id = setInterval(() => setChapterTick(n => n + 1), 500);
+        return () => clearInterval(id);
+    }, [chapterNow]);
+
+    // The badge announces itself on a change, then gets out of the way unless
+    // the pointer is on the picture — the same way the controls behave.
+    const [badgeOn, setBadgeOn] = useState(false);
+    useEffect(() => {
+        if (!chapterNow) { setBadgeOn(false); return undefined; }
+        setBadgeOn(true);
+        const id = setTimeout(() => setBadgeOn(false), 3000);
+        return () => clearTimeout(id);
+    }, [chapterNow]);
+
     const jumpToChapter = useCallback((c) => {
         const video = videoElRef.current;
         if (!video || !c) return;
@@ -1909,6 +1931,80 @@ export const VideoViewer = ({
                     </div>,
                     controlsSlot
                 )}
+
+                {/* Top corners: which chapter this is, and how long is left of
+                    it. Both hang off the picture, not the player area, and
+                    both scale with it — a badge sized for one window is a
+                    smudge or a billboard in another. */}
+                {chapterNow && pictureSize && (() => {
+                    const s = overlayScale(pictureSize.height);
+                    const count = chapterCountdown({
+                        chapters, chapter: chapterNow,
+                        now: videoElRef.current?.currentTime ?? 0,
+                        duration
+                    });
+                    const index = chapters.indexOf(chapterNow) + 1;
+                    const colour = chapterNow.color || '#e0b34a';
+                    const countColour = count?.level === 'last' ? '#ef4444'
+                        : count?.level === 'soon' ? '#f59e0b' : '#fff';
+                    return (
+                        <>
+                            <div style={{
+                                position: 'absolute', zIndex: 5, pointerEvents: 'none',
+                                left: Math.round(pictureSize.left + 14 * s),
+                                top: Math.round(pictureSize.top + 12 * s),
+                                display: 'flex', alignItems: 'center', gap: 9 * s,
+                                padding: `${7 * s}px ${14 * s}px ${7 * s}px ${9 * s}px`,
+                                borderRadius: 10 * s,
+                                background: 'rgba(0,0,0,0.62)',
+                                backdropFilter: 'blur(4px)',
+                                color: '#fff', fontSize: 18 * s,
+                                opacity: badgeOn || subHover ? 1 : 0,
+                                transform: badgeOn || subHover ? 'none' : 'translateY(-4px)',
+                                transition: 'opacity 0.3s, transform 0.3s'
+                            }}>
+                                <span style={{
+                                    background: colour, color: '#111',
+                                    fontSize: 14 * s, fontWeight: 700,
+                                    padding: `${2 * s}px ${8 * s}px`, borderRadius: 6 * s
+                                }}>
+                                    {t('chapterNo').replace('{n}', index)}
+                                </span>
+                                <span style={{ fontWeight: 700 }}>{chapterNow.label}</span>
+                                <span style={{ color: '#bbb', fontSize: 14 * s, fontVariantNumeric: 'tabular-nums' }}>
+                                    {fmtTime(chapterNow.t)} – {fmtTime(count.end)}
+                                </span>
+                            </div>
+
+                            <div style={{
+                                position: 'absolute', zIndex: 5, pointerEvents: 'none',
+                                right: Math.round(areaWidth - (pictureSize.left + pictureSize.width) + 16 * s),
+                                top: Math.round(pictureSize.top + 12 * s),
+                                padding: `${6 * s}px ${16 * s}px ${4 * s}px`,
+                                borderRadius: 12 * s,
+                                background: 'rgba(0,0,0,0.6)',
+                                textAlign: 'center',
+                                color: countColour,
+                                transition: 'color 0.2s',
+                                animation: count.level === 'last' ? 'revid-chapter-pulse 1s infinite' : 'none'
+                            }}>
+                                <small style={{
+                                    display: 'block', fontSize: 14 * s, fontWeight: 600,
+                                    color: '#ccc', marginBottom: 2 * s
+                                }}>
+                                    {t('chapterLeft').replace('{name}', chapterNow.label)}
+                                </small>
+                                <span style={{
+                                    display: 'block', fontSize: 46 * s, fontWeight: 800,
+                                    lineHeight: 1.05, fontVariantNumeric: 'tabular-nums',
+                                    letterSpacing: '0.5px'
+                                }}>
+                                    {count.useClock ? fmtTime(count.left) : count.left}
+                                </span>
+                            </div>
+                        </>
+                    );
+                })()}
 
                 {/* A strip of chapters above the controls rather than a list
                     in a corner: every label is readable at once, which is the

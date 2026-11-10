@@ -124,3 +124,9 @@ button {
     background: rgba(255, 255, 255, 0.16);
     opacity: 1;
 }
+
+/* The chapter countdown in its last seconds. Separate from revid-pulse so
+   tuning one does not quietly change the other. */
+@keyframes revid-chapter-pulse {
+  50% { transform: scale(1.08); }
+}
