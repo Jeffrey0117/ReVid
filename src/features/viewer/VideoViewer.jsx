@@ -1188,9 +1188,16 @@ export const VideoViewer = ({
         const strip = chapterStripRef.current;
         if (!strip || !chapterNow) return;
         const chip = strip.querySelector('[data-on="1"]');
-        if (chip?.scrollIntoView) {
-            chip.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-        }
+        if (!chip) return;
+        // Set this strip's own scrollLeft rather than calling scrollIntoView.
+        // That walks every scrollable ancestor, so reaching the last chip
+        // scrolled the whole app sideways and shoved the video off-screen.
+        const centred = chip.offsetLeft - (strip.clientWidth - chip.clientWidth) / 2;
+        const furthest = strip.scrollWidth - strip.clientWidth;
+        strip.scrollTo({
+            left: Math.max(0, Math.min(furthest, centred)),
+            behavior: 'smooth'
+        });
     }, [chapterNow, chaptersOpen]);
 
     const jumpToChapter = useCallback((c) => {
