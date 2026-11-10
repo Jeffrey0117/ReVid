@@ -40,6 +40,7 @@ let remotionRunner = null;
 const reelRunner = () => (remotionRunner ||= createRemotionRunner());
 const library = require('./library-file.cjs');
 const { looksLikeSeason } = require('./season-folder.cjs');
+const grabServer = require('./grab-server.cjs');
 const srt = require('./srt.cjs');
 const librarySearch = require('./library-search.cjs');
 const wikiEpisodes = require('./wiki-episodes.cjs');
@@ -1356,6 +1357,23 @@ function setupIpcHandlers() {
     lanServer.resume().then((r) => {
         if (r?.resumed) console.log(`[lan] resumed share: ${r.url}`);
     }).catch(() => { /* nothing was saved */ });
+
+    // --- A URL sent over from the browser extension ---
+    //
+    // The renderer does the downloading, which means this reuses the same
+    // save dialog and the same ffmpeg path as pasting a link by hand — one
+    // code path, already tested, and the user still sees where the file goes.
+    grabServer.setStatePath(app.getPath('userData'));
+    grabServer.start((url) => {
+        if (!mainWindow) return;
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.webContents.send('grab-url', { url });
+    }).then((r) => {
+        if (r.success) console.log(`[grab] listening on 127.0.0.1:${r.port}`);
+        else console.log(`[grab] not listening: ${r.error}`);
+    });
+    ipcMain.handle('grab-status', () => grabServer.status());
+    ipcMain.handle('grab-rotate', () => ({ token: grabServer.rotateToken() }));
 
     // --- Offline dictionary (ECDICT) ---
 

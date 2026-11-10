@@ -532,6 +532,19 @@ export default function App() {
         });
     }, [openVideoFile]);
 
+    // A link sent over from the browser extension. The save dialog is the
+    // confirmation: a click in a browser should not put a file on disk
+    // without the user seeing where it goes, and reusing downloadVideo means
+    // this is the same already-tested path as pasting a link by hand.
+    useEffect(() => {
+        const api = getElectronAPI();
+        if (!api?.onGrabUrl) return undefined;
+        return api.onGrabUrl(({ url }) => {
+            if (!url) return;
+            api.downloadVideo?.(url, downloadNameFor(url));
+        });
+    }, []);
+
     // Signal the main process that file-open listeners are wired, so a video the
     // app was launched with ("Open with ReVid") opens immediately instead of
     // after a fixed delay.

@@ -609,6 +609,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.on('open-video-file', (_event, payload) => callback(payload));
     },
 
+    // --- A URL sent over from the browser extension ---
+    onGrabUrl: (callback) => {
+        const fn = (_event, payload) => callback(payload);
+        ipcRenderer.on('grab-url', fn);
+        return () => ipcRenderer.removeListener('grab-url', fn);
+    },
+    grabStatus: () => ipcRenderer.invoke('grab-status'),
+    grabRotate: () => ipcRenderer.invoke('grab-rotate'),
+
     // Tell the main process the renderer has mounted and registered its file-open
     // listeners, so a launch file can be delivered immediately.
     notifyReady: () => ipcRenderer.send('renderer-ready'),
