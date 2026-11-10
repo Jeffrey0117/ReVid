@@ -21,6 +21,12 @@ const VIDEO_MIME = {
 };
 const VIDEO_EXTS = Object.keys(VIDEO_MIME);
 
+const PREFERRED_PORT = 31848;
+// Ports this app binds elsewhere. The grab endpoint deliberately listens on
+// the loopback only; this server deliberately listens on every interface, so
+// the two must never meet.
+const RESERVED_PORTS = new Set([31849]);
+
 let server = null;
 let token = null;
 let servedRoot = null;   // only files under here are reachable
@@ -255,7 +261,7 @@ function handle(req, res) {
     res.writeHead(404); res.end();
 }
 
-function start({ folder, port = 31848 }) {
+function start({ folder, port = PREFERRED_PORT }) {
     if (server) stop();
     if (!folder || !fs.existsSync(folder)) {
         return { success: false, error: 'No folder is open' };
@@ -274,6 +280,14 @@ function start({ folder, port = 31848 }) {
         // share whose socket has not finished closing. Walk forward instead
         // of failing, the way the renderer server does.
         const tryListen = (p, attemptsLeft) => {
+            // Walk over ports this app already means to use. Landing on the
+            // grab endpoint's port put a network-facing server on an address
+            // meant to stay on the loopback, and the wildcard bind quietly
+            // won every request from outside.
+            if (RESERVED_PORTS.has(p) && attemptsLeft > 0) {
+                tryListen(p + 1, attemptsLeft - 1);
+                return;
+            }
             const onError = (err) => {
                 if (err.code === 'EADDRINUSE' && attemptsLeft > 0) {
                     server.removeListener('error', onError);
@@ -292,7 +306,12 @@ function start({ folder, port = 31848 }) {
                 boundPort = server.address().port;
                 // Remembered so the share comes back after a restart rather
                 // than silently being off when the phone asks for it.
-                writeState({ folder, port: boundPort, wasRunning: true });
+                //
+                // The *preferred* port is saved, not the one it settled on. A
+                // port taken for a moment — the previous run's socket still
+                // closing — otherwise became the permanent address, and the
+                // bookmarked link pointed at nothing from then on.
+                writeState({ folder, port: PREFERRED_PORT, wasRunning: true });
                 resolve({
                     success: true,
                     url: `http://${lanAddress()}:${boundPort}/?k=${token}`,
@@ -322,7 +341,7 @@ async function resume() {
     const saved = readState();
     if (!saved.wasRunning || !saved.folder) return { success: false, resumed: false };
     if (!fs.existsSync(saved.folder)) return { success: false, resumed: false };
-    const r = await start({ folder: saved.folder, port: saved.port || 31848 });
+    const r = await start({ folder: saved.folder, port: saved.port || PREFERRED_PORT });
     return { ...r, resumed: r.success };
 }
 
