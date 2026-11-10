@@ -1,3 +1,24 @@
+const fs = require('fs');
+const path = require('path');
+
+// subtitle-overlay-kit, inlined into the page.
+//
+// This page used to carry its own copy of the chunking logic, and that copy
+// drifted: the phone split long cues into readable pieces while the desktop
+// player rendered them whole, for weeks, because nobody remembered there were
+// two. Now there is one source and the page gets it verbatim — the phone has
+// no module loader and this page is deliberately a single self-contained
+// document, so the text is injected rather than served as a second file.
+const KIT_SOURCE = (() => {
+    const file = path.join(__dirname, 'vendor', 'subtitle-overlay-kit.cjs');
+    const src = fs.readFileSync(file, 'utf8');
+    const cut = src.indexOf('module.exports = {');
+    if (cut < 0) throw new Error('vendored kit has no export block — did it change shape?');
+    // The epilogue is CommonJS; everything above it is plain declarations a
+    // browser can run as-is.
+    return src.slice(0, cut).replace(/^'use strict';\s*$/m, '');
+})();
+
 // The page phones get. Self-contained on purpose: no build step, no assets
 // to serve, and nothing to keep in sync with the desktop renderer.
 exports.render = (token) => `<!doctype html>
@@ -279,78 +300,18 @@ function placeCc() {
   cc.style.top = Math.round(highest + t * Math.max(0, lowest - highest)) + 'px';
 }
 
-// The size slider is a wish, not an instruction: turning it up used to make
-// the block taller until it covered the picture. This finds the largest
-// size up to what was asked for whose text actually fits the allowance.
-// Subtitles are read in glances, so never more than two lines each.
-//
-// Whisper emits one cue per utterance, and an utterance runs to ninety
-// characters — as a single subtitle that is four lines of English stacked
-// on four of Chinese, covering the picture. Shrinking the type does not
-// fix it: the cue has to be shown in pieces, each for its share of the
-// cue's time, which is what every real subtitle renderer does.
-const MAX_LINES = 2;
-const BREAK_AFTER = /[.!?。！？]/;
-const SOFT_AFTER = /[,;:，；：、]/;
+// ---- subtitle-overlay-kit (inlined verbatim; edit upstream, not here) ----
+${KIT_SOURCE}
+// ---- end subtitle-overlay-kit ----
 
-function perLineChars(widthPx, fontSize, cjk) {
-  return Math.max(6, Math.floor(widthPx / (fontSize * (cjk ? 1.0 : 0.56))));
-}
 
-function chunkText(text, maxChars) {
-  // Double backslash: this file is one big template literal, so a single
-  // one is eaten before the page is written and /\s+/ ships as /s+/ — a
-  // pattern that deletes every letter s. "best life sentence" arrived on
-  // the phone as "be t life entence".
-  const clean = (text || '').replace(/\\s+/g, ' ').trim();
-  if (!clean) return [];
-  if (clean.length <= maxChars) return [clean];
-
-  const chunks = [];
-  let rest = clean;
-  while (rest.length > maxChars) {
-    // Exactly maxChars: a break at the last index gives a cut of maxChars,
-    // never one past it, which would be an extra line.
-    const win = rest.slice(0, maxChars);
-    const floor = Math.floor(maxChars * 0.4);
-    let cut = -1;
-    for (let i = win.length - 1; i >= floor; i--) {
-      if (BREAK_AFTER.test(win[i])) { cut = i + 1; break; }
-    }
-    if (cut < 0) {
-      for (let i = win.length - 1; i >= floor; i--) {
-        if (SOFT_AFTER.test(win[i])) { cut = i + 1; break; }
-      }
-    }
-    if (cut < 0) {
-      const gap = win.lastIndexOf(' ');
-      if (gap >= floor) cut = gap;
-    }
-    if (cut < 0) cut = maxChars;
-    chunks.push(rest.slice(0, cut).trim());
-    rest = rest.slice(cut).trim();
-  }
-  if (rest) chunks.push(rest);
-  return chunks.filter(Boolean);
-}
-
-// Both languages are the same sentence, so they advance together; the one
-// with more pieces sets the pace rather than one of them going blank.
-function visibleCue(en, zh, progress, size) {
+// The kit does the splitting; this only tells it how wide the box is.
+function cuePiece(en, zh, progress, size) {
   // Must match the CSS: 94% of the viewport, less the box's own padding.
   // Overstating it by even a little makes every piece wrap one line deeper
   // than the chunker intended.
   const width = Math.max(120, Math.min(window.innerWidth * 0.94, 900) - 20);
-  const enChunks = chunkText(en, perLineChars(width, size, false) * MAX_LINES);
-  const zhChunks = chunkText(zh, perLineChars(width, Math.round(size * 0.8), true) * MAX_LINES);
-  // Whichever needs more pieces sets the pace; the other is stretched across
-  // those beats, repeating a line rather than having its tail never reached.
-  // Re-splitting it to match looked tidier and silently dropped the end of
-  // the sentence.
-  const steps = Math.max(enChunks.length, zhChunks.length, 1);
-  const step = Math.floor(Math.max(0, Math.min(0.999, progress)) * steps);
-  const pick = (l) => (l.length ? l[Math.min(l.length - 1, Math.floor(step * l.length / steps))] : '');
-  return { en: pick(enChunks), zh: pick(zhChunks) };
+  return visibleCue({ en: en, zh: zh, progress: progress, widthPx: width, fontSize: size });
 }
 
 function applyPrefs() {
@@ -442,7 +403,7 @@ function render() {
   const progress = (video.currentTime - (cue?.start ?? 0)) / span;
 
   const size = prefs.size;
-  const piece = visibleCue(wantEn ? en : '', wantZh ? zh : '', progress, size);
+  const piece = cuePiece(wantEn ? en : '', wantZh ? zh : '', progress, size);
 
   // Redrawing identical text four times a second would flicker.
   const key = size + '|' + piece.en + '|' + piece.zh;
