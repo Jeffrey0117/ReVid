@@ -12,12 +12,12 @@
 // src/ does not. The names below are ReVid's — the kit's DEFAULT_MAX_LINES is
 // re-exported as MAX_LINES so nothing in the app had to be renamed to adopt it.
 
-import kit from '../../electron/vendor/subtitle-overlay-kit.cjs';
-
-export const charsPerLine = kit.charsPerLine;
-export const chunkText = kit.chunkText;
-export const chunkAt = kit.chunkAt;
-export const marksForChunk = kit.marksForChunk;
-export const visibleCue = kit.visibleCue;
-export const cueProgress = kit.cueProgress;
-export const MAX_LINES = kit.DEFAULT_MAX_LINES;
+export {
+    charsPerLine,
+    chunkText,
+    chunkAt,
+    marksForChunk,
+    visibleCue,
+    cueProgress,
+    DEFAULT_MAX_LINES as MAX_LINES
+} from '../../electron/vendor/subtitle-overlay-kit.js';

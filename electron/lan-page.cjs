@@ -10,12 +10,12 @@ const path = require('path');
 // no module loader and this page is deliberately a single self-contained
 // document, so the text is injected rather than served as a second file.
 const KIT_SOURCE = (() => {
-    const file = path.join(__dirname, 'vendor', 'subtitle-overlay-kit.cjs');
+    const file = path.join(__dirname, 'vendor', 'subtitle-overlay-kit.js');
     const src = fs.readFileSync(file, 'utf8');
-    const cut = src.indexOf('module.exports = {');
+    const cut = src.indexOf('export {');
     if (cut < 0) throw new Error('vendored kit has no export block — did it change shape?');
-    // The epilogue is CommonJS; everything above it is plain declarations a
-    // browser can run as-is.
+    // Everything above the epilogue is plain declarations a browser runs
+    // as-is; the `export` block is the only part a <script> cannot have.
     return src.slice(0, cut).replace(/^'use strict';\s*$/m, '');
 })();
 

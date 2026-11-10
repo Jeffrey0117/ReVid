@@ -3,12 +3,16 @@
 //   upstream: https://github.com/Jeffrey0117/subtitle-overlay-kit
 //   commit:   1cf60d14ddf52d9cfa76871c686e4aa0b912a30b
 //
-// Byte-identical to the kit below this header. Fix bugs upstream and
-// re-vendor: a fix made here is a fix the userscript and the extension
-// never get, which is the whole thing the kit exists to prevent.
-// Lives under electron/ because that is what ships — src/ is not packaged.
+// The body below is byte-identical to the kit's index.js; only the module
+// epilogue differs. The kit ships CommonJS for the sake of userscripts and
+// node, and Vite's dev server does not give a .cjs file a default export the
+// way its production build does — importing it worked when built and left the
+// renderer a black screen when run. So the vendored copy is ESM.
+//
+// lan-page.cjs reads this file as text and strips the epilogue, so nothing
+// actually requires it at runtime. It lives under electron/ because that is
+// what gets packaged; src/ does not.
 
-'use strict';
 
 /*
  * subtitle-overlay-kit — 字幕「怎麼顯示在影片上」的純邏輯（vanilla JS，零依賴）
@@ -243,28 +247,11 @@ function maxOffsetFor(o) {
   return Math.max(120, Math.round(o.areaHeight - guess));
 }
 
-module.exports = {
-  // 顯示什麼
-  charsPerLine: charsPerLine,
-  chunkText: chunkText,
-  chunkAt: chunkAt,
-  marksForChunk: marksForChunk,
-  visibleCue: visibleCue,
-  cueProgress: cueProgress,
-  DEFAULT_MAX_LINES: DEFAULT_MAX_LINES,
-  // 放在哪
-  clampTop: clampTop,
-  anchorToTop: anchorToTop,
-  dropAnchor: dropAnchor,
-  fitInside: fitInside,
-  // 多大
-  widthPctFrom: widthPctFrom,
-  scaleFrom: scaleFrom,
-  maxOffsetFor: maxOffsetFor,
-  // 常數
-  DRAG_THRESHOLD: DRAG_THRESHOLD,
-  MIN_WIDTH_PCT: MIN_WIDTH_PCT,
-  MAX_WIDTH_PCT: MAX_WIDTH_PCT,
-  MIN_FONT: MIN_FONT,
-  MAX_FONT: MAX_FONT
+
+export {
+    charsPerLine, chunkText, chunkAt, marksForChunk, visibleCue, cueProgress,
+    clampTop, anchorToTop, dropAnchor, fitInside,
+    widthPctFrom, scaleFrom, maxOffsetFor,
+    DEFAULT_MAX_LINES, DRAG_THRESHOLD,
+    MIN_WIDTH_PCT, MAX_WIDTH_PCT, MIN_FONT, MAX_FONT
 };
