@@ -15,6 +15,7 @@ import {
     shouldOfferNext, nextInOrder, prevInOrder, deadlineFrom, secondsLeft
 } from '../../utils/playNext';
 import { zoneAt } from '../../utils/videoZones';
+import { chapterAt, chapterBands } from '../../utils/chapters';
 import Hls from 'hls.js';
 import { isHlsUrl, isRemoteSource } from '../../utils/remoteSource';
 import {
@@ -397,6 +398,16 @@ export const VideoViewer = ({
     const flashTimerRef = useRef(0);
     const hlsRef = useRef(null);
     const [remoteError, setRemoteError] = useState(null);
+
+    // Chapter markers, when the video has any. A handful of named ranges with
+    // gaps between them — not a second subtitle track.
+    const [chapters, setChapters] = useState([]);
+    const [chapterNow, setChapterNow] = useState(null);
+    const [chaptersOpen, setChaptersOpen] = useState(false);
+    const chaptersRef = useRef([]);
+    chaptersRef.current = chapters;
+    // Only needed to place the bands; a stream reports 0 until it knows.
+    const [duration, setDuration] = useState(0);
     // A URL has no file behind it, so everything that reads or writes one —
     // subtitles, transcription, cutting, the episode list — is off rather
     // than reachable and broken.
@@ -1102,6 +1113,50 @@ export const VideoViewer = ({
         };
     }, [Boolean(subResize)]);
 
+    useEffect(() => {
+        const api = getElectronAPI();
+        if (!api?.readChapters || !videoPath) { setChapters([]); setChapterNow(null); return undefined; }
+        let dropped = false;
+        api.readChapters(videoPath).then((r) => {
+            if (!dropped) { setChapters(r?.chapters || []); setChapterNow(null); }
+        });
+        return () => { dropped = true; };
+    }, [videoPath]);
+
+    useEffect(() => {
+        const video = videoElRef.current;
+        if (!video) return undefined;
+        const onDur = () => setDuration(Number.isFinite(video.duration) ? video.duration : 0);
+        onDur();
+        video.addEventListener('loadedmetadata', onDur);
+        video.addEventListener('durationchange', onDur);
+        return () => {
+            video.removeEventListener('loadedmetadata', onDur);
+            video.removeEventListener('durationchange', onDur);
+        };
+    }, []);
+
+    // Follow the playhead. Only re-renders when the chapter actually changes,
+    // which is a few times a video rather than four times a second.
+    useEffect(() => {
+        const video = videoElRef.current;
+        if (!video || !chapters.length) return undefined;
+        const onTime = () => {
+            const at = chapterAt(chaptersRef.current, video.currentTime);
+            setChapterNow(prev => (prev?.t === at?.t ? prev : at));
+        };
+        onTime();
+        video.addEventListener('timeupdate', onTime);
+        return () => video.removeEventListener('timeupdate', onTime);
+    }, [chapters]);
+
+    const jumpToChapter = useCallback((c) => {
+        const video = videoElRef.current;
+        if (!video || !c) return;
+        video.currentTime = c.t;
+        video.play().catch(() => {});
+    }, []);
+
     // Stepping through the folder from the picture itself. Which file comes
     // before or after follows the order on screen, same as autoplay — the raw
     // folder order would walk into videos the grid is filtering out.
@@ -1670,6 +1725,21 @@ export const VideoViewer = ({
                         )}
                         {/* Only alongside the episode list: there is nothing to
                             play on to in a folder of one. */}
+                        {chapters.length > 0 && (
+                            <button
+                                title={t('chapters')}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEpisodesOpen(false);
+                                    setStyleOpen(false);
+                                    setChaptersOpen(o => !o);
+                                }}
+                                style={barBtn(chaptersOpen)}
+                            >
+                                <BookMarked size={15} />
+                                {chapterNow ? chapterNow.label : `${chapters.length}`}
+                            </button>
+                        )}
                         {!remote && files.length > 1 && (
                             <button
                                 title={t(autoNext ? 'autoNextOn' : 'autoNextOff')}
@@ -1756,6 +1826,80 @@ export const VideoViewer = ({
                                 {t('cancel')}
                             </button>
                         </div>
+                    </div>
+                )}
+
+                {/* Coloured bands over Plyr's own progress bar, so the shape
+                    of the video is visible without opening anything. Painted
+                    into the bar's container and kept out of pointer events —
+                    scrubbing must still reach the slider underneath. */}
+                {chapters.length > 0 && duration > 0 && controlsSlot && createPortal(
+                    <div style={{
+                        position: 'absolute', left: 0, right: 0, bottom: '100%',
+                        height: 4, marginBottom: 2, pointerEvents: 'none'
+                    }}>
+                        {chapterBands(chapters, duration).map((b, i) => (
+                            <div
+                                key={`${b.t}-${i}`}
+                                title={b.label}
+                                style={{
+                                    position: 'absolute', top: 0, height: '100%',
+                                    left: `${b.left}%`, width: `${b.width}%`,
+                                    background: b.color || 'rgba(255,255,255,0.5)',
+                                    borderRadius: 2,
+                                    opacity: chapterNow?.t === b.t ? 1 : 0.55
+                                }}
+                            />
+                        ))}
+                    </div>,
+                    controlsSlot
+                )}
+
+                {/* The chapter list. Same corner as the episode picker, since
+                    it answers the same kind of question. */}
+                {chaptersOpen && chapters.length > 0 && (
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            position: 'absolute', bottom: 64, right: 12, zIndex: 6,
+                            width: 300, maxHeight: '58%', overflowY: 'auto',
+                            background: 'rgba(16,16,20,0.95)', borderRadius: 10,
+                            border: '1px solid rgba(255,255,255,0.14)',
+                            boxShadow: '0 10px 34px rgba(0,0,0,0.5)', padding: 6
+                        }}
+                    >
+                        {chapters.map((c, i) => {
+                            const on = chapterNow?.t === c.t;
+                            return (
+                                <button
+                                    key={`${c.t}-${i}`}
+                                    onClick={() => { jumpToChapter(c); setChaptersOpen(false); }}
+                                    style={{
+                                        width: '100%', display: 'flex', alignItems: 'center', gap: 9,
+                                        padding: '8px 10px', borderRadius: 7, border: 'none',
+                                        background: on ? 'rgba(255,255,255,0.12)' : 'transparent',
+                                        color: '#fff', cursor: 'pointer', textAlign: 'left'
+                                    }}
+                                >
+                                    <span style={{
+                                        flex: '0 0 auto', width: 3, alignSelf: 'stretch',
+                                        borderRadius: 2, background: c.color || 'rgba(255,255,255,0.35)'
+                                    }} />
+                                    <span style={{
+                                        flex: 1, fontSize: 13, fontWeight: on ? 600 : 400,
+                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                                    }}>
+                                        {c.label}
+                                    </span>
+                                    <span style={{
+                                        flex: '0 0 auto', fontSize: 11, opacity: 0.55,
+                                        fontVariantNumeric: 'tabular-nums'
+                                    }}>
+                                        {fmtTime(c.t)}
+                                    </span>
+                                </button>
+                            );
+                        })}
                     </div>
                 )}
 

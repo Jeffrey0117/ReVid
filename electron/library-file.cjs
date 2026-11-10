@@ -9,6 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const { cleanCueText } = require('./cue-text.cjs');
+const { parseChapterJson, parseChapterVtt } = require('./chapters.cjs');
 
 const VERSION = 2;
 const TYPE = 'revid-library';
@@ -79,8 +80,35 @@ function importLegacySidecars(folder, lib) {
     const parseSrt = require('./srt.cjs').parse;
     for (const name of names) {
         if (!/\.(mp4|webm|mov|avi|mkv|m4v)$/i.test(name)) continue;
-        if (lib.videos[name]?.subs) continue;
         const base = path.join(folder, name.replace(/\.[^.]+$/, ''));
+
+        // Chapter sidecars, same idea as the subtitles below: fold them in so
+        // a folder keeps one file instead of three per video. The .json is
+        // preferred because it carries colours and the source page; the .vtt
+        // is the fallback for when only it survived.
+        if (!lib.videos[name]?.chapters) {
+            let found = null;
+            try {
+                found = parseChapterJson(fs.readFileSync(`${base}.chapters.json`, 'utf8'));
+            } catch (e) { /* no json */ }
+            if (!found) {
+                try {
+                    const fromVtt = parseChapterVtt(fs.readFileSync(`${base}.chapters.vtt`, 'utf8'));
+                    if (fromVtt.length) found = { chapters: fromVtt, source: null };
+                } catch (e) { /* no vtt either */ }
+            }
+            if (found) {
+                lib.videos[name] = {
+                    ...(lib.videos[name] || { name }),
+                    name,
+                    chapters: found.chapters.map(packChapter),
+                    ...(found.source ? { source: found.source } : {})
+                };
+                changed = true;
+            }
+        }
+
+        if (lib.videos[name]?.subs) continue;
         let cues = null;
         try { cues = parseSrt(fs.readFileSync(`${base}.srt`, 'utf8')); } catch (e) { continue; }
         if (!cues?.length) continue;
@@ -99,6 +127,38 @@ function importLegacySidecars(folder, lib) {
         changed = true;
     }
     return changed;
+}
+
+// Chapters are stored as tuples for the same reason cues are — this is the
+// same file and the same kind of thing, a labelled time range — but they are
+// a handful per video rather than hundreds, so the saving is not the point;
+// matching the file's own convention is.
+const packChapter = (c) => (c.color ? [c.t, c.end, c.label, c.color] : [c.t, c.end, c.label]);
+const unpackChapter = (a) => ({
+    t: a[0],
+    end: a[1] == null ? null : a[1],
+    label: a[2],
+    ...(a[3] ? { color: a[3] } : {})
+});
+
+function setChapters(videoPath, chapters, meta) {
+    const folder = path.dirname(videoPath);
+    const lib = read(folder);
+    const key = keyFor(videoPath);
+    const entry = { ...(lib.videos[key] || { name: key }) };
+    if (!chapters || !chapters.length) delete entry.chapters;
+    else entry.chapters = chapters.map(packChapter);
+    // Where the file came from. Once it is sitting in a folder under a
+    // cleaned-up name this is the only record left of the page it was on.
+    if (meta?.source) entry.source = meta.source;
+    lib.videos[key] = entry;
+    return write(folder, lib);
+}
+
+function getChapters(videoPath) {
+    const entry = getEntry(videoPath);
+    if (!entry?.chapters?.length) return null;
+    return entry.chapters.map(unpackChapter);
 }
 
 function getEntry(videoPath) {
@@ -305,6 +365,8 @@ module.exports = {
     getShow,
     setFollow,
     getFollow,
+    setChapters,
+    getChapters,
     setCut,
     wasCut,
     markFolderCut,

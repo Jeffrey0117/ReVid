@@ -1134,6 +1134,13 @@ function setupIpcHandlers() {
     // Read whatever this video's subtitles are, wherever they live. The
     // folder library is the store; sidecars are still honoured because a user
     // may have brought their own, and the cache covers unwritable folders.
+    // Chapter markers. They are folded into the library when a folder is
+    // opened, so by the time anything asks there is nothing left to parse.
+    ipcMain.handle('read-chapters', (_event, { videoPath }) => {
+        if (!videoPath) return { success: true, chapters: null };
+        return { success: true, chapters: library.getChapters(videoPath) };
+    });
+
     ipcMain.handle('read-subtitles', (_event, { videoPath }) => {
         if (!videoPath) return { success: true, cues: null };
         const fromLibrary = library.getSubtitles(videoPath);

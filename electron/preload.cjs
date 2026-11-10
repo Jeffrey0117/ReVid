@@ -299,6 +299,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // sidecar the user brought along. Async because the main process owns
     // the library file.
     readSubtitleCues: (videoPath) => ipcRenderer.invoke('read-subtitles', { videoPath }),
+    readChapters: (videoPath) => ipcRenderer.invoke('read-chapters', { videoPath }),
     exportSrt: (videoPath, translated) => ipcRenderer.invoke('export-srt', { videoPath, translated }),
     ensureLibrary: (folder) => ipcRenderer.invoke('ensure-library', { folder }),
 
