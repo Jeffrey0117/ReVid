@@ -13,6 +13,7 @@ const path = require('path');
 const crypto = require('crypto');
 const library = require('./library-file.cjs');
 const srt = require('./srt.cjs');
+const { shareRootFor } = require('./season-folder.cjs');
 
 const VIDEO_MIME = {
     '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.webm': 'video/webm',
@@ -92,17 +93,47 @@ function resolveInsideRoot(relOrAbs) {
     return target;
 }
 
-function listLibrary() {
+// A sub must be one plain folder name. Everything is re-checked by
+// resolveInsideRoot afterwards; this is the cheap first gate.
+function safeSub(sub) {
+    if (!sub) return '';
+    if (sub.includes('/') || sub.includes('\\') || sub === '..' || sub === '.') return null;
+    return sub;
+}
+
+// The seasons, or whatever subfolders hold videos. Only one level down: the
+// share exists to watch a show, not to browse a disk.
+function listFolders() {
     if (!servedRoot) return [];
+    let entries;
+    try { entries = fs.readdirSync(servedRoot, { withFileTypes: true }); } catch (e) { return []; }
+    return entries
+        .filter(d => d.isDirectory())
+        .map(d => d.name)
+        .filter((name) => {
+            try {
+                return fs.readdirSync(path.join(servedRoot, name))
+                    .some(n => VIDEO_EXTS.includes(path.extname(n).toLowerCase()));
+            } catch (e) {
+                return false;
+            }
+        })
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+}
+
+function listLibrary(sub = '') {
+    if (!servedRoot) return [];
+    const dir = sub ? resolveInsideRoot(sub) : servedRoot;
+    if (!dir) return [];
     let names;
-    try { names = fs.readdirSync(servedRoot); } catch (e) { return []; }
+    try { names = fs.readdirSync(dir); } catch (e) { return []; }
     return names
         .filter(n => VIDEO_EXTS.includes(path.extname(n).toLowerCase()))
         .filter(n => !/\.revid-(tmp|bak)(\.[^.]+)?$/i.test(n))
         .filter(n => !/\.revid(\.tmp)?$/i.test(n))
         .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
         .map((name) => {
-            const full = path.join(servedRoot, name);
+            const full = path.join(dir, name);
             const base = name.replace(/\.[^.]+$/, '');
             let size = 0;
             try { size = fs.statSync(full).size; } catch (e) { /* gone */ }
@@ -110,8 +141,8 @@ function listLibrary() {
             return {
                 name,
                 size,
-                hasSubs: Boolean(cues?.length) || fs.existsSync(path.join(servedRoot, `${base}.srt`)),
-                hasZh: Boolean(cues?.some(c => c.zh)) || fs.existsSync(path.join(servedRoot, `${base}.zh.srt`))
+                hasSubs: Boolean(cues?.length) || fs.existsSync(path.join(dir, `${base}.srt`)),
+                hasZh: Boolean(cues?.some(c => c.zh)) || fs.existsSync(path.join(dir, `${base}.zh.srt`))
             };
         });
 }
@@ -179,14 +210,23 @@ function handle(req, res) {
     }
 
     if (url.pathname === '/api/library') {
-        sendJson(res, 200, { files: listLibrary(), folder: path.basename(servedRoot || '') });
+        const sub = safeSub(url.searchParams.get('folder') || '');
+        if (sub === null) { res.writeHead(400); res.end(); return; }
+        sendJson(res, 200, {
+            root: path.basename(servedRoot || ''),
+            folder: sub,
+            folders: listFolders(),
+            files: listLibrary(sub)
+        });
         return;
     }
 
     if (url.pathname === '/api/video' || url.pathname === '/api/subs') {
         const name = url.searchParams.get('name') || '';
         if (name.includes('/') || name.includes('\\')) { res.writeHead(400); res.end(); return; }
-        const target = resolveInsideRoot(name);
+        const sub = safeSub(url.searchParams.get('folder') || '');
+        if (sub === null) { res.writeHead(400); res.end(); return; }
+        const target = resolveInsideRoot(sub ? path.join(sub, name) : name);
         if (!target) { res.writeHead(403); res.end(); return; }
 
         if (url.pathname === '/api/video') { streamVideo(req, res, target); return; }
@@ -220,7 +260,11 @@ function start({ folder, port = 31848 }) {
     if (!folder || !fs.existsSync(folder)) {
         return { success: false, error: 'No folder is open' };
     }
-    servedRoot = folder;
+    // One season open should not mean one season reachable: share the show
+    // folder so the rest are in range. The "nothing outside the root" rule is
+    // untouched — the root is simply one level up, and only when this really
+    // is a season folder.
+    servedRoot = shareRootFor(folder);
     token = stableToken();
 
     return new Promise((resolve) => {

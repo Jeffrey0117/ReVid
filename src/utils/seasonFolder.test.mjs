@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { looksLikeSeason } = require('../../electron/season-folder.cjs');
+const { looksLikeSeason, shareRootFor } = require('../../electron/season-folder.cjs');
 
 test('the shapes this library actually uses', () => {
     for (const name of ['s1', 's5', 's01', 'S8', 's 2']) {
@@ -44,4 +44,36 @@ test('nothing in, false out', () => {
     assert.equal(looksLikeSeason(null), false);
     assert.equal(looksLikeSeason(undefined), false);
     assert.equal(looksLikeSeason(42), false);
+});
+
+// --- what a network share hands out ---
+
+// String.raw throughout: a Windows path written as a normal string turns
+// \U and \A into escapes, and the test then asserts against a mangled path
+// that has nothing to do with what the code sees.
+test('opening one season shares the show, so the others are reachable', () => {
+    assert.equal(
+        shareRootFor(String.raw`C:\Users\AUSER\Videos\荒唐分局\s2`),
+        String.raw`C:\Users\AUSER\Videos\荒唐分局`
+    );
+});
+
+// Widening the root is only safe because it is one known level. An ordinary
+// folder stays exactly as shared as it was.
+test('an ordinary folder shares only itself', () => {
+    for (const p of [String.raw`C:\Users\AUSER\Videos`, String.raw`C:\Users\AUSER\Downloads`]) {
+        assert.equal(shareRootFor(p), p);
+    }
+});
+
+// A folder called "s1" at the top of a disk must not share the disk.
+test('it never climbs into a drive root', () => {
+    assert.equal(shareRootFor(String.raw`C:\s1`), String.raw`C:\s1`);
+    assert.equal(shareRootFor('/s1'), '/s1');
+});
+
+test('nothing in, nothing thrown', () => {
+    assert.equal(shareRootFor(''), '');
+    assert.equal(shareRootFor(null), null);
+    assert.equal(shareRootFor(undefined), undefined);
 });

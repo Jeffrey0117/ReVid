@@ -131,10 +131,26 @@ exports.render = (token) => `<!doctype html>
     background: rgba(255,255,255,0.1); color: #fff; font-size: 13px;
   }
   #empty { padding: 40px 16px; text-align: center; color: rgba(255,255,255,0.4); }
+  /* Scrolls sideways rather than wrapping: eight seasons on a phone would
+     otherwise push the episode list off the first screen. */
+  #seasons {
+    display: flex; gap: 6px; padding: 8px 12px;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  #seasons::-webkit-scrollbar { display: none; }
+  #seasons button {
+    flex: 0 0 auto; min-height: 34px; padding: 0 14px;
+    border: 0; border-radius: 17px; font-size: 13px;
+    background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.75);
+  }
+  #seasons button.on { background: #3b82f6; color: #fff; }
 </style>
 </head>
 <body>
 <header><b>ReVid</b><span id="folder"></span></header>
+<nav id="seasons" hidden></nav>
 <ul id="list"></ul>
 <div id="empty" hidden>這個資料夾裡沒有影片。</div>
 
@@ -183,6 +199,10 @@ exports.render = (token) => `<!doctype html>
 const K = ${JSON.stringify(token)};
 const q = (p, extra = {}) => p + '?k=' + encodeURIComponent(K) +
   Object.entries(extra).map(([a, b]) => '&' + a + '=' + encodeURIComponent(b)).join('');
+
+// Which season is on screen. Every file request carries it, because the
+// same episode number exists in every season.
+let currentFolder = '';
 
 const $ = (id) => document.getElementById(id);
 const list = $('list'), player = $('player'), video = $('v'), cc = $('cc'), sheet = $('sheet');
@@ -396,10 +416,10 @@ let cues = [], zhCues = [], shown = -1;
 async function loadSubs(name, hasSubs, hasZh) {
   cues = []; zhCues = []; shown = -1; cc.innerHTML = '';
   if (hasSubs) {
-    try { cues = parseSrt(await (await fetch(q('/api/subs', { name }))).text()); } catch (e) {}
+    try { cues = parseSrt(await (await fetch(q('/api/subs', { name, folder: currentFolder }))).text()); } catch (e) {}
   }
   if (hasZh) {
-    try { zhCues = parseSrt(await (await fetch(q('/api/subs', { name, lang: 'zh' }))).text()); } catch (e) {}
+    try { zhCues = parseSrt(await (await fetch(q('/api/subs', { name, folder: currentFolder, lang: 'zh' }))).text()); } catch (e) {}
   }
 }
 
@@ -466,7 +486,7 @@ video.addEventListener('timeupdate', () => {
 // --- library -------------------------------------------------------------
 function open(file) {
   loadSubs(file.name, file.hasSubs, file.hasZh);
-  video.src = q('/api/video', { name: file.name });
+  video.src = q('/api/video', { name: file.name, folder: currentFolder });
   player.classList.add('on');
   video.play().catch(() => {});
   history.pushState({ playing: true }, '');
@@ -484,26 +504,59 @@ function close() {
 $('back').onclick = () => history.back();
 window.addEventListener('popstate', close);
 
-fetch(q('/api/library')).then(r => r.json()).then(({ files, folder }) => {
-  $('folder').textContent = folder || '';
-  if (!files.length) { $('empty').hidden = false; return; }
-  files.forEach((f, i) => {
-    const li = document.createElement('li');
-    li.innerHTML = '<div class="idx"></div><div class="meta"><div class="name"></div><div class="sub"></div></div>';
-    li.querySelector('.idx').textContent = i + 1;
-    li.querySelector('.name').textContent = f.name;
-    const sub = li.querySelector('.sub');
-    sub.textContent = fmtSize(f.size);
-    if (f.hasSubs) {
-      const s = document.createElement('span');
-      s.className = 'tag';
-      s.textContent = f.hasZh ? '中/EN' : 'EN';
-      sub.appendChild(s);
-    }
-    li.onclick = () => open(f);
-    list.appendChild(li);
+// Seasons sit beside each other under the shared root, so switching is a
+// reload of the list rather than anything on the serving side.
+function renderSeasons(folders, current) {
+  const nav = $('seasons');
+  nav.innerHTML = '';
+  if (folders.length < 2) { nav.hidden = true; return; }
+  nav.hidden = false;
+  folders.forEach((name) => {
+    const b = document.createElement('button');
+    b.textContent = name;
+    if (name === current) b.className = 'on';
+    b.onclick = () => { if (name !== currentFolder) loadLibrary(name); };
+    nav.appendChild(b);
   });
-}).catch(() => { $('empty').hidden = false; });
+}
+
+function loadLibrary(folder) {
+  list.innerHTML = '';
+  $('empty').hidden = true;
+  return fetch(q('/api/library', folder ? { folder } : {}))
+    .then(r => r.json())
+    .then(({ files, folders, folder: at, root }) => {
+      currentFolder = at || '';
+      $('folder').textContent = currentFolder || root || '';
+      renderSeasons(folders || [], currentFolder);
+      // Landing on the show folder itself, which holds no videos of its own:
+      // show the first season rather than an empty list and no explanation.
+      if (!files.length && !currentFolder && (folders || []).length) {
+        return loadLibrary(folders[0]);
+      }
+      if (!files.length) { $('empty').hidden = false; return undefined; }
+      files.forEach((f, i) => {
+        const li = document.createElement('li');
+        li.innerHTML = '<div class="idx"></div><div class="meta"><div class="name"></div><div class="sub"></div></div>';
+        li.querySelector('.idx').textContent = i + 1;
+        li.querySelector('.name').textContent = f.name;
+        const sub = li.querySelector('.sub');
+        sub.textContent = fmtSize(f.size);
+        if (f.hasSubs) {
+          const s = document.createElement('span');
+          s.className = 'tag';
+          s.textContent = f.hasZh ? '中/EN' : 'EN';
+          sub.appendChild(s);
+        }
+        li.onclick = () => open(f);
+        list.appendChild(li);
+      });
+      return undefined;
+    })
+    .catch(() => { $('empty').hidden = false; });
+}
+
+loadLibrary('');
 
 applyPrefs();
 </script>

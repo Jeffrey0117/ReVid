@@ -23,4 +23,25 @@ function looksLikeSeason(name) {
     return PATTERNS.some(re => re.test(trimmed));
 }
 
-module.exports = { looksLikeSeason };
+// What a network share should hand out when this folder is the one open.
+//
+// Opening season two and only being able to reach season two is not what
+// anybody means by "watch my shows on the other machine". Sharing the show
+// folder puts the other seasons in range without weakening anything: the
+// server's rule is still "nothing outside the root", the root is just one
+// level up.
+//
+// Only for real seasons, and never up into a drive root — otherwise a folder
+// called "s1" sitting at the top of a disk would share the whole disk.
+const path = require('path');
+
+function shareRootFor(folder) {
+    if (typeof folder !== 'string' || !folder) return folder;
+    if (!looksLikeSeason(path.basename(folder))) return folder;
+    const parent = path.dirname(folder);
+    if (!parent || parent === folder) return folder;
+    if (path.parse(parent).root === parent) return folder;   // C:\ or /
+    return parent;
+}
+
+module.exports = { looksLikeSeason, shareRootFor };
