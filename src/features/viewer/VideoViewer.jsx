@@ -416,6 +416,12 @@ export const VideoViewer = ({
     // The picture's own box inside the element, which is not the element in a
     // window shaped differently from the video.
     const [pictureSize, setPictureSize] = useState(null);
+    // Plyr's own progress container, and where its rail sits inside it.
+    // Measured rather than hardcoded: the rail's height and the negative
+    // inset either side come from Plyr's CSS variables, which a theme or a
+    // version bump can change underneath us.
+    const [progressSlot, setProgressSlot] = useState(null);
+    const [railBox, setRailBox] = useState(null);
     // A URL has no file behind it, so everything that reads or writes one —
     // subtitles, transcription, cutting, the episode list — is off rather
     // than reachable and broken.
@@ -1157,6 +1163,72 @@ export const VideoViewer = ({
             window.removeEventListener('resize', measurePicture);
         };
     }, []);
+
+    // Find Plyr's progress bar and measure its rail. The buffer element is
+    // the rail: it is the one Plyr sizes and insets to match the slider's
+    // track, so copying its box lands the tint exactly on top rather than
+    // near it.
+    useEffect(() => {
+        if (!controlsSlot) { setProgressSlot(null); setRailBox(null); return undefined; }
+
+        let progress = null;
+        let buffer = null;
+        let ro = null;
+
+        const measure = () => {
+            if (!progress || !buffer) return;
+            const p = progress.getBoundingClientRect();
+            const b = buffer.getBoundingClientRect();
+            if (!b.width || !b.height) return;
+            setRailBox(prev => {
+                const next = {
+                    left: Math.round(b.left - p.left),
+                    top: Math.round(b.top - p.top),
+                    width: Math.round(b.width),
+                    height: Math.round(b.height)
+                };
+                return prev && prev.left === next.left && prev.top === next.top
+                    && prev.width === next.width && prev.height === next.height
+                    ? prev : next;
+            });
+        };
+
+        // The controls element exists before the player has finished building
+        // what goes in it, so a single query here found nothing and gave up.
+        // Keep looking until the progress bar turns up.
+        // Search from the player, not from the slot. controlsSlot is ReVid's
+        // own div inside the control bar, and the progress bar is its sibling
+        // — querying downwards from it found nothing, for ever, in silence.
+        const scope = controlsSlot.closest('.plyr') || controlsSlot.parentElement;
+
+        const attach = () => {
+            if (progress) return true;
+            const p = scope?.querySelector('.plyr__progress');
+            const b = p?.querySelector('.plyr__progress__buffer');
+            if (!p || !b) return false;
+            progress = p;
+            buffer = b;
+            setProgressSlot(p);
+            measure();
+            ro = new ResizeObserver(measure);
+            ro.observe(p);
+            return true;
+        };
+
+        let watcher = null;
+        if (!attach() && scope) {
+            watcher = new MutationObserver(() => {
+                if (attach()) { watcher.disconnect(); watcher = null; }
+            });
+            watcher.observe(scope, { childList: true, subtree: true });
+        }
+        window.addEventListener('resize', measure);
+        return () => {
+            watcher?.disconnect();
+            ro?.disconnect();
+            window.removeEventListener('resize', measure);
+        };
+    }, [controlsSlot]);
 
     // The strip belongs to the picture, not to the player area. In a window
     // shaped nothing like the video, the area is mostly letterbox and a strip
@@ -1905,31 +1977,41 @@ export const VideoViewer = ({
                     of the video is visible without opening anything. Painted
                     into the bar's container and kept out of pointer events —
                     scrubbing must still reach the slider underneath. */}
-                {chapters.length > 0 && duration > 0 && controlsSlot && createPortal(
+                {/* Chapter colour tinted onto the real progress bar, not a
+                    second bar above it.
+
+                    The layer sits over the player's own rail and takes itself
+                    out of pointer events entirely, so scrubbing, the hover
+                    time preview and the buffer indicator all still belong to
+                    the player underneath — nothing about progress is
+                    reimplemented here. Tinted rather than opaque for the same
+                    reason: the played and unplayed state showing through is
+                    the player's, and in the gaps between chapters — most of a
+                    video — the bar simply looks normal. */}
+                {chapters.length > 0 && duration > 0 && progressSlot && railBox && createPortal(
                     <div style={{
-                        position: 'absolute', left: 0, right: 0, bottom: '100%',
-                        height: 6, marginBottom: 3, borderRadius: 3,
-                        // A track behind them, so a gap reads as "nothing
-                        // marked here" rather than as the bar ending.
-                        background: 'rgba(255,255,255,0.12)',
+                        position: 'absolute',
+                        left: railBox.left, top: railBox.top,
+                        width: railBox.width, height: railBox.height,
+                        borderRadius: railBox.height / 2,
                         overflow: 'hidden',
-                        pointerEvents: 'none'
+                        pointerEvents: 'none',
+                        zIndex: 3
                     }}>
                         {chapterBands(chapters, duration).map((b, i) => (
                             <div
                                 key={`${b.t}-${i}`}
-                                title={b.label}
                                 style={{
                                     position: 'absolute', top: 0, height: '100%',
                                     left: `${b.left}%`, width: `${b.width}%`,
-                                    background: b.color || 'rgba(255,255,255,0.65)',
-                                    opacity: chapterNow?.t === b.t ? 1 : 0.6,
+                                    background: b.color || '#ffffff',
+                                    opacity: chapterNow?.t === b.t ? 0.95 : 0.5,
                                     transition: 'opacity 0.2s'
                                 }}
                             />
                         ))}
                     </div>,
-                    controlsSlot
+                    progressSlot
                 )}
 
                 {/* Top corners: which chapter this is, and how long is left of
