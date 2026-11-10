@@ -1175,6 +1175,14 @@ export const VideoViewer = ({
         let buffer = null;
         let ro = null;
 
+        // Horizontally the bands belong to the progress container, not to the
+        // rail. The slider is wider than its container by the width of its
+        // own thumb — half of it hanging off each end — and the player maps
+        // time across the narrower inner travel. Painting across the rail
+        // instead drew every chapter a few per cent too wide and shifted
+        // left, so a band sat somewhere other than the time it stood for and
+        // clicking one landed in the wrong place. Only the vertical position
+        // comes from the rail.
         const measure = () => {
             if (!progress || !buffer) return;
             const p = progress.getBoundingClientRect();
@@ -1182,9 +1190,9 @@ export const VideoViewer = ({
             if (!b.width || !b.height) return;
             setRailBox(prev => {
                 const next = {
-                    left: Math.round(b.left - p.left),
+                    left: 0,
                     top: Math.round(b.top - p.top),
-                    width: Math.round(b.width),
+                    width: Math.round(p.width),
                     height: Math.round(b.height)
                 };
                 return prev && prev.left === next.left && prev.top === next.top
