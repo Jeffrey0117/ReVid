@@ -14,7 +14,7 @@ import { retimeCues, PAD } from '../../utils/reelSegments';
 import {
     shouldOfferNext, nextInOrder, prevInOrder, deadlineFrom, secondsLeft
 } from '../../utils/playNext';
-import { zoneAt } from '../../utils/videoZones';
+import { zoneAt, pictureBox } from '../../utils/videoZones';
 import { chapterAt, chapterBands } from '../../utils/chapters';
 import Hls from 'hls.js';
 import { isHlsUrl, isRemoteSource } from '../../utils/remoteSource';
@@ -403,11 +403,17 @@ export const VideoViewer = ({
     // gaps between them — not a second subtitle track.
     const [chapters, setChapters] = useState([]);
     const [chapterNow, setChapterNow] = useState(null);
-    const [chaptersOpen, setChaptersOpen] = useState(false);
+    // Open by default when a video has them: a chapter you have to go looking
+    // for is one you forget exists.
+    const [chaptersOpen, setChaptersOpen] = useState(true);
     const chaptersRef = useRef([]);
     chaptersRef.current = chapters;
     // Only needed to place the bands; a stream reports 0 until it knows.
     const [duration, setDuration] = useState(0);
+    const chapterStripRef = useRef(null);
+    // The picture's own box inside the element, which is not the element in a
+    // window shaped differently from the video.
+    const [pictureSize, setPictureSize] = useState(null);
     // A URL has no file behind it, so everything that reads or writes one —
     // subtitles, transcription, cutting, the episode list — is off rather
     // than reachable and broken.
@@ -1126,15 +1132,40 @@ export const VideoViewer = ({
     useEffect(() => {
         const video = videoElRef.current;
         if (!video) return undefined;
-        const onDur = () => setDuration(Number.isFinite(video.duration) ? video.duration : 0);
+        const onDur = () => {
+            setDuration(Number.isFinite(video.duration) ? video.duration : 0);
+            measurePicture();
+        };
+        const measurePicture = () => {
+            const r = video.getBoundingClientRect();
+            setPictureSize(pictureBox({
+                elW: r.width, elH: r.height,
+                videoW: video.videoWidth, videoH: video.videoHeight
+            }));
+        };
         onDur();
         video.addEventListener('loadedmetadata', onDur);
         video.addEventListener('durationchange', onDur);
+        video.addEventListener('resize', measurePicture);
+        window.addEventListener('resize', measurePicture);
         return () => {
             video.removeEventListener('loadedmetadata', onDur);
             video.removeEventListener('durationchange', onDur);
+            video.removeEventListener('resize', measurePicture);
+            window.removeEventListener('resize', measurePicture);
         };
     }, []);
+
+    // The strip belongs to the picture, not to the player area. In a window
+    // shaped nothing like the video, the area is mostly letterbox and a strip
+    // pinned to its bottom edge floats far below what it refers to. It still
+    // never sits lower than the controls, which are the real floor.
+    const CONTROLS_FLOOR = 62;
+    const stripBottom = (() => {
+        if (!pictureSize || !areaHeight) return CONTROLS_FLOOR;
+        const belowPicture = areaHeight - (pictureSize.top + pictureSize.height);
+        return Math.max(CONTROLS_FLOOR, Math.round(belowPicture) + 6);
+    })();
 
     // Follow the playhead. Only re-renders when the chapter actually changes,
     // which is a few times a video rather than four times a second.
@@ -1149,6 +1180,18 @@ export const VideoViewer = ({
         video.addEventListener('timeupdate', onTime);
         return () => video.removeEventListener('timeupdate', onTime);
     }, [chapters]);
+
+    // Keep the playing chapter in view. Without this the strip stays where it
+    // was and the highlight walks off the right-hand edge, so the one thing
+    // worth seeing is the one thing you cannot.
+    useEffect(() => {
+        const strip = chapterStripRef.current;
+        if (!strip || !chapterNow) return;
+        const chip = strip.querySelector('[data-on="1"]');
+        if (chip?.scrollIntoView) {
+            chip.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+        }
+    }, [chapterNow, chaptersOpen]);
 
     const jumpToChapter = useCallback((c) => {
         const video = videoElRef.current;
@@ -1836,7 +1879,12 @@ export const VideoViewer = ({
                 {chapters.length > 0 && duration > 0 && controlsSlot && createPortal(
                     <div style={{
                         position: 'absolute', left: 0, right: 0, bottom: '100%',
-                        height: 4, marginBottom: 2, pointerEvents: 'none'
+                        height: 6, marginBottom: 3, borderRadius: 3,
+                        // A track behind them, so a gap reads as "nothing
+                        // marked here" rather than as the bar ending.
+                        background: 'rgba(255,255,255,0.12)',
+                        overflow: 'hidden',
+                        pointerEvents: 'none'
                     }}>
                         {chapterBands(chapters, duration).map((b, i) => (
                             <div
@@ -1845,9 +1893,9 @@ export const VideoViewer = ({
                                 style={{
                                     position: 'absolute', top: 0, height: '100%',
                                     left: `${b.left}%`, width: `${b.width}%`,
-                                    background: b.color || 'rgba(255,255,255,0.5)',
-                                    borderRadius: 2,
-                                    opacity: chapterNow?.t === b.t ? 1 : 0.55
+                                    background: b.color || 'rgba(255,255,255,0.65)',
+                                    opacity: chapterNow?.t === b.t ? 1 : 0.6,
+                                    transition: 'opacity 0.2s'
                                 }}
                             />
                         ))}
@@ -1855,44 +1903,64 @@ export const VideoViewer = ({
                     controlsSlot
                 )}
 
-                {/* The chapter list. Same corner as the episode picker, since
-                    it answers the same kind of question. */}
+                {/* A strip of chapters above the controls rather than a list
+                    in a corner: every label is readable at once, which is the
+                    point of having named them. It scrolls sideways because
+                    nine chapters do not fit and wrapping would eat the
+                    picture. */}
                 {chaptersOpen && chapters.length > 0 && (
                     <div
+                        ref={chapterStripRef}
                         onClick={(e) => e.stopPropagation()}
+                        onPointerDown={(e) => e.stopPropagation()}
                         style={{
-                            position: 'absolute', bottom: 64, right: 12, zIndex: 6,
-                            width: 300, maxHeight: '58%', overflowY: 'auto',
-                            background: 'rgba(16,16,20,0.95)', borderRadius: 10,
-                            border: '1px solid rgba(255,255,255,0.14)',
-                            boxShadow: '0 10px 34px rgba(0,0,0,0.5)', padding: 6
+                            position: 'absolute', left: 0, right: 0, bottom: stripBottom, zIndex: 6,
+                            display: 'flex', gap: 6, alignItems: 'stretch',
+                            padding: '8px 12px',
+                            overflowX: 'auto', overflowY: 'hidden',
+                            scrollbarWidth: 'none',
+                            background: 'linear-gradient(to top, rgba(0,0,0,0.55), rgba(0,0,0,0))'
                         }}
                     >
+                        <div style={{
+                            flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 5,
+                            padding: '0 11px', borderRadius: 8,
+                            background: 'rgba(22,22,26,0.9)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            color: 'rgba(255,255,255,0.75)', fontSize: 12
+                        }}>
+                            <BookMarked size={13} />
+                            {chapters.length}
+                        </div>
+
                         {chapters.map((c, i) => {
                             const on = chapterNow?.t === c.t;
                             return (
                                 <button
                                     key={`${c.t}-${i}`}
-                                    onClick={() => { jumpToChapter(c); setChaptersOpen(false); }}
+                                    data-on={on ? '1' : undefined}
+                                    onClick={() => jumpToChapter(c)}
+                                    title={`${c.label} · ${fmtTime(c.t)}`}
                                     style={{
-                                        width: '100%', display: 'flex', alignItems: 'center', gap: 9,
-                                        padding: '8px 10px', borderRadius: 7, border: 'none',
-                                        background: on ? 'rgba(255,255,255,0.12)' : 'transparent',
-                                        color: '#fff', cursor: 'pointer', textAlign: 'left'
+                                        flex: '0 0 auto', cursor: 'pointer',
+                                        display: 'flex', flexDirection: 'column',
+                                        alignItems: 'center', justifyContent: 'center', gap: 1,
+                                        padding: '6px 12px', borderRadius: 8,
+                                        background: 'rgba(22,22,26,0.9)',
+                                        border: `1px solid ${on ? (c.color || '#3b82f6') : 'rgba(255,255,255,0.1)'}`,
+                                        color: on ? (c.color || '#7dadff') : 'rgba(255,255,255,0.82)',
+                                        maxWidth: 190
                                     }}
                                 >
                                     <span style={{
-                                        flex: '0 0 auto', width: 3, alignSelf: 'stretch',
-                                        borderRadius: 2, background: c.color || 'rgba(255,255,255,0.35)'
-                                    }} />
-                                    <span style={{
-                                        flex: 1, fontSize: 13, fontWeight: on ? 600 : 400,
-                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                                        fontSize: 12.5, fontWeight: 600, lineHeight: 1.3,
+                                        overflow: 'hidden', textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap', maxWidth: '100%'
                                     }}>
                                         {c.label}
                                     </span>
                                     <span style={{
-                                        flex: '0 0 auto', fontSize: 11, opacity: 0.55,
+                                        fontSize: 10.5, opacity: 0.6,
                                         fontVariantNumeric: 'tabular-nums'
                                     }}>
                                         {fmtTime(c.t)}
