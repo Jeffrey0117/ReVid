@@ -71,7 +71,7 @@ export function readSubtitleStyle() {
 }
 
 const COLORS = ['#ffffff', '#ffe082', '#aed581', '#81d4fa', '#f48fb1'];
-const SIZES = [14, 18, 24, 30, 38];
+const SIZES = [14, 18, 24, 30, 38, 52, 72];
 
 function Row({ label, children }) {
     const { theme } = useTheme();
@@ -90,7 +90,11 @@ const CC_CHOICES = ['off', 'orig', 'zh', 'both'];
 export const SubtitleSettings = ({
     ccMode, onCcMode,
     style, onChange, onClose, onRetranscribe, onExportSrt,
-    difficulty, onDifficultyChange, knownCount = 0, onForgetKnown
+    difficulty, onDifficultyChange, knownCount = 0, onForgetKnown,
+    // How far the box can actually travel, measured from the player. A fixed
+    // 400 was shorter than a desktop window, so the slider ran out before the
+    // subtitle reached the top of the picture.
+    maxOffset = 400
 }) => {
     const { t } = useI18n();
     const { theme } = useTheme();
@@ -327,8 +331,8 @@ export const SubtitleSettings = ({
                     edge and the slider must be able to show that rather than
                     snapping it back inside an arbitrary margin. */}
                 <input
-                    type="range" min="0" max="400" step="2"
-                    value={style.offset}
+                    type="range" min="0" max={maxOffset} step="2"
+                    value={Math.min(style.offset, maxOffset)}
                     onChange={(e) => set({ offset: Number(e.target.value) })}
                     style={{ width: '100%', accentColor: theme.accent }}
                 />

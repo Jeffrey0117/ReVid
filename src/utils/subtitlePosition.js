@@ -33,7 +33,9 @@ export function widthPctFrom({ pointerX, centreX, areaWidth }) {
 }
 
 export const MIN_FONT = 10;
-export const MAX_FONT = 72;
+// 72 was the ceiling and it was not enough on a desktop window, where the
+// picture is several times a phone's and the viewer may be across the room.
+export const MAX_FONT = 144;
 
 // Corners scale the whole subtitle as one object — box, background and text
 // together — the way a corner handle behaves in any editor. Sides stretch

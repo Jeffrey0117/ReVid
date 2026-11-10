@@ -179,10 +179,14 @@ export const VideoViewer = ({
     // The picture's own width, which is what the subtitle is sized against —
     // not the window's, since a letterboxed video leaves bars either side.
     const [areaWidth, setAreaWidth] = useState(0);
+    const [areaHeight, setAreaHeight] = useState(0);
     useEffect(() => {
         const el = wrapperRef.current;
         if (!el || typeof ResizeObserver === 'undefined') return undefined;
-        const ro = new ResizeObserver(([entry]) => setAreaWidth(entry.contentRect.width));
+        const ro = new ResizeObserver(([entry]) => {
+            setAreaWidth(entry.contentRect.width);
+            setAreaHeight(entry.contentRect.height);
+        });
         ro.observe(el);
         return () => ro.disconnect();
     }, []);
@@ -1726,6 +1730,17 @@ export const VideoViewer = ({
                             onDifficultyChange={(next) => { writeDifficulty(next); setDifficulty(next); }}
                             knownCount={knownWords.size}
                             onForgetKnown={() => setKnownWords(clearKnownWords())}
+                            // Stop where the box would start leaving the
+                            // picture, not at the picture's height — the
+                            // offset is measured to the box's near edge, so
+                            // the last box-height of travel pushes it out of
+                            // sight. Estimated from the type size rather than
+                            // measured, so the slider's range does not jump
+                            // about as cues change between one line and two.
+                            maxOffset={Math.max(
+                                120,
+                                Math.round(areaHeight - subStyle.fontSize * 2.8 - 16)
+                            )}
                         />
                     </div>
                 )}
