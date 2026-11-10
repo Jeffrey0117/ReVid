@@ -20,6 +20,8 @@ import { useI18n } from './i18n.jsx';
 import { useTheme } from './theme.jsx';
 import { useWebTheater } from './hooks/useWebTheater';
 import { toLocalVideoUrl } from './utils/localVideoUrl';
+import { toPlayableSrc, downloadNameFor } from './utils/remoteSource';
+import { PlayUrlDialog } from './components/PlayUrlDialog';
 import { TheaterSearchBox } from './components/TheaterSearchBox';
 import { usePlaybackSpeed } from './hooks/usePlaybackSpeed';
 import { TheaterSidebar } from './features/theater/TheaterSidebar';
@@ -45,7 +47,7 @@ import { ShowBrowser } from './features/show/ShowBrowser';
 import { FolderNav } from './components/FolderNav';
 import { useFolderHistory } from './hooks/useFolderHistory';
 import {
-    Search as SearchIcon, Tv, GraduationCap, ArrowLeft, ArrowRight, ArrowUp
+    Search as SearchIcon, Tv, GraduationCap, ArrowLeft, ArrowRight, ArrowUp, Link
 } from './components/icons';
 import { reloadPlugins } from './features/plugins/pluginRuntime';
 import { validateRevidFile } from './utils/revidFile';
@@ -133,6 +135,11 @@ export default function App() {
     const [showSyncSettings, setShowSyncSettings] = useState(false);
     const [showFamily, setShowFamily] = useState(false);
     const { speed: theaterSpeed, selectSpeed: selectTheaterSpeed, SPEED_PRESETS } = usePlaybackSpeed();
+    const [showPlayUrlDialog, setShowPlayUrlDialog] = useState(false);
+    // A streamed URL is not a library item and is deliberately not pretended
+    // into one: it has no folder, no siblings and no subtitles, and faking a
+    // path would have every feature that reads one fail in its own way.
+    const [remoteUrl, setRemoteUrl] = useState(null);
     const [showAddCourseDialog, setShowAddCourseDialog] = useState(false);
     const [showExportDialog, setShowExportDialog] = useState(false);
     const [showUploadSettings, setShowUploadSettings] = useState(false);
@@ -857,9 +864,12 @@ export default function App() {
     }, []);
 
     const videoSrc = useMemo(() => {
+        // A URL goes to the player untouched; toLocalVideoUrl would
+        // percent-encode its slashes and colons into nonsense.
+        if (remoteUrl) return toPlayableSrc(remoteUrl);
         if (!currentVideo) return null;
         return toLocalVideoUrl(currentVideo);
-    }, [currentVideo]);
+    }, [remoteUrl, currentVideo]);
 
     const videoDuration = useMemo(() => {
         if (!videoSrc) return 0;
@@ -1145,6 +1155,16 @@ export default function App() {
                             <Tv size={18} />
                         </button>
                     )}
+
+                    {/* Paste a link: watch it now, or keep it */}
+                    <button
+                        className="btn btn-ghost"
+                        onClick={() => setShowPlayUrlDialog(true)}
+                        title={t('playUrl')}
+                        style={{ padding: 7, borderRadius: 8, display: 'flex' }}
+                    >
+                        <Link size={18} />
+                    </button>
 
                     {/* Online video mode toggle */}
                     <button
@@ -2241,11 +2261,14 @@ export default function App() {
                                     <VideoViewer
                                         key={viewerKey}
                                         src={videoSrc}
-                                        videoPath={currentVideo}
+                                        // Null while streaming: the viewer
+                                        // reads this to switch off everything
+                                        // that needs a file behind it.
+                                        videoPath={remoteUrl ? null : currentVideo}
                                         timeRef={viewerTimeRef}
                                         onExportStudy={() => setShowStudyExport(true)}
-                                        files={gridFiles}
-                                        currentIndex={gridFiles.indexOf(currentVideo)}
+                                        files={remoteUrl ? [] : gridFiles}
+                                        currentIndex={remoteUrl ? -1 : gridFiles.indexOf(currentVideo)}
                                         onSelectVideo={handleSelectVideoFromGrid}
                                         onRightPanelWidth={setRightPanelWidth}
                                         seekRequest={seekRequest}
@@ -2706,6 +2729,17 @@ export default function App() {
                     `}</style>
                 </>,
                 document.body
+            )}
+
+            {/* Paste a link */}
+            {showPlayUrlDialog && (
+                <PlayUrlDialog
+                    onClose={() => setShowPlayUrlDialog(false)}
+                    onPlay={(url) => { setRemoteUrl(url); setViewMode('viewer'); }}
+                    onDownload={(url) => {
+                        window.electronAPI?.downloadVideo?.(url, downloadNameFor(url));
+                    }}
+                />
             )}
 
             {/* Export dialog (theater) */}

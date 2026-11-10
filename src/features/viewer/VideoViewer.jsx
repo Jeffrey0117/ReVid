@@ -15,6 +15,8 @@ import {
     shouldOfferNext, nextInOrder, prevInOrder, deadlineFrom, secondsLeft
 } from '../../utils/playNext';
 import { zoneAt } from '../../utils/videoZones';
+import Hls from 'hls.js';
+import { isHlsUrl, isRemoteSource } from '../../utils/remoteSource';
 import {
     anchorToTop, dropAnchor, clampTop, DRAG_THRESHOLD, widthPctFrom, scaleFrom
 } from '../../utils/subtitlePosition';
@@ -393,6 +395,12 @@ export const VideoViewer = ({
     const onSelectVideoRef = useRef(onSelectVideo);
     onSelectVideoRef.current = onSelectVideo;
     const flashTimerRef = useRef(0);
+    const hlsRef = useRef(null);
+    const [remoteError, setRemoteError] = useState(null);
+    // A URL has no file behind it, so everything that reads or writes one —
+    // subtitles, transcription, cutting, the episode list — is off rather
+    // than reachable and broken.
+    const remote = isRemoteSource(videoPath) || (!videoPath && isRemoteSource(src));
 
     // Build the <video> + Plyr ONCE. Switching videos only swaps the src on
     // the same element — no player teardown, no DOM churn, and the Web Audio
@@ -502,6 +510,9 @@ export const VideoViewer = ({
             clearTimeout(resumeTimerRef.current);
             video.removeEventListener('timeupdate', onTimeUpdate);
             setControlsSlot(null);
+            // Before the element goes: an attached hls.js keeps a reference
+            // to it and keeps fetching segments.
+            if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
             player.destroy();
             plyrRef.current = null;
             videoElRef.current = null;
@@ -525,11 +536,34 @@ export const VideoViewer = ({
         setSpeed(1);
         setAbLoop(null);
         setResumePrompt(null);
+        setRemoteError(null);
         clearTimeout(resumeTimerRef.current);
         const poster = getCachedThumbnail(src);
         if (poster) video.poster = poster;
         video.loop = prefsRef.current.loop;
-        video.src = src;
+
+        // An HLS stream is a playlist, not a file: the element cannot play it
+        // by itself outside Safari, so hls.js feeds it. Torn down on every
+        // source change — a left-over instance keeps pulling segments for a
+        // video nobody is watching and then fights the next one for the
+        // element.
+        if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+        if (isHlsUrl(src) && Hls.isSupported()) {
+            const hls = new Hls({ enableWorker: true });
+            hlsRef.current = hls;
+            hls.on(Hls.Events.ERROR, (_e, data) => {
+                if (!data?.fatal) return;
+                // Network and media faults are recoverable; anything else is
+                // the stream being gone or refusing us.
+                if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
+                else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
+                else setRemoteError(data.details || 'stream failed');
+            });
+            hls.loadSource(src);
+            hls.attachMedia(video);
+        } else {
+            video.src = src;
+        }
 
         // Perceived responsiveness: pop the control bar out the instant a new
         // video is entered, so the UI visibly reacts while the first frame is
@@ -1350,11 +1384,27 @@ export const VideoViewer = ({
                 />
                 <div ref={wrapperRef} style={{ position: 'absolute', inset: 0, zIndex: 1 }} />
 
+                {/* A stream that failed says so, instead of leaving a black
+                    rectangle that looks like the app hanging. */}
+                {remote && remoteError && (
+                    <div style={{
+                        position: 'absolute', top: '50%', left: '50%',
+                        transform: 'translate(-50%,-50%)', zIndex: 6,
+                        padding: '14px 18px', borderRadius: 10, maxWidth: '76%',
+                        background: 'rgba(16,16,20,0.92)', color: '#fff',
+                        border: '1px solid rgba(255,255,255,0.14)',
+                        fontSize: 13, textAlign: 'center', lineHeight: 1.5
+                    }}>
+                        <div style={{ fontWeight: 600, marginBottom: 4 }}>{t('streamFailed')}</div>
+                        <div style={{ opacity: 0.65, fontSize: 11, wordBreak: 'break-all' }}>{remoteError}</div>
+                    </div>
+                )}
+
                 {/* Step through the folder from the picture. Shown only while
                     the pointer is on that side, and only when there is
                     somewhere to go — a chevron that does nothing is worse
                     than no chevron. */}
-                {[
+                {!remote && [
                     { zone: 'left', target: prevInOrder(files, videoPath), Icon: ChevronLeft, side: { left: 18 } },
                     { zone: 'right', target: nextInOrder(files, videoPath), Icon: ChevronRight, side: { right: 18 } }
                 ].map(({ zone, target, Icon, side }) => target && (
@@ -1604,7 +1654,7 @@ export const VideoViewer = ({
                 {/* Playback controls, living in Plyr's own bar */}
                 {controlsSlot && createPortal(
                     <>
-                        {files.length > 1 && (
+                        {!remote && files.length > 1 && (
                             <button
                                 title={t('episodes')}
                                 onClick={(e) => {
@@ -1620,7 +1670,7 @@ export const VideoViewer = ({
                         )}
                         {/* Only alongside the episode list: there is nothing to
                             play on to in a folder of one. */}
-                        {files.length > 1 && (
+                        {!remote && files.length > 1 && (
                             <button
                                 title={t(autoNext ? 'autoNextOn' : 'autoNextOff')}
                                 onClick={(e) => { e.stopPropagation(); toggleAutoNext(); }}
@@ -1632,18 +1682,20 @@ export const VideoViewer = ({
                         {/* Named, never lit: subtitles are on nearly always,
                             so an active tint here would just be permanent
                             blue. Which track is on is the menu's job to say. */}
-                        <button
-                            title={t('subMenuTitle')}
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setEpisodesOpen(false);
-                                setStyleOpen(o => !o);
-                            }}
-                            style={barBtn(false)}
-                        >
-                            <Captions size={15} />
-                            {t('subMenuTitle')}
-                        </button>
+                        {!remote && (
+                            <button
+                                title={t('subMenuTitle')}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEpisodesOpen(false);
+                                    setStyleOpen(o => !o);
+                                }}
+                                style={barBtn(false)}
+                            >
+                                <Captions size={15} />
+                                {t('subMenuTitle')}
+                            </button>
+                        )}
                     </>,
                     controlsSlot
                 )}
