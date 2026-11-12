@@ -1,0 +1,12 @@
+{
+  "repo": 1,
+  "name": "ReVid",
+  "what": "ReVid - Video viewer and spatial crop tool",
+  "kind": "app",
+  "work": {
+    "guide": "CLAUDE.md",
+    "run": "npm run dev",
+    "test": "npm test",
+    "build": "npm run build"
+  }
+}
