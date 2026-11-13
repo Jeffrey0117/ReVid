@@ -1,7 +1,7 @@
 {
   "repo": 1,
   "name": "ReVid",
-  "what": "ReVid - Video viewer and spatial crop tool",
+  "what": "ReVid - desktop video player for learning a language from what you watch: auto transcription, movable subtitles, word lookup, chapters, LAN share",
   "kind": "app",
   "work": {
     "guide": "CLAUDE.md",
