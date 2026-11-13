@@ -1,4 +1,8 @@
-# ReVid
+<p align="center">
+  <img src="public/logo.png" width="96" height="96" alt="ReVid logo">
+</p>
+
+<h1 align="center">ReVid</h1>
 
 A desktop video player for learning a language from the things you already
 watch. Point it at a folder of episodes and it transcribes them, puts the
