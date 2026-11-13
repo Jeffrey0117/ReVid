@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, dialog, protocol, shell, net } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol, shell, net } = require('electron');
 const createFamily = require('family-kit');
 const path = require('path');
 const fs = require('fs');
@@ -29,6 +29,7 @@ const {
 const { translateLines } = require('./translator.cjs');
 const { createWhisperQueue } = require('./whisper-queue.cjs');
 const pluginHost = require('./plugin-host.cjs');
+const { applyAppMenu } = require('./app-menu.cjs');
 const dictionary = require('./dictionary.cjs');
 const lanServer = require('./lan-server.cjs');
 const { serveFile } = require('./file-serve.cjs');
@@ -53,6 +54,11 @@ const { registerLocalVideoProtocol } = require('./local-video-protocol.cjs');
 // background, install on next quit. Install once per machine, then updates land for free.
 function setupAutoUpdater() {
     if (!app.isPackaged) return;
+    // Squirrel.Mac refuses to apply an update whose signature it cannot verify,
+    // and the macOS build is unsigned (no Apple Developer certificate). Checking
+    // anyway would download the payload and then fail at install time, so the
+    // Mac build is told about new versions by the download page instead.
+    if (process.platform === 'darwin') return;
     let autoUpdater;
     try {
         ({ autoUpdater } = require('electron-updater'));
@@ -321,7 +327,7 @@ function createWindow() {
     userAlwaysOnTop = !!saved?.alwaysOnTop;
     if (userAlwaysOnTop) mainWindow.setAlwaysOnTop(true);
 
-    Menu.setApplicationMenu(null);
+    applyAppMenu();
 
     const isDev = !app.isPackaged;
     mainWindow.loadURL(rendererBaseUrl);

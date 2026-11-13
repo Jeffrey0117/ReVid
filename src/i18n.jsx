@@ -118,6 +118,10 @@ const translations = {
     wordAdd: 'Add to word list',
     wordSaved: 'In your word list',
     whisperSetupNeeded: 'Enable auto subtitles',
+    whisperUnsupported: 'Auto subtitles: Windows only',
+    whisperUnsupportedHint: 'The transcription engine ships prebuilt for Windows only. '
+        + 'On macOS, install it yourself with "brew install whisper-cpp" and ReVid will use it. '
+        + 'Subtitles made on another machine play normally.',
     whisperInstallingBin: 'Downloading engine',
     whisperInstallingModel: 'Downloading model',
     resumeAt: 'Resume at',
@@ -648,6 +652,8 @@ const translations = {
     wordAdd: '\u52a0\u5165\u751f\u8a5e\u672c',
     wordSaved: '\u5df2\u5728\u751f\u8a5e\u672c',
     whisperSetupNeeded: '\u555f\u7528\u81ea\u52d5\u5b57\u5e55',
+    whisperUnsupported: '\u81ea\u52d5\u5b57\u5e55:\u50c5 Windows',
+    whisperUnsupportedHint: '\u8f49\u9304\u5f15\u64ce\u53ea\u6709 Windows \u7684\u73fe\u6210\u7248\u672c\u3002macOS \u8acb\u81ea\u5df1\u88dd(brew install whisper-cpp),ReVid \u6703\u81ea\u52d5\u63a5\u4e0a\u3002\u5728\u5225\u53f0\u6a5f\u5668\u8f49\u597d\u7684\u5b57\u5e55\u7167\u6a23\u80fd\u64ad\u3002',
     whisperInstallingBin: '\u4e0b\u8f09\u5f15\u64ce\u4e2d',
     whisperInstallingModel: '\u4e0b\u8f09\u6a21\u578b\u4e2d',
     resumeAt: '\u56de\u5230\u4e0a\u6b21\u4f4d\u7f6e',

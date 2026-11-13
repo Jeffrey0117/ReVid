@@ -668,7 +668,9 @@ export const VideoViewer = ({
             const status = await api.whisperStatus();
             if (cancelled) return;
             if (!status.success || !status.binaryReady || !status.modelReady) {
-                setWhisperMissing(true);
+                // On a platform ReVid cannot install the engine on, say so
+                // instead of offering a download that would fail.
+                setWhisperMissing(status.installable === false ? 'unsupported' : true);
                 return;
             }
             setTranscribing({ pct: 0 });
@@ -1781,7 +1783,12 @@ export const VideoViewer = ({
                             {' '}{installing.pct}%
                         </span>
                     )}
-                    {whisperMissing && !installing && (
+                    {whisperMissing === 'unsupported' && (
+                        <span style={{ ...pill, maxWidth: 260 }} title={t('whisperUnsupportedHint')}>
+                            {t('whisperUnsupported')}
+                        </span>
+                    )}
+                    {whisperMissing === true && !installing && (
                         <button onClick={handleWhisperSetup} style={{ ...pill, cursor: 'pointer' }}>
                             {t('whisperSetupNeeded')}
                         </button>

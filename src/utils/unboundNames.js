@@ -10,6 +10,106 @@ const ALLOWED = new Set([
     'NaN', 'Intl', 'RegExp', 'URL', 'Blob', 'FileReader', 'AbortController'
 ]);
 
+// Globals the main process gets for free from Node.
+const NODE_GLOBALS = new Set([
+    'Buffer', 'URLSearchParams', 'TextDecoder', 'TextEncoder', 'AbortSignal',
+    'WebSocket', 'Response', 'Request', 'Headers', 'Proxy', 'Reflect', 'Symbol',
+    'BigInt', 'WeakMap', 'WeakSet', 'ArrayBuffer', 'DataView',
+    'Function', 'TypeError', 'RangeError', 'SyntaxError', 'AggregateError',
+    'Atomics', 'Event', 'EventTarget', 'MessageChannel',
+    'Int8Array', 'Uint8Array', 'Uint8ClampedArray', 'Int16Array', 'Uint16Array',
+    'Int32Array', 'Uint32Array', 'Float32Array', 'Float64Array',
+    'BigInt64Array', 'BigUint64Array', 'SharedArrayBuffer'
+]);
+
+// Blank out comments and string/template bodies so prose cannot look like code.
+// Without this, a comment mentioning `Squirrel.Mac` reads as a use of an
+// unbound `Squirrel`. Runs as a small state machine rather than regexes
+// because a regex literal like /\.cjs$/ and a `//` comment are easy to
+// confuse from the outside.
+export function stripNoise(source) {
+    const out = [];
+    let i = 0;
+    const n = source.length;
+    // Tracks whether a `/` starts a regex or is division: after a value it is
+    // division, after an operator or `(` it starts a regex.
+    let prevMeaningful = '';
+    while (i < n) {
+        const c = source[i];
+        const next = source[i + 1];
+        if (c === '/' && next === '/') {
+            while (i < n && source[i] !== '\n') { out.push(' '); i += 1; }
+            continue;
+        }
+        if (c === '/' && next === '*') {
+            while (i < n && !(source[i] === '*' && source[i + 1] === '/')) {
+                out.push(source[i] === '\n' ? '\n' : ' ');
+                i += 1;
+            }
+            out.push(' ', ' ');
+            i += 2;
+            continue;
+        }
+        if (c === '"' || c === "'" || c === '`') {
+            out.push(c);
+            i += 1;
+            while (i < n && source[i] !== c) {
+                if (source[i] === '\\') { out.push(' '); i += 1; }
+                out.push(source[i] === '\n' ? '\n' : ' ');
+                i += 1;
+            }
+            out.push(c);
+            i += 1;
+            prevMeaningful = c;
+            continue;
+        }
+        if (c === '/' && !/[\w$)\]]/.test(prevMeaningful)) {
+            // Regex literal: skip to the unescaped closing slash.
+            out.push(' ');
+            i += 1;
+            while (i < n && source[i] !== '/') {
+                if (source[i] === '\\') { out.push(' '); i += 1; }
+                if (source[i] === '\n') break;          // unterminated — bail out
+                out.push(' ');
+                i += 1;
+            }
+            out.push(' ');
+            i += 1;
+            prevMeaningful = '/';
+            continue;
+        }
+        out.push(c);
+        if (!/\s/.test(c)) prevMeaningful = c;
+        i += 1;
+    }
+    return out.join('');
+}
+
+// Capitalised identifiers used as a value: `Menu.setApplicationMenu(…)`,
+// `new BrowserWindow(…)`, `Notification(…)`. These are the shape every Electron
+// class takes, which is exactly what gets dropped from a destructured
+// `require('electron')` when an import list is edited.
+export function usedValueNames(source) {
+    const used = new Set();
+    const clean = stripNoise(source);
+    // The lookbehind keeps this to the *root* of a chain: in `OpenCC.Converter(…)`
+    // the name that has to be in scope is OpenCC, not Converter. Without it,
+    // every capitalised method on an imported object reads as unbound.
+    for (const m of clean.matchAll(/(?<![.\w$])([A-Z][A-Za-z0-9_$]*)\s*[.(]/g)) used.add(m[1]);
+    for (const m of clean.matchAll(/(?<![.\w$])new\s+([A-Z][A-Za-z0-9_$]*)/g)) used.add(m[1]);
+    return used;
+}
+
+// Capitalised names used as values that nothing in the file defines, requires
+// or imports. Aimed at the main process, where nothing else checks: Vite does
+// not bundle electron/, and there is no typecheck.
+export function unboundValues(source) {
+    const bound = boundNames(stripNoise(source));
+    return [...usedValueNames(source)]
+        .filter((name) => !bound.has(name) && !ALLOWED.has(name) && !NODE_GLOBALS.has(name))
+        .sort();
+}
+
 // Every capitalised JSX tag used in the source: <Foo ...>, <Foo/>, <Foo.Bar>.
 export function jsxComponents(source) {
     const used = new Set();

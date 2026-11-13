@@ -12,10 +12,51 @@ const library = require('./library-file.cjs');
 const { parse: srtParse } = require('./srt.cjs');
 
 const RELEASE_TAG = 'v1.9.2';
+// Windows-only: these are the only prebuilt CLI archives whisper.cpp ships.
+// The macOS asset in the same release is an xcframework (a library to embed in
+// an Xcode target), not an executable, so there is nothing to download here.
 const BIN_URLS = {
     cuda: `https://github.com/ggml-org/whisper.cpp/releases/download/${RELEASE_TAG}/whisper-cublas-12.4.0-bin-x64.zip`,
     cpu: `https://github.com/ggml-org/whisper.cpp/releases/download/${RELEASE_TAG}/whisper-bin-x64.zip`
 };
+// A function, not a captured constant: every platform-dependent answer this
+// module gives is then read from the same place at the same time, so status
+// fields cannot disagree with each other.
+const isWin = () => process.platform === 'win32';
+
+// Where a whisper.cpp CLI installed by the user's own package manager lands.
+// Checked only off Windows, where ReVid cannot install the engine itself:
+// `brew install whisper-cpp` then just works.
+const SYSTEM_WHISPER_PATHS = [
+    '/opt/homebrew/bin/whisper-cli',   // Homebrew, Apple silicon
+    '/usr/local/bin/whisper-cli',      // Homebrew, Intel
+    '/opt/homebrew/bin/whisper-cpp',
+    '/usr/local/bin/whisper-cpp',
+    '/usr/bin/whisper-cli'
+];
+
+// REVID_WHISPER_CLI points at a CLI installed somewhere else — a pnpm/nix
+// prefix, a self-built binary, or a second machine's mount. Honoured on every
+// platform so a Windows user can also substitute their own build.
+function findSystemWhisper() {
+    const override = process.env.REVID_WHISPER_CLI;
+    if (override) {
+        try {
+            fs.accessSync(override, fs.constants.X_OK);
+            return override;
+        } catch (e) {
+            console.error('[whisper] REVID_WHISPER_CLI is set but not executable:', override);
+        }
+    }
+    if (isWin()) return null;
+    for (const p of SYSTEM_WHISPER_PATHS) {
+        try {
+            fs.accessSync(p, fs.constants.X_OK);
+            return p;
+        } catch (e) { /* try the next prefix */ }
+    }
+    return null;
+}
 const MODEL_URL = (model) => `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${model}.bin`;
 
 const DEFAULT_MODEL = 'medium';
@@ -44,8 +85,8 @@ function findWhisperExe(dir) {
             const p = path.join(d, entry.name);
             if (entry.isDirectory()) { stack.push(p); continue; }
             const name = entry.name.toLowerCase();
-            if (name === 'whisper-cli.exe') return p;
-            if (name === 'main.exe') fallback = p;
+            if (name === (isWin() ? 'whisper-cli.exe' : 'whisper-cli')) return p;
+            if (name === (isWin() ? 'main.exe' : 'main')) fallback = p;
         }
     }
     return fallback;
@@ -56,7 +97,8 @@ function getWhisperStatus(model = DEFAULT_MODEL) {
     // machines where the CUDA runtime won't initialise.
     const cudaExe = findWhisperExe(binDir('cuda'));
     const cpuExe = findWhisperExe(binDir('cpu'));
-    const exePath = cudaExe || cpuExe;
+    const systemExe = cudaExe || cpuExe ? null : findSystemWhisper();
+    const exePath = cudaExe || cpuExe || systemExe;
     const mPath = modelPath(model);
     const modelReady = fs.existsSync(mPath) && fs.statSync(mPath).size > 10 * 1024 * 1024;
     return {
@@ -64,9 +106,14 @@ function getWhisperStatus(model = DEFAULT_MODEL) {
         modelReady,
         exePath,
         fallbackExePath: cudaExe ? cpuExe : null,
-        flavor: cudaExe ? 'cuda' : (cpuExe ? 'cpu' : null),
+        flavor: cudaExe ? 'cuda' : (cpuExe ? 'cpu' : (systemExe ? 'system' : null)),
         model,
-        modelPath: mPath
+        modelPath: mPath,
+        // Can ReVid fetch the engine itself? Only on Windows. Elsewhere the
+        // caller must tell the user to install it rather than offer a download
+        // that cannot succeed.
+        installable: isWin(),
+        platform: process.platform
     };
 }
 
@@ -151,10 +198,22 @@ async function ensureWhisper({ flavor = 'cuda', model = DEFAULT_MODEL }, sendPro
         try { fs.unlinkSync(zipPath); } catch (e) { /* keep zip */ }
     };
 
-    // The CPU build is 8MB and always runs — fetch it first so there is a
-    // working fallback even if the CUDA runtime turns out to be unusable.
-    await fetchFlavor('cpu', 'binary');
-    if (flavor === 'cuda') await fetchFlavor('cuda', 'binary');
+    if (isWin()) {
+        // The CPU build is 8MB and always runs — fetch it first so there is a
+        // working fallback even if the CUDA runtime turns out to be unusable.
+        await fetchFlavor('cpu', 'binary');
+        if (flavor === 'cuda') await fetchFlavor('cuda', 'binary');
+    } else if (!status.binaryReady) {
+        // No prebuilt CLI exists for this platform, so there is nothing to
+        // download. The model below is portable, but without an engine to run
+        // it there is no point starting the transfer.
+        throw new Error(
+            'Automatic transcription needs a whisper.cpp CLI, which ReVid can only '
+            + `install on Windows. On ${process.platform === 'darwin' ? 'macOS' : 'this system'}, `
+            + 'install it yourself (macOS: brew install whisper-cpp) and ReVid will pick it up. '
+            + 'Subtitles made on another machine still play normally.'
+        );
+    }
 
     status = getWhisperStatus(model);
     if (!status.binaryReady) throw new Error('whisper binary not found after extraction');
@@ -414,6 +473,7 @@ module.exports = {
     cachedSubtitlePath,
     // exported for tests
     findWhisperExe,
+    findSystemWhisper,
     downloadFile,
     extractZip
 };
