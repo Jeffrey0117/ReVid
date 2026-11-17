@@ -2118,6 +2118,13 @@ function setupIpcHandlers() {
     ipcMain.handle('fetch-thumbnail', async (_event, { url, courseId }) => {
         if (!url || !courseId) return { success: false, error: 'Missing url or courseId' };
         if (!/^https?:\/\//i.test(url)) return { success: false, error: 'Only http(s) URLs allowed' };
+        // courseId names a file in the cache directory, so it has to be a plain
+        // name. Ids are generated as `<timestamp>-<base36>`, but they also
+        // arrive from the sync server, where "../.." would put the downloaded
+        // bytes anywhere on disk.
+        if (!/^[A-Za-z0-9_-]{1,96}$/.test(String(courseId))) {
+            return { success: false, error: 'Invalid courseId' };
+        }
 
         ensureThumbnailDir();
 
