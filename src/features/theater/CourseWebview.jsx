@@ -315,10 +315,8 @@ export const CourseWebview = ({
 
       // Replay saved click path if exists
       const savedClickPath = clickPathRef.current;
-      console.log('[ReVid] Checking for click path to replay:', savedClickPath, 'already replayed:', clickPathReplayedRef.current);
       if (savedClickPath && savedClickPath.length > 0 && !clickPathReplayedRef.current) {
         clickPathReplayedRef.current = true;
-        console.log('[ReVid] Will replay', savedClickPath.length, 'clicks after page loads');
 
         const replayClicks = async () => {
           const wv = webviewRef.current;
@@ -375,7 +373,7 @@ export const CourseWebview = ({
               await webviewRef.current.executeJavaScript(replayScript);
               await new Promise(resolve => setTimeout(resolve, 1500));
             } catch (e) {
-              console.log('[ReVid] Click replay error:', e);
+              /* the page navigated away mid-replay — the next click just misses */
             }
           }
           setReplayProgress(null);
@@ -551,7 +549,6 @@ export const CourseWebview = ({
 
         webview.executeJavaScript(checkVideo).then((result) => {
           if (result && result.found) {
-            console.log('[ReVid] pollVideo found video!', result);
             foundVideo = true;
             videoFoundRef.current = true;
             setVideoFound(true);
@@ -562,7 +559,6 @@ export const CourseWebview = ({
 
             // Get current URL from webview for course URL update
             const currentWebviewUrl = webview.getURL?.() || url;
-            console.log('[ReVid] currentWebviewUrl:', currentWebviewUrl);
 
             // Mark video found and get recorded clicks from webview
             webview.executeJavaScript(`
@@ -573,7 +569,6 @@ export const CourseWebview = ({
                 return JSON.parse(JSON.stringify(clicks));
               })();
             `).then((clicks) => {
-              console.log('[ReVid] Video found! Recorded clicks:', clicks);
               onVideoDetected?.({
                 duration: result.duration,
                 src: result.src,
@@ -581,7 +576,6 @@ export const CourseWebview = ({
                 clickPath: clicks && clicks.length > 0 ? clicks : null
               });
             }).catch((err) => {
-              console.log('[ReVid] Failed to get clicks:', err);
               onVideoDetected?.({
                 duration: result.duration,
                 src: result.src,
@@ -739,7 +733,6 @@ export const CourseWebview = ({
           const jsonStr = message.replace('__REVID_CLICK__', '').trim();
           const clickData = JSON.parse(jsonStr);
           recordedClicksRef.current.push(clickData);
-          console.log('[ReVid] Recorded click:', clickData);
         } catch (e) {
           // Parse error, ignore
         }
