@@ -13,9 +13,37 @@ export const ShareDialog = ({ folder, onClose }) => {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState(null);
     const [copied, setCopied] = useState(false);
+    // The browser extension authenticates to ReVid with this key. It was only
+    // ever written to a JSON file in AppData, so the only way to pair the two
+    // was to go and find it — which is why the extension side had never been
+    // used. It belongs on screen, next to the other thing this machine serves.
+    const [grab, setGrab] = useState(null);
+    const [keyCopied, setKeyCopied] = useState(false);
 
     useEffect(() => {
         getElectronAPI()?.lanStatus?.().then(setState).catch(() => {});
+        getElectronAPI()?.grabStatus?.().then(setGrab).catch(() => {});
+    }, []);
+
+    const copyKey = useCallback(async () => {
+        if (!grab?.token) return;
+        try {
+            await navigator.clipboard.writeText(grab.token);
+            setKeyCopied(true);
+            setTimeout(() => setKeyCopied(false), 1800);
+        } catch (e) { /* denied */ }
+    }, [grab]);
+
+    // Rotating invalidates whatever is pasted into the extension, so the new
+    // key is shown immediately rather than leaving the pairing silently broken.
+    const rotateKey = useCallback(async () => {
+        const api = getElectronAPI();
+        if (!api?.grabRotate) return;
+        try {
+            await api.grabRotate();
+            setGrab(await api.grabStatus());
+            setKeyCopied(false);
+        } catch (e) { /* leave the old one showing */ }
     }, []);
 
     const toggle = useCallback(async () => {
@@ -132,6 +160,62 @@ export const ShareDialog = ({ folder, onClose }) => {
                             </div>
                         </>
                     )}
+
+                    {/* Not folder-scoped: the extension pairs with the app, not
+                        with whatever happens to be open. */}
+                    <div style={{
+                        marginTop: folder ? 16 : 0, paddingTop: folder ? 14 : 0,
+                        borderTop: folder ? `1px solid ${theme.border}` : 'none'
+                    }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>
+                            {t('grabTitle')}
+                        </div>
+                        <div style={{ fontSize: 11, color: theme.textTertiary, marginTop: 3, lineHeight: 1.6 }}>
+                            {t('grabHint')}
+                        </div>
+
+                        {grab?.running ? (
+                            <div style={{
+                                marginTop: 10, padding: 12, borderRadius: 8, background: theme.inputBg
+                            }}>
+                                <div style={{ fontSize: 11, color: theme.textTertiary, marginBottom: 5 }}>
+                                    {t('grabPort')}: <span style={{ fontFamily: 'ui-monospace, monospace' }}>127.0.0.1:{grab.port}</span>
+                                </div>
+                                <div style={{
+                                    fontSize: 13, wordBreak: 'break-all', color: theme.text,
+                                    fontFamily: 'ui-monospace, monospace', lineHeight: 1.5
+                                }}>
+                                    {grab.token}
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                                    <button
+                                        onClick={copyKey}
+                                        style={{
+                                            padding: '5px 12px', borderRadius: 5, fontSize: 12,
+                                            background: theme.accent, color: '#fff'
+                                        }}
+                                    >
+                                        {keyCopied ? t('shareCopied') : t('grabCopyKey')}
+                                    </button>
+                                    <button
+                                        onClick={rotateKey}
+                                        title={t('grabRotateHint')}
+                                        style={{
+                                            padding: '5px 12px', borderRadius: 5, fontSize: 12,
+                                            background: 'transparent', color: theme.textSecondary,
+                                            border: `1px solid ${theme.border}`
+                                        }}
+                                    >
+                                        {t('grabRotate')}
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div style={{ marginTop: 10, fontSize: 12, color: theme.textTertiary }}>
+                                {t('grabNotRunning')}
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>
